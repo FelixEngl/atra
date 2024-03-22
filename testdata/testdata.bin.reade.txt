@@ -1,0 +1,1 @@
+bincode -> Vec<CrawlResultPage>

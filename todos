@@ -1,0 +1,110 @@
+Features:
+- YAML:
+    https://crates.io/crates/serde_yaml/0.8.26
+
+- JS:
+    - https://github.com/denoland/rusty_v8
+
+- GDPR recognition
+    - https://github.com/shadeMe/liblinear-rs/tree/master
+    - Model: Eric - DSGVO
+    - https://docs.rs/libsvm/latest/libsvm/
+- Chrome
+- TOR support
+- Dedublication
+    - https://github.com/internetarchive/heritrix3/wiki/Duplication%20Reduction%20Processors
+- Extractors:
+    - https://heritrix.readthedocs.io/en/latest/bean-reference.html#link-extractors
+    - PDF
+    - CSS
+    - SWF
+    - WORD/EXCEL/POWERPOINT
+    - More comprehensive JS
+    - XML/JSON
+    - Universal
+    - JAR/EXE
+    - nofollow-Attribute!
+
+- Archive Detection & Crawling
+- Database Crawling?
+- Fetchers:
+    - https://heritrix.readthedocs.io/en/latest/configuring-jobs.html#ftp
+    - FTP/SFTP
+    - WHOIS
+    - YT Download
+- Console
+    - https://crates.io/crates/term
+
+- WebView:
+    - https://github.com/tauri-apps/wry
+    - https://github.com/servo/webrender
+
+
+- Embedded Browser
+    - https://github.com/servo/servo
+    - https://github.com/tauri-apps/wry
+
+- Chapta solving:
+    - https://sangaline.com/post/advanced-web-scraping-tutorial/
+
+- cluster:
+    - register custom DHCP DNS in router for easy cluster setup
+
+- LSH
+    - https://www.academia.edu/7833902/TLSH_-A_Locality_Sensitive_Hash
+    - https://en.wikipedia.org/wiki/Nilsimsa_Hash#cite_note-3
+    tlsh
+    Ssdeep
+    Sdhash
+    dcfldd
+    mvHash-B
+
+- IPC
+    - https://de.wikipedia.org/wiki/Unix_Domain_Socket
+
+- Cluster
+    - https://docs.rs/paxakos/latest/paxakos/
+
+
+- Docker Compose:
+    - Compare Stack?
+
+
+- Build
+    - https://crates.io/crates/autocfg
+
+
+- Warc
+    - https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1-annotated/
+
+
+- Add uring
+    - https://github.com/tokio-rs/tokio-uring
+
+- ! add tokio::io
+
+- add solr & elastic search support
+
+- Queue:
+    -- make similar to https://github.com/crawler-commons/url-frontier/blob/master/service/src/main/java/crawlercommons/urlfrontier/service/rocksdb/RocksDBService.java
+    -- ?
+
+
+-- googleon googleoff commentar
+
+-- Support Googlebot behaviour
+    https://developers.google.com/search/docs/crawling-indexing/large-site-managing-crawl-budget?hl=de
+
+    Slow down status codes: 429 & 503
+    Blacklist when: 404 || 410
+
+    404 -> Do not talk to it
+    410: Block until told otherwise
+
+-- Interval crawling
+
+-- Use stdout for Unix-like output for piping
+
+
+
+

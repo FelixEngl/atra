@@ -1,0 +1,9 @@
+# A list of Regex-Expressions and URLs to be filtered by this blacklist.
+# Comments can be written by starting with a #.
+# To ignore the # at the beginning write \#.
+
+# Google
+www.google.de
+
+# Ebay
+\#.Ebay.com
