@@ -1,7 +1,6 @@
 # Atra - The smaller way to crawl
 
-**!!This read me will we reworked in a few days, i am  
-currently working on a better version and a wiki for the 
+**!!This read me will we reworked in a few days. Currently I am working on a better version and a wiki for the 
 config files.!!**
 
 Atra is a novel web crawling solution, implemented in Rust, designed with
