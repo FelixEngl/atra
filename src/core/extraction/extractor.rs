@@ -12,19 +12,15 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+use std::cmp::Ordering;
 use std::collections::HashSet;
-use linkify::LinkKind;
-use log::LevelFilter;
 use serde::{Deserialize, Serialize};
+use strum::{Display, EnumString};
+use enum_iterator::{all};
 use crate::core::contexts::Context;
-use crate::core::decoding::DecodedData;
-use crate::core::extraction::marker::{ExtractorMeta, ExtractorMetaFactory, SubExtractorMeta};
-use crate::core::io::paths::DecodedDataFilePathBuf;
 use super::ExtractedLink;
-use crate::core::page_processing::{ProcessedPage};
-use crate::core::page_type::PageType;
-use crate::{declare_sub_extractor, define_decode_action};
-use crate::core::extraction::raw::extract_possible_urls;
+use crate::core::data_processing::{ProcessedData};
+use crate::core::extraction::extractor_method::ExtractorMethod;
 
 /*
     To register a new extractor, create a extractor_decode_action_declaration
@@ -34,21 +30,46 @@ use crate::core::extraction::raw::extract_possible_urls;
 /// A struct acting as an extractor
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[repr(transparent)]
-pub struct Extractor(pub Vec<SubExtractor>);
+pub struct Extractor(pub Vec<ExtractorCommand>);
 
 impl Extractor {
-    /// Extracts the data this the set extractors
-    pub async fn extract(&self, context: &impl Context, page: &ProcessedPage<'_>) -> ExtractorResult {
-        log::trace!("Extractor: {:?} - {}", page.0.page_type, page.0.data.url);
-        let mut result = ExtractorResult::default();
+
+    /// If the
+    async fn apply_extractors<const FALLBACK_MODE: bool>(&self, context: &impl Context, page: &ProcessedData<'_>, result: &mut ExtractorResult) {
         for extractor in &self.0 {
-            if let Some(extracted) = extractor.extract(page, context, result.links.len()).await {
-                result.links.extend(extracted);
-                result.applied_extractors.push(extractor.clone());
+            // Require that both are either true or false
+            if FALLBACK_MODE ^ extractor.is_fallback() {
+                continue
+            }
+            if extractor.can_apply(context, page) {
+                if result.apply_extractor(extractor.extractor_method) {
+                    match extractor.extractor_method.extract_links(context, page, result).await {
+                        Ok(value) => {
+                            log::debug!("Extracted {value} links with {extractor:?}.");
+                        }
+                        Err(_) => {
+                            log::error!("Failed the extractor {:?}", extractor);
+                        }
+                    }
+                } else {
+                    log::debug!("Can not apply extractor because it was already used!")
+                }
+            } else {
+                log::debug!("{extractor:?} is not compatible with the data!")
             }
         }
-        if result.no_extractor_applied() {
-            log::warn!("Extractor: Unsupported type: {:?}", page.0.page_type);
+    }
+
+    /// Extracts the data this the set extractors
+    pub async fn extract(&self, context: &impl Context, page: &ProcessedData<'_>) -> ExtractorResult {
+        log::trace!("Extractor: {:?} - {}", page.0.page_type, page.0.data.url);
+        let mut result = ExtractorResult::default();
+        self.apply_extractors::<false>(context, page, &mut result).await;
+        if result.no_extractor_applied() || result.is_empty() {
+            if !result.no_extractor_applied() {
+                log::debug!("Extractor: Unsupported type: {:?}", page.0.page_type);
+            }
+            self.apply_extractors::<true>(context, page, &mut result).await;
         }
         result
     }
@@ -56,18 +77,33 @@ impl Extractor {
 
 impl Default for Extractor {
     fn default() -> Self {
-        Self(SubExtractor::ALL_ENTRIES.to_vec())
+        Self(
+            all::<ExtractorMethod>()
+                .map(|value| ExtractorCommand::new_default_apply(value))
+                .collect()
+        )
     }
 }
+
 
 /// The result of an extraction, contains the extracted links as well es the applied extractors.
 #[derive(Debug, Default)]
 pub struct ExtractorResult {
     pub links: HashSet<ExtractedLink>,
-    pub applied_extractors: Vec<SubExtractor>
+    pub applied_extractors: HashSet<ExtractorMethod>
 }
 
 impl ExtractorResult {
+
+    /// Returns true if the extractor can be applied
+    pub fn apply_extractor(&mut self, extractor: ExtractorMethod) -> bool {
+        self.applied_extractors.insert(extractor)
+    }
+
+    pub fn register_link(&mut self, link: ExtractedLink) -> bool {
+        self.links.insert(link)
+    }
+
     /// Returns true of there are no extracted links
     pub fn is_empty(&self) -> bool {
         self.links.is_empty()
@@ -90,175 +126,91 @@ impl ExtractorResult {
 
 
 
-/// The decode action for a specifc sub extractor
-pub(crate) trait DecodeAction {
-    async fn decode(page: &ProcessedPage<'_>, context: &impl Context, factory: &impl ExtractorMetaFactory, extracted_domains_count: usize) -> Option<HashSet<ExtractedLink>>;
-    async fn decoded_small(page: &ProcessedPage<'_>, context: &impl Context, factory: &impl ExtractorMetaFactory, data: &String) -> Option<HashSet<ExtractedLink>>;
-    async fn decoded_big(page: &ProcessedPage<'_>, context: &impl Context, factory: &impl ExtractorMetaFactory, path_to_file: &DecodedDataFilePathBuf) -> Option<HashSet<ExtractedLink>>;
-    async fn not_decoded(page: &ProcessedPage<'_>, context: &impl Context) -> Option<HashSet<ExtractedLink>>;
+/// When to apply the extractor?
+#[derive(Debug, Copy, Clone, Default, Serialize, Deserialize, EnumString, Display, Ord, PartialOrd, Eq, PartialEq)]
+pub enum ApplyWhen {
+    Always,
+    #[default]
+    IfSuitable,
+    Fallback,
 }
 
-declare_sub_extractor! {
-    HtmlV1 | "HTML_v1" => HtmlV1Action;
-    JavaScriptV1 | "JavaScript_v1" | "JS_v1" => JavaScriptV1Action;
-    PlainTextV1 | "PlainText_v1" | "PT_v1" | "Plain_v1" => PlainTextV1Action;
-    RawV1 | "RAW_v1" => RawV1Action;
+#[derive(Debug, Clone, Serialize, Deserialize, Eq)]
+pub struct ExtractorCommand {
+    extractor_method: ExtractorMethod,
+    apply_when: ApplyWhen,
 }
 
+impl ExtractorCommand {
+    pub fn new(
+        extractor_method: ExtractorMethod,
+        apply_when: ApplyWhen,
+    ) -> Self {
+        Self {
+            extractor_method,
+            apply_when
+        }
+    }
 
+    pub fn new_default_apply(
+        extractor_method: ExtractorMethod,
+    ) -> Self {
+        Self::new(extractor_method, Default::default())
+    }
 
-define_decode_action! {
-    struct HtmlV1Action: HTML;
-    fn decoded(page, context, factory, result)-> {
-        match crate::core::extraction::html::extract_links(
-            &page.0.data.url,
-            result.as_str(),
-            context.configs().crawl().respect_nofollow,
-            context.configs().crawl().crawl_embedded_data,
-            context.configs().crawl().crawl_javascript,
-            context.configs().crawl().crawl_onclick_by_heuristic,
-        ) {
-            None => { None }
-            Some((base, extracted, errors)) => {
-                if !errors.is_empty() {
-                    if log::max_level() <= LevelFilter::Trace {
-                        let mut message = String::new();
-                        for err in errors {
-                            message.push_str(err.as_ref());
-                            message.push('\n');
-                        }
-                        log::trace!("Error parsing '{}'\n---START---\n{message}\n---END---\n", page.0.data.url)
-                    }
-                }
-                let mut result = HashSet::new();
-                let base_ref = base.as_ref();
-                for (origin, link) in extracted {
-                    match ExtractedLink::pack(base_ref, &link, factory.create_meta(SubExtractorMeta::Html(origin))) {
-                        Ok(link) => {
-                            if link.is_not(base_ref) {
-                                result.insert(link);
-                            }
-                        }
-                        Err(error) => {
-                            log::warn!("Was not able to parse link {} from html. Error: {}", link, error)
-                        }
-                    }
-                }
-                Some(result)
+    pub fn can_apply(&self, context: &impl Context, page: &ProcessedData<'_>) -> bool {
+        match self.apply_when {
+            ApplyWhen::Always => {true}
+            ApplyWhen::IfSuitable => {
+                self.extractor_method.is_compatible(context, page)
+            }
+            ApplyWhen::Fallback => {
+                false
             }
         }
     }
-    fn decoded_file(_page, _context, _factory, _file) -> {
-        log::warn!("Currently extracting links from big HTML files is not supported!");
-        None
+
+    pub fn is_fallback(&self) -> bool {
+        return self.apply_when == ApplyWhen::Fallback
     }
 }
 
-define_decode_action! {
-    struct JavaScriptV1Action: JavaScript;
-    fn decoded(page, context, factory, data)-> {
-        if !context.configs().crawl().crawl_javascript {
-            None
-        } else {
-            let mut result = HashSet::new();
-            for entry in crate::core::extraction::js::extract_links(data.as_str()) {
-                match ExtractedLink::pack(&page.0.get_page().url, entry.as_str(), factory.create_empty_meta()) {
-                    Ok(url) => {
-                        result.insert(url);
-                    }
-                    Err(error) => {
-                        log::error!("Was not able to parse {} from javascript. Error: {}", entry, error)
-                    }
-                }
-            }
-            Some(result)
+impl AsRef<ApplyWhen> for ExtractorCommand {
+    fn as_ref(&self) -> &ApplyWhen {
+        &self.apply_when
+    }
+}
+
+impl PartialEq<Self> for ExtractorCommand {
+    delegate::delegate! {
+        to self.apply_when {
+            fn eq(&self, #[as_ref] other: &Self) -> bool;
         }
     }
-    fn decoded_file(_page, _context, _factory, _file) -> {
-        log::warn!("Currently extracting links from big JS files is not supported!");
-        None
-    }
 }
 
-define_decode_action! {
-    struct PlainTextV1Action: PlainText;
-    fn decoded(page, _context, factory, data)-> {
-        let mut result = HashSet::new();
-        let mut finder = linkify::LinkFinder::new();
-        finder.kinds(&[LinkKind::Url]);
-        for entry in finder.links(data.as_str()) {
-            match ExtractedLink::pack(&page.0.get_page().url, entry.as_str(), factory.create_empty_meta()) {
-                Ok(url) => {
-                    result.insert(url);
-                }
-                Err(error) => {
-                    log::warn!("Was not able to parse {} from plaintext. Error: {}", entry.as_str(), error)
-                }
-            }
+impl PartialOrd<Self> for ExtractorCommand {
+    delegate::delegate! {
+        to self.apply_when {
+            fn partial_cmp(&self, #[as_ref] other: &Self) -> Option<Ordering>;
         }
-        Some(result)
-    }
-    fn decoded_file(_page, _context, _factory, _file) -> {
-        log::warn!("Currently extracting links from big Text files is not supported!");
-        None
     }
 }
 
-define_decode_action! {
-    struct RawV1Action: fallback;
-    fn decoded(page, _context, factory, _data)-> {
-        let mut result = HashSet::new();
-        if let Some(in_memory) = page.0.data.content.as_in_memory() {
-            for entry in extract_possible_urls(in_memory.as_slice()) {
-                if let Some(encoding) = page.1.encoding() {
-                    let encoded = &encoding.decode(entry).0;
-                    match ExtractedLink::pack(
-                        &page.0.get_page().url,
-                        &encoded,
-                        factory.create_empty_meta()
-                    ) {
-                        Ok(link) => {
-                            result.insert(link);
-                            continue;
-                        }
-                        Err(err) => {
-                            log::debug!("Was not able to parse {} from raw. Error: {}", encoded, err)
-                        }
-                    }
-                }
-                let encoded = String::from_utf8_lossy(entry);
-                match ExtractedLink::pack(
-                    &page.0.get_page().url,
-                    &encoded,
-                    factory.create_empty_meta()
-                ) {
-                    Ok(link) => {
-                        result.insert(link);
-                        continue;
-                    }
-                    Err(err) => {
-                        log::debug!("Was not able to parse {} from raw. Error: {}", encoded, err)
-                    }
-                }
-
-            }
+impl Ord for ExtractorCommand {
+    delegate::delegate! {
+        to self.apply_when {
+            fn cmp(&self, #[as_ref] other: &Self) -> Ordering;
         }
-        Some(result)
-    }
-    fn decoded_file(_page, _context, _factory, _file) -> {
-        log::warn!("Currently extracting links from big Text files is not supported!");
-        None
     }
 }
-
-
 
 
 #[cfg(test)]
 mod test {
     use crate::core::config::CrawlConfig;
     use crate::core::response::{ResponseData};
-    use crate::core::page_processing::process;
+    use crate::core::data_processing::process;
     use crate::core::{DataHolder};
     use crate::core::contexts::inmemory::InMemoryContext;
     use crate::core::extraction::extractor::Extractor;

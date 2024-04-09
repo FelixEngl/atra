@@ -24,14 +24,14 @@ use crate::core::VecDataHolder;
 
 
 /// Process the page to extract the mime type and the decoded data.
-pub async fn process<'a>(context: &impl Context, page: &'a ResponseData) -> Result<ProcessedPage<'a>, DecodingError> {
+pub async fn process<'a>(context: &impl Context, page: &'a ResponseData) -> Result<ProcessedData<'a>, DecodingError> {
     let page = ResponseDataWithMeta::create_from(page, context);
     yield_now().await;
 
     match &page.data.content {
         VecDataHolder::None => {
             return Ok(
-                ProcessedPage(
+                ProcessedData(
                     page,
                     DecodedData::None
                 )
@@ -49,7 +49,7 @@ pub async fn process<'a>(context: &impl Context, page: &'a ResponseData) -> Resu
             DecodedData::None
     };
     Ok(
-        ProcessedPage(
+        ProcessedData(
             page,
             decoded
         )
@@ -58,7 +58,7 @@ pub async fn process<'a>(context: &impl Context, page: &'a ResponseData) -> Resu
 
 
 /// A tuple containing the preprocessed page data
-pub struct ProcessedPage<'a>(
+pub struct ProcessedData<'a>(
     pub ResponseDataWithMeta<'a>,
     pub DecodedData<String, DecodedDataFilePathBuf>,
 );

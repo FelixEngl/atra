@@ -12,17 +12,13 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-mod js;
-mod html;
-
-mod extractor_sub_extractor_declaration;
-
-mod extractor_decode_action_declaration;
-
 pub mod extractor;
-
 pub mod links;
 pub mod marker;
+pub mod extractor_method;
+mod html;
+mod js;
 mod raw;
 
 pub use links::{ExtractedLink};
+pub use extractor_method::{ExtractorMethod};

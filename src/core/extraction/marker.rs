@@ -13,34 +13,34 @@
 //limitations under the License.
 
 use serde::{Deserialize, Serialize};
-use crate::core::extraction::extractor::SubExtractor;
+use crate::core::extraction::extractor_method::ExtractorMethod;
 use crate::core::extraction::html::LinkOrigin;
 
 /// Holds information about the used extraction information
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ExtractorMeta {
-    pub extractor: SubExtractor,
+pub struct ExtractorMethodHint {
+    pub used_method: ExtractorMethod,
     #[serde(default)]
-    pub meta: SubExtractorMeta
+    pub meta: Option<ExtractorMethodMeta>
 }
 
+
+impl ExtractorMethodHint {
+    pub fn new(used_method: ExtractorMethod, meta: Option<ExtractorMethodMeta>) -> Self {
+        Self { used_method, meta }
+    }
+
+    pub fn new_with_meta(used_method: ExtractorMethod, meta: ExtractorMethodMeta) -> Self {
+        Self::new(used_method, Some(meta))
+    }
+
+    pub fn new_without_meta(used_method: ExtractorMethod) -> Self {
+        Self::new(used_method, None)
+    }
+}
 
 /// Some kind of metadata for the used extraction method.
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Serialize, Deserialize, Default)]
-pub enum SubExtractorMeta {
-    Html(LinkOrigin),
-    #[default]
-    None,
-}
-
-
-
-/// A trait marking a factory for [ExtractorMeta]
-pub trait ExtractorMetaFactory {
-    fn create_meta(&self, meta: SubExtractorMeta) -> ExtractorMeta;
-
-    #[inline]
-    fn create_empty_meta(&self) -> ExtractorMeta {
-        self.create_meta(SubExtractorMeta::None)
-    }
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
+pub enum ExtractorMethodMeta {
+    Html(LinkOrigin)
 }

@@ -67,7 +67,7 @@ impl ResponseData {
 
     #[cfg(feature = "chrome")]
     pub fn reconstruct(
-        content: Option<Vec<u8>>,
+        content: VecDataHolder,
         url: UrlWithDepth,
         headers: Option<HeaderMap>,
         status_code: StatusCode,
@@ -79,7 +79,7 @@ impl ResponseData {
             headers,
             status_code,
             final_redirect_destination,
-            chrome_page: None
+            chrome_page
         }
     }
 

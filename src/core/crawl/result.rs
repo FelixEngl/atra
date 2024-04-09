@@ -76,19 +76,6 @@ impl CrawlResult {
             recognized_encoding,
         }
     }
-
-    #[allow(dead_code)]
-    pub fn into_inner(self) -> (ResponseData, Option<HashSet<ExtractedLink>>, Option<&'static Encoding>, PageType) {
-        let page = ResponseData::reconstruct(
-            self.content,
-            self.url,
-            self.headers,
-            self.status_code,
-            self.final_redirect_destination,
-        );
-        let links = self.links.map(|it| HashSet::from_iter(it));
-        (page, links, self.recognized_encoding, self.page_type)
-    }
 }
 
 
@@ -102,8 +89,8 @@ pub(crate) mod test {
     use crate::core::response::ResponseData;
     use crate::core::{UrlWithDepth, VecDataHolder};
     use crate::core::extraction::ExtractedLink;
-    use crate::core::extraction::extractor::SubExtractor;
-    use crate::core::extraction::marker::{ExtractorMeta, SubExtractorMeta};
+    use crate::core::extraction::ExtractorMethod;
+    use crate::core::extraction::marker::{ExtractorMethodHint};
     use crate::core::page_type::PageType;
 
     pub fn create_testdata_with_on_seed(content: Option<VecDataHolder>) -> CrawlResult {
@@ -125,15 +112,15 @@ pub(crate) mod test {
         let mut links = HashSet::new();
         links.insert(ExtractedLink::OnSeed {
             url: UrlWithDepth::with_base(&seed, "https://www.google.de/1").unwrap(),
-            extraction_method: ExtractorMeta{extractor: SubExtractor::HtmlV1, meta: SubExtractorMeta::None}
+            extraction_method: ExtractorMethodHint::new_without_meta(ExtractorMethod::HtmlV1)
         });
         links.insert(ExtractedLink::OnSeed {
             url: UrlWithDepth::with_base(&seed, "https://www.google.de/2").unwrap(),
-            extraction_method: ExtractorMeta{extractor: SubExtractor::HtmlV1, meta: SubExtractorMeta::None}
+            extraction_method: ExtractorMethodHint::new_without_meta(ExtractorMethod::HtmlV1)
         });
         links.insert(ExtractedLink::OnSeed {
             url: UrlWithDepth::with_base(&seed, "https://www.ebay.de/2").unwrap(),
-            extraction_method: ExtractorMeta{extractor: SubExtractor::HtmlV1, meta: SubExtractorMeta::None}
+            extraction_method: ExtractorMethodHint::new_without_meta(ExtractorMethod::HtmlV1)
         });
 
 

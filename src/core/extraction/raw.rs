@@ -25,9 +25,21 @@ pub fn extract_possible_urls(value: &[u8]) -> Vec<&[u8]> {
             candidate.len()
         };
 
-        let candidate = &candidate[..possible_end_of_url];
+        let mut candidate = &candidate[..possible_end_of_url];
         if let Some(start_of_important_slash) = memchr::memchr(b'/', &candidate[prune_start..]) {
             let start_of_important_slash = start_of_important_slash + prune_start;
+
+            let target = match candidate[candidate.len() - 1] {
+                b')' => Some(b'('),
+                b']' => Some(b'['),
+                b'}' => Some(b'{'),
+                _ => None,
+            };
+            if let Some(target) = target {
+                if memchr::memrchr(target, candidate).is_none() {
+                    candidate = &candidate[..candidate.len() - 1];
+                }
+            }
             if let Some(_) = psl::suffix(&candidate[..start_of_important_slash]) {
                 links.push(candidate);
             }
@@ -54,6 +66,15 @@ mod test {
     #[test]
     fn can_find_url_2() {
         const DAT: &[u8] = b"test text my friend, whats up? https://www.google.com/eq/1omg!";
+        let found = extract_possible_urls(DAT);
+        assert!(!found.is_empty());
+        let found = found.into_iter().exactly_one().unwrap();
+        assert_eq!(found, b"https://www.google.com/eq/1omg!", "Failed found {}", String::from_utf8(found.to_vec()).unwrap());
+    }
+
+    #[test]
+    fn can_find_url_3() {
+        const DAT: &[u8] = b"test text my friend, whats up? (url: https://www.google.com/eq/1omg!) whaaat?";
         let found = extract_possible_urls(DAT);
         assert!(!found.is_empty());
         let found = found.into_iter().exactly_one().unwrap();

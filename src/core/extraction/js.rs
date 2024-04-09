@@ -36,7 +36,7 @@ pub fn extract_links(script: &str) -> HashSet<CompactString> {
                     }
                     Token::Punct(Punct::SemiColon) => {
                         if href_found {
-                            log::info!("JS_Extract: Missed some href at {item:?}!");
+                            log::trace!("JS_Extract: Missed some href at {item:?}!");
                             href_found = false
                         }
                     }

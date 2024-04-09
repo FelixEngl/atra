@@ -62,7 +62,10 @@ impl WorkerBarrier {
         let count = self.cancel_requester_count_plus_one.fetch_add(1, Ordering::SeqCst);
         assert_ne!(0, count, "Worker {} encountered an illegal state with the barrier!", context.worker_id());
         if count == self.number_of_workers.get() {
+            log::info!("Worker {} Send cancellation!", context.worker_id());
             self.cancellation_token.cancel();
+        } else {
+            log::info!("Worker {} Wait for cancellation! ({count}|{})", context.worker_id(), self.number_of_workers.get());
         }
         select! {
             _ = queue_changed_subscription.recv() => {
@@ -72,12 +75,12 @@ impl WorkerBarrier {
                     log::error!("Worker {} was cancelled but queue changed!", context.worker_id());
                     ContinueOrStop::Cancelled(cause_provider())
                 } else{
-                    log::debug!("Worker {} can continue!", context.worker_id());
+                    log::info!("Worker {} can continue!", context.worker_id());
                     ContinueOrStop::Continue(cause_provider())
                 }
             }
             _ = self.cancellation_token.cancelled() => {
-                log::debug!("Worker {} stopping!.", context.worker_id());
+                log::info!("Worker {} stopping!.", context.worker_id());
                 ContinueOrStop::Cancelled(cause_provider())
             }
         }

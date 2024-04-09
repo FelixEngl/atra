@@ -157,7 +157,7 @@ mod test {
     use ubyte::ToByteUnit;
     use crate::core::config::{BudgetSettings, Configs};
     use crate::core::config::crawl::{CookieSettings, RedirectPolicy, UserAgent};
-    use crate::core::extraction::extractor::{Extractor, SubExtractor};
+    use crate::core::extraction::extractor::{Extractor};
     use crate::core::ini_ext::IntoIni;
 
     pub fn export<P: AsRef<Path>>(config: &Configs, path: P) {
@@ -252,9 +252,7 @@ mod test {
         cfg.crawl.redirect_policy = RedirectPolicy::Strict;
 
         cfg.crawl.accept_invalid_certs = true;
-        cfg.crawl.extractors = Extractor(
-            SubExtractor::ALL_ENTRIES.to_vec()
-        );
+        cfg.crawl.extractors = Extractor::default();
 
         cfg.crawl.decode_big_files_up_to = Some(150_000);
 

@@ -15,7 +15,7 @@
 pub mod link_state;
 pub mod page_writers;
 pub mod mime;
-pub mod page_processing;
+pub mod data_processing;
 pub mod util_selectors;
 pub mod decoding;
 pub mod response;

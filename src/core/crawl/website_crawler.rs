@@ -626,7 +626,7 @@ impl<S: CrawlSeed> WebsiteCrawler<S> {
 
                     log::trace!("Fetched: {}", target);
                     let response_data = ResponseData::new(page, target.clone());
-                    let (analyzed, links) = match crate::core::page_processing::process(context, &response_data).await {
+                    let (analyzed, links) = match crate::core::data_processing::process(context, &response_data).await {
                         Ok(analyzed) => {
                             let result = context.configs().crawl().extractors.extract(context, &analyzed).await;
                             (analyzed, result)

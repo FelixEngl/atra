@@ -15,7 +15,7 @@
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use serde::{Deserialize, Serialize};
-use crate::core::extraction::marker::ExtractorMeta;
+use crate::core::extraction::marker::ExtractorMethodHint;
 use crate::core::UrlWithDepth;
 
 /// An extracted link, this is either a new URL or the base URL with some
@@ -23,11 +23,11 @@ use crate::core::UrlWithDepth;
 pub enum ExtractedLink  {
     OnSeed {
         url: UrlWithDepth,
-        extraction_method: ExtractorMeta
+        extraction_method: ExtractorMethodHint
     },
     Outgoing {
         url: UrlWithDepth,
-        extraction_method: ExtractorMeta
+        extraction_method: ExtractorMethodHint
     },
     Data {
         /// Base of the url
@@ -35,7 +35,7 @@ pub enum ExtractedLink  {
         /// Data url
         url: UrlWithDepth,
         /// Extraction method
-        extraction_method: ExtractorMeta
+        extraction_method: ExtractorMethodHint
     }
 }
 
@@ -124,7 +124,7 @@ impl PartialEq<Self> for ExtractedLink {
 
 impl ExtractedLink {
     /// Packs the extracted [url] and applies [base] if necessary.
-    pub fn pack(base:  &UrlWithDepth, url: &str, extraction_method: ExtractorMeta) -> Result<Self, url::ParseError> {
+    pub fn pack(base:  &UrlWithDepth, url: &str, extraction_method: ExtractorMethodHint) -> Result<Self, url::ParseError> {
         if url.starts_with("data:") {
             let url = UrlWithDepth::new_like_with_base(base, url)?;
             Ok(ExtractedLink::Data {

@@ -27,7 +27,7 @@ use time::Duration;
 use ubyte::ToByteUnit;
 use crate::application::ApplicationMode;
 use crate::core::config::{BudgetSettings, Configs};
-use crate::core::extraction::extractor::{Extractor, SubExtractor};
+use crate::core::extraction::extractor::{Extractor};
 use crate::core::ini_ext::IntoIni;
 use crate::core::seeds::seed_definition::SeedDefinition;
 
@@ -266,7 +266,7 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
             cfg.crawl.redirect_policy = RedirectPolicy::Strict;
 
             cfg.crawl.accept_invalid_certs = true;
-            cfg.crawl.extractors = Extractor(SubExtractor::ALL_ENTRIES.to_vec());
+            cfg.crawl.extractors = Extractor::default();
 
             cfg.crawl.decode_big_files_up_to = Some(200.megabytes().as_u64());
 
