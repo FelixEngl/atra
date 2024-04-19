@@ -18,6 +18,7 @@ use std::fs::File;
 use std::io::{BufWriter, Read, Seek, SeekFrom};
 use std::sync::{Arc, };
 use camino::{Utf8Path};
+use data_encoding::BASE64;
 use itertools::{Itertools, Position};
 use tokio::sync::RwLock;
 use thiserror::Error;
@@ -217,11 +218,20 @@ impl<T: SlimCrawlTaskContext> CrawlTaskContext for WorkerContext<T> {
                 }
                 StoredDataHint::Warc(pointers) => {
                     match pointers {
-                        WarcSkipInstruction::Single{pointer, header_signature_octet_count: header_octet_count } => {
+                        WarcSkipInstruction::Single{pointer, header_signature_octet_count: header_octet_count, is_base64 } => {
                             let data = self.read_body(pointer, *header_octet_count).await?;
+                            let data = if *is_base64 {
+                                if let Some(value) = data {
+                                    Some(BASE64.decode(&value)?)
+                                } else {
+                                    None
+                                }
+                            } else {
+                                data
+                            };
                             Ok(Some(found.inflate(data)))
                         },
-                        WarcSkipInstruction::Multiple{ pointers, header_signature_octet_count: header_octet_count } => {
+                        WarcSkipInstruction::Multiple{ pointers, header_signature_octet_count: header_octet_count, is_base64 } => {
                             let mut collected_data = Vec::new();
                             for (pos, value) in pointers.iter().with_position() {
                                 match pos {
@@ -247,6 +257,11 @@ impl<T: SlimCrawlTaskContext> CrawlTaskContext for WorkerContext<T> {
                             if collected_data.is_empty() {
                                 Ok(Some(found.inflate(None)))
                             } else {
+                                let collected_data = if *is_base64 {
+                                    BASE64.decode(&collected_data)?
+                                } else {
+                                    collected_data
+                                };
                                 Ok(Some(found.inflate(Some(collected_data))))
                             }
 
@@ -271,11 +286,11 @@ impl WorkerWarcWriter {
         let (file, path) = fp.create_fresh_warc_file(None::<&str>)?;
         Ok(
             Self {
-                writer: Arc::new(RwLock::new(RawWorkerWarcWriter {
+                writer: Arc::new(RwLock::new(RawWorkerWarcWriter::new(
                     fp,
-                    writer: WarcWriter::new(BufWriter::new(file)),
-                    path: DataFilePathBuf::new(path)
-                })),
+                    WarcWriter::new(BufWriter::new(file)),
+                    DataFilePathBuf::new(path)
+                ))),
             }
         )
     }
@@ -330,6 +345,18 @@ pub struct RawWorkerWarcWriter {
 
 impl RawWorkerWarcWriter {
 
+    pub fn new(
+        fp: Arc<WorkerFileProvider>,
+        writer: WarcWriter<BufWriter<File>>,
+        path: DataFilePathBuf
+    ) -> Self {
+        Self {
+            fp,
+            writer,
+            path
+        }
+    }
+
     #[allow(dead_code)]
     fn flush(&mut self) -> Result<(), FSAError> {
         self.writer.flush().to_fsa_error(|| self.path.to_string())
@@ -372,7 +399,7 @@ impl SpecialWarcWriter for RawWorkerWarcWriter {
     }
 
 
-    #[inline] fn write_body(&mut self, body: &mut impl Read) -> Result<usize, WarcWriterError> {
+    #[inline] fn write_body<R: Read>(&mut self, body: &mut R) -> Result<usize, WarcWriterError> {
         self.writer.write_body(body)
     }
 
@@ -401,7 +428,7 @@ pub(crate) mod test {
     use crate::core::config::Configs;
     use crate::core::contexts::{Context, CrawlTaskContext, LocalContext};
     use crate::core::contexts::worker_context::{WorkerContext, WorkerWarcWriter};
-    use crate::core::crawl::result::test::{create_test_data, create_testdata_with_on_seed};
+    use crate::core::crawl::result::test::{create_test_data, create_test_data_unknown, create_testdata_with_on_seed};
     use crate::core::io::fs::{FileSystemAccess};
     use crate::core::{UrlWithDepth, VecDataHolder};
     use crate::core::warc::SpecialWarcWriter;
@@ -489,5 +516,37 @@ pub(crate) mod test {
         println!("->{}<-", String::from_utf8(test_data1.content.as_in_memory().unwrap().clone()).unwrap());
         println!("->{}<-", String::from_utf8(retrieved.content.as_in_memory().unwrap().clone()).unwrap());
         assert_eq!(retrieved, test_data1);
+    }
+
+    #[tokio::test]
+    async fn test_context2() {
+
+        if Path::new("test").exists() {
+            std::fs::remove_dir_all("test").unwrap();
+        }
+
+
+        let mut cfg = Configs::default();
+        cfg.paths.root_folder = "test".to_string();
+
+        let local = Arc::new(LocalContext::new(cfg, RuntimeContext::unbound()).await.unwrap());
+
+        let worker = WorkerContext::create(0, local.clone()).await.unwrap();
+        let test_data1 = create_testdata_with_on_seed(None);
+        const BIG_DATA: [u8; ByteUnit::Gigabyte(1).as_u64() as usize - 20] = [b'a'; {ByteUnit::Gigabyte(1).as_u64() as usize - 20}];
+
+        let test_data2 = create_test_data_unknown(UrlWithDepth::from_seed("https://www.oofsize.de/").unwrap(), VecDataHolder::from_vec(BIG_DATA.to_vec()));
+        let test_data3 = create_test_data(UrlWithDepth::from_seed("https://www.catsanddogs.de/").unwrap(), None);
+        worker.store_crawled_website(&test_data1).await.unwrap();
+        worker.store_crawled_website(&test_data2).await.unwrap();
+        worker.store_crawled_website(&test_data3).await.unwrap();
+
+        let x = UrlWithDepth::from_seed("https://www.oofsize.de/").unwrap();
+
+        let found = worker.retrieve_crawled_website(&x).await.expect("This should work").expect("Expected to exist!");
+        assert_eq!(test_data2, found, "Failed to compare:\n\nA: {:?}\n\nB: {:?}", test_data2, found);
+
+        let retrieved = worker.retrieve_crawled_website(&test_data1.url).await.expect("This should work").expect("Expected to exist!");
+        assert_eq!(test_data1, retrieved);
     }
 }

@@ -53,6 +53,7 @@ impl<T> ToFSAError<T> for Result<T, io::Error> {
 }
 
 
+
 /// Provides the paths in the application
 #[derive(Debug)]
 pub struct FileSystemAccess {
@@ -137,8 +138,24 @@ pub struct WorkerFileProvider {
 
 impl WorkerFileProvider {
 
+    pub fn new(
+        warc_dir: PathBuf,
+        service: String,
+        collection: String,
+        crawl_job_id: u64,
+    ) -> Self {
+        Self {
+            warc_writer_serial: AtomicU16::default(),
+            warc_dir,
+            service,
+            collection,
+            crawl_job_id,
+        }
+    }
+
+
     /// Creates the new WorkerWarcFileProvider
-    fn build(
+    pub fn build(
         worker_id: usize,
         base: &FileSystemAccess
     ) -> Result<Self, FSAError> {
@@ -151,13 +168,12 @@ impl WorkerFileProvider {
             std::fs::create_dir_all(&warc_dir).to_fsa_error(|| warc_dir.to_string())?;
         }
         Ok(
-            Self {
-                service: base.service.clone(),
-                collection: base.collection.clone(),
-                crawl_job_id: base.crawl_job_id,
+            Self::new(
                 warc_dir,
-                warc_writer_serial: AtomicU16::default()
-            }
+                base.service.clone(),
+                base.collection.clone(),
+                base.crawl_job_id,
+            )
         )
     }
 

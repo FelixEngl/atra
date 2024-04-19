@@ -127,7 +127,7 @@ pub(crate) mod test {
         CrawlResult::new(
             OffsetDateTime::now_utc(),
             ResponseData::reconstruct(
-                content.unwrap_or_else(|| VecDataHolder::from_vec(b"<html><body>hello world, this is a test file \r\n WARC/1.1\r\n or whetever!</body></html>".to_vec())),
+                content.unwrap_or_else(|| VecDataHolder::from_vec(b"<html><body>hello world, this is a test file \r\n WARC/1.1\r\n or whatever!</body></html>".to_vec())),
                 seed,
                 Some(header),
                 StatusCode::OK,
@@ -136,6 +136,37 @@ pub(crate) mod test {
             Some(links),
             Some(encoding_rs::UTF_8),
             PageType::HTML
+        )
+    }
+
+    pub fn create_test_data_unknown(seed: UrlWithDepth, content: VecDataHolder) -> CrawlResult {
+        let mut links = HashSet::new();
+        links.insert(ExtractedLink::OnSeed {
+            url: UrlWithDepth::with_base(&seed, "https://www.google.de/1").unwrap(),
+            extraction_method: ExtractorMethodHint::new_without_meta(ExtractorMethod::HtmlV1)
+        });
+        links.insert(ExtractedLink::OnSeed {
+            url: UrlWithDepth::with_base(&seed, "https://www.google.de/2").unwrap(),
+            extraction_method: ExtractorMethodHint::new_without_meta(ExtractorMethod::HtmlV1)
+        });
+        links.insert(ExtractedLink::OnSeed {
+            url: UrlWithDepth::with_base(&seed, "https://www.ebay.de/2").unwrap(),
+            extraction_method: ExtractorMethodHint::new_without_meta(ExtractorMethod::HtmlV1)
+        });
+
+
+        CrawlResult::new(
+            OffsetDateTime::now_utc(),
+            ResponseData::reconstruct(
+                content,
+                seed,
+                None,
+                StatusCode::OK,
+                None
+            ),
+            Some(links),
+            None,
+            PageType::Unknown
         )
     }
 }

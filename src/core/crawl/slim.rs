@@ -136,7 +136,8 @@ mod test {
                 1,
                 2
             ),
-        123
+        123,
+            false
         ));
 
         let x = bincode::serialize(&ptr).unwrap();

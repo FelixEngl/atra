@@ -13,3 +13,4 @@
 //limitations under the License.
 
 mod text_preprocessor;
+mod tf_idf;

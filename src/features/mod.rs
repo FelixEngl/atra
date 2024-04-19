@@ -17,5 +17,3 @@ pub mod gdpr;
 
 #[cfg(feature = "text_processing")]
 pub mod text_processing;
-#[cfg(feature = "text_processing")]
-pub mod stopwords;
