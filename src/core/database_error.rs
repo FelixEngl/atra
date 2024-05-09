@@ -13,7 +13,7 @@
 //limitations under the License.
 
 use std::fmt::{Debug, Display, Formatter};
-use data_encoding::BASE64;
+use data_encoding::{BASE64, DecodeError};
 use rocksdb::{Error, ErrorKind};
 use thiserror::Error;
 use crate::core::io::fs::FSAError;
@@ -99,7 +99,9 @@ pub enum DatabaseError {
     #[error(transparent)]
     WarcWriterError(#[from] WarcWriterError),
     #[error(transparent)]
-    WarcHeaderValueError(#[from] WarcHeaderValueError)
+    WarcHeaderValueError(#[from] WarcHeaderValueError),
+    #[error(transparent)]
+    Base64DecodeError(#[from] DecodeError)
 }
 
 

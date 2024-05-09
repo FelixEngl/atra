@@ -14,6 +14,8 @@
 
 pub mod writer;
 
+use std::borrow::Cow;
+use data_encoding::BASE64;
 use uuid::Uuid;
 use itertools::{Itertools, Position};
 use reqwest::header::{CONTENT_TYPE};
@@ -32,11 +34,8 @@ use crate::warc::record_type::WarcRecordType;
 use crate::warc::truncated_reason::TruncatedReason;
 
 pub use self::writer::SpecialWarcWriter;
-
-
-
-
-
+#[cfg(test)]
+pub use self::writer::MockSpecialWarcWriter;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub enum WarcSkipInstruction {
@@ -45,28 +44,33 @@ pub enum WarcSkipInstruction {
         pointer: WarcSkipPointerWithOffsets,
         /// The number of octets in the body for the header signature
         header_signature_octet_count: u32,
-
+        /// Base64 marker
+        is_base64: bool
     },
     Multiple {
         /// All skip pointers, sorted in continuation order
         pointers: Vec<WarcSkipPointerWithOffsets>,
         /// The number of octets in the first pointer
         header_signature_octet_count: u32,
+        /// Base64 marker
+        is_base64: bool
     }
 }
 
 impl WarcSkipInstruction {
-    pub fn new_single(pointer: WarcSkipPointerWithOffsets, header_signature_octet_count: u32) -> Self {
+    pub fn new_single(pointer: WarcSkipPointerWithOffsets, header_signature_octet_count: u32, is_base64: bool) -> Self {
         Self::Single {
             pointer,
-            header_signature_octet_count
+            header_signature_octet_count,
+            is_base64
         }
     }
 
-    pub fn new_multi(pointers: Vec<WarcSkipPointerWithOffsets>, header_signature_octet_count: u32) -> Self {
+    pub fn new_multi(pointers: Vec<WarcSkipPointerWithOffsets>, header_signature_octet_count: u32, is_base64: bool) -> Self {
         Self::Multiple {
             pointers,
-            header_signature_octet_count
+            header_signature_octet_count,
+            is_base64
         }
     }
 }
@@ -171,6 +175,8 @@ pub fn write_warc<W: SpecialWarcWriter>(content: &CrawlResult, worker_warc_write
         }
     });
 
+
+
     log_consume!(builder.content_type(found));
 
     let header = pack_header(&content);
@@ -192,7 +198,8 @@ pub fn write_warc<W: SpecialWarcWriter>(content: &CrawlResult, worker_warc_write
                     warc_header_offset as u32,
                     header_signature_octet_count as u64
                 ),
-                header_signature_octet_count as u32
+                header_signature_octet_count as u32,
+                false
             ))
         }
         VecDataHolder::None => {
@@ -208,7 +215,8 @@ pub fn write_warc<W: SpecialWarcWriter>(content: &CrawlResult, worker_warc_write
                     warc_header_offset as u32,
                     header_signature_octet_count as u64
                 ),
-                header_signature_octet_count as u32
+                header_signature_octet_count as u32,
+                false
             ))
         }
 
@@ -226,7 +234,8 @@ pub fn write_warc<W: SpecialWarcWriter>(content: &CrawlResult, worker_warc_write
                         warc_header_offset as u32,
                         header_signature_octet_count as u64
                     ),
-                    header_signature_octet_count as u32
+                    header_signature_octet_count as u32,
+                    false
                 ))
             } else {
                 //todo: Base64
@@ -238,6 +247,13 @@ pub fn write_warc<W: SpecialWarcWriter>(content: &CrawlResult, worker_warc_write
 
     let mut body = header;
 
+    let (data, is_base64) = match content.page_type {
+        PageType::Unknown => {
+            log_consume!(builder.atra_is_base64(true));
+            (Cow::Owned(BASE64.encode(data.as_slice()).into_bytes()), true)
+        }
+        _ => (Cow::Borrowed(data.as_slice()), false)
+    };
 
     body.extend_from_slice(&data);
     let digest = labeled_xxh128_digest(&body);
@@ -271,6 +287,7 @@ pub fn write_warc<W: SpecialWarcWriter>(content: &CrawlResult, worker_warc_write
                     log_consume!(sub_builder.segment_total_length(body.len() as u64));
                 }
             }
+
             log_consume!(sub_builder.block_digest_bytes(labeled_xxh128_digest(value)));
             log_consume!(sub_builder.segment_number((idx + 1) as u64));
             log_consume!(sub_builder.segment_origin_id_string(first_id.clone()));
@@ -278,7 +295,7 @@ pub fn write_warc<W: SpecialWarcWriter>(content: &CrawlResult, worker_warc_write
             log_consume!(sub_builder.content_length(content_length));
             let skip_pointer = worker_warc_writer.get_skip_pointer()?;
             let warc_header_offset = worker_warc_writer.write_header(sub_builder)?;
-            worker_warc_writer.write_body_complete(value)?;
+            worker_warc_writer.write_body_complete(&value)?;
             skip_pointers.push(
                 WarcSkipPointerWithOffsets::new(
                     skip_pointer,
@@ -288,7 +305,7 @@ pub fn write_warc<W: SpecialWarcWriter>(content: &CrawlResult, worker_warc_write
             );
             let _ = worker_warc_writer.forward_if_filesize(1.gigabytes().as_u64() as usize);
         }
-        Ok(WarcSkipInstruction::new_multi(skip_pointers, header_signature_octet_count as u32))
+        Ok(WarcSkipInstruction::new_multi(skip_pointers, header_signature_octet_count as u32, is_base64))
     } else {
         log::trace!("Warc normal mode!");
         log_consume!(builder.header_length(header_signature_octet_count as u64));
@@ -305,9 +322,144 @@ pub fn write_warc<W: SpecialWarcWriter>(content: &CrawlResult, worker_warc_write
                 warc_header_offset as u32,
                 body.len() as u64
             ),
-            header_signature_octet_count as u32
+            header_signature_octet_count as u32,
+            is_base64
         ))
     }
 }
 
 
+#[cfg(test)]
+mod test {
+    use camino::Utf8PathBuf;
+    use reqwest::StatusCode;
+    use time::OffsetDateTime;
+    use encoding_rs;
+    use crate::core::crawl::result::CrawlResult;
+    use crate::core::fetching::FetchedRequestData;
+    use crate::core::response::ResponseData;
+    use crate::core::{UrlWithDepth, VecDataHolder};
+    use crate::core::io::paths::DataFilePathBuf;
+    use crate::core::page_type::PageType;
+    use crate::core::warc::{MockSpecialWarcWriter, write_warc};
+    use crate::core::warc::writer::WarcSkipPointer;
+
+    #[test]
+    fn can_write_html(){
+        const HTML_DATA: &str = "<html><body>Hello World!</body></html>";
+        let result = CrawlResult::new(
+            OffsetDateTime::now_utc(),
+            ResponseData::new(
+                FetchedRequestData::new(
+                    VecDataHolder::from_vec(HTML_DATA.as_bytes().to_vec()),
+                    None,
+                    StatusCode::OK,
+                    None,
+                    None,
+                    false
+                ),
+                UrlWithDepth::from_seed("https://www.google.de/0").unwrap(),
+            ),
+            None,
+            Some(encoding_rs::UTF_8),
+            PageType::HTML
+        );
+
+        let mut special = MockSpecialWarcWriter::new();
+
+        special.expect_get_skip_pointer().returning(|| {
+            Ok(
+                WarcSkipPointer::new(
+                    DataFilePathBuf::new(Utf8PathBuf::new()),
+                    0
+                )
+            )
+        });
+
+        special.expect_write_header().return_once(
+            |value| {
+                let value = value.to_string();
+                println!("Header:\n{value}");
+                Ok(value.len())
+            }
+        );
+
+        special.expect_write_body_complete().return_once(
+            |value| {
+                println!(
+                    "Body:\n{}",
+                    String::from_utf8_lossy(value)
+                );
+                Ok(value.len())
+            }
+        );
+
+        special.expect_forward_if_filesize().returning(|_| Ok(None));
+
+
+        let instruction = write_warc(&result, &mut special).expect("Should work!");
+
+        println!("{instruction:?}")
+    }
+
+
+
+
+
+    #[test]
+    fn can_write_base64(){
+        const HTML_DATA: &str = "<html><body>Hello World! WARBLGARBL</body></html>";
+        let result = CrawlResult::new(
+            OffsetDateTime::now_utc(),
+            ResponseData::new(
+                FetchedRequestData::new(
+                    VecDataHolder::from_vec(HTML_DATA.as_bytes().to_vec()),
+                    None,
+                    StatusCode::OK,
+                    None,
+                    None,
+                    false
+                ),
+                UrlWithDepth::from_seed("https://www.google.de/0").unwrap(),
+            ),
+            None,
+            Some(encoding_rs::UTF_8),
+            PageType::Unknown
+        );
+
+        let mut special = MockSpecialWarcWriter::new();
+
+        special.expect_get_skip_pointer().returning(|| {
+            Ok(
+                WarcSkipPointer::new(
+                    DataFilePathBuf::new(Utf8PathBuf::new()),
+                    0
+                )
+            )
+        });
+
+        special.expect_write_header().return_once(
+            |value| {
+                let value = value.to_string();
+                println!("Header:\n{value}");
+                Ok(value.len())
+            }
+        );
+
+        special.expect_write_body_complete().return_once(
+            |value| {
+                println!(
+                    "Body:\n{}",
+                    String::from_utf8_lossy(value)
+                );
+                Ok(value.len())
+            }
+        );
+
+        special.expect_forward_if_filesize().returning(|_| Ok(None));
+
+        let instruction = write_warc(&result, &mut special).expect("Should work!");
+
+        println!("{instruction:?}")
+    }
+}

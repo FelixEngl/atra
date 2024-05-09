@@ -19,6 +19,8 @@ use crate::core::io::fs::FSAError;
 use crate::core::io::paths::DataFilePathBuf;
 use crate::warc::header::{WarcHeader};
 use crate::warc::writer::WarcWriterError;
+#[cfg(test)]
+use mockall::{automock};
 
 /// A pointer to the start of an entry in a warc [file]
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
@@ -86,6 +88,7 @@ impl WarcSkipPointerWithOffsets {
 }
 
 /// A writer for WARC files
+#[cfg_attr(test, automock)]
 pub trait SpecialWarcWriter {
     /// Returns the pointer, may fail is some kind of error occurs.
     fn get_skip_pointer(&self) -> Result<WarcSkipPointer, WarcWriterError>;
@@ -107,7 +110,8 @@ pub trait SpecialWarcWriter {
 
     /// Writes a body to the file
     /// Returns the number of bytes written. (including the tail)
-    fn write_body(&mut self, body: &mut impl Read) -> Result<usize, WarcWriterError>;
+    #[cfg_attr(test, mockall::concretize)]
+    fn write_body<R: Read>(&mut self, body: &mut R) -> Result<usize, WarcWriterError>;
 
     /// Writes an empty body to the file
     /// Returns the number of bytes written. (including the tail)
@@ -127,3 +131,5 @@ pub trait SpecialWarcWriter {
     /// Returns the path to the finalized file.
     fn forward(&mut self) -> Result<DataFilePathBuf, FSAError>;
 }
+
+
