@@ -13,8 +13,10 @@
 //limitations under the License.
 
 use std::num::NonZeroUsize;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
+use config::Config;
 use time::OffsetDateTime;
+use tokio::sync::Mutex;
 use tokio::task::JoinSet;
 use crate::core::config::Configs;
 use crate::core::contexts::{Context, LocalContext};
@@ -59,6 +61,8 @@ pub struct Atra {
     /// is safe to exit the server process.
     shutdown: GracefulShutdown,
 
+    /// The config of the
+    config: Arc<RwLock<Config>>
 }
 
 /// From tokio
@@ -95,11 +99,13 @@ impl Atra {
         shutdown: GracefulShutdown,
         handle: OptionalAtraHandle
     ) -> Self {
+
         Self {
             mode,
             _notify_shutdown: notify_shutdown,
             shutdown,
-            handle
+            handle,
+            config: todo!("Have to set that!")
         }
     }
 

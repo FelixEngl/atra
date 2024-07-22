@@ -13,6 +13,7 @@
 //limitations under the License.
 
 use std::ops::Deref;
+use bincode::Options;
 use thiserror::Error;
 use tokio::runtime::{Handle, Runtime, TryCurrentError};
 
@@ -78,11 +79,11 @@ impl AtraHandle {
     }
 
     pub fn some(general: Handle, io: Option<Handle>) -> OptionalAtraHandle {
-        OptionalAtraHandle::Some(Self::new(general, io))
+        Some(Self::new(general, io))
     }
 
     pub fn none() -> OptionalAtraHandle {
-        OptionalAtraHandle::None
+        None
     }
 
 
@@ -105,7 +106,7 @@ impl AtraHandle {
     }
 
     pub fn as_optional(&self) -> OptionalAtraHandle {
-        OptionalAtraHandle::Some(self.clone())
+        Some(self.clone())
     }
 }
 
@@ -118,51 +119,57 @@ impl Deref for AtraHandle {
 }
 
 /// An optional Atra handle
-#[derive(Debug, Clone)]
-pub enum OptionalAtraHandle {
-    Some(AtraHandle),
-    None
-}
+pub type OptionalAtraHandle = Option<AtraHandle>;
 
-impl OptionalAtraHandle {
+pub trait AtraHandleOption {
     /// Panics if None and not called in an async runtime.
     /// See [Handle::current] for more information.
-    pub fn io_or_main_or_current(&self) -> Handle {
+    fn io_or_main_or_current(&self) -> Handle;
+
+    /// Returns [TryCurrentError] if None and not called in an async runtime.
+    /// See [Handle::try_current] for more information.
+    fn try_io_or_main_or_current(&self) -> Result<Handle, TryCurrentError>;
+
+    fn try_io(&self) -> Result<Handle, OptionalAtraHandleError>;
+
+    fn try_main(&self) -> Result<Handle, OptionalAtraHandleError>;
+}
+
+impl AtraHandleOption for OptionalAtraHandle {
+    fn io_or_main_or_current(&self) -> Handle {
         match self {
-            Self::None => {Handle::current()}
-            Self::Some(handle) => {
+            None => {Handle::current()}
+            Some(handle) => {
                 handle.io_or_main().clone()
             }
         }
     }
 
-    /// Returns [TryCurrentError] if None and not called in an async runtime.
-    /// See [Handle::try_current] for more information.
-    pub fn try_io_or_main_or_current(&self) -> Result<Handle, TryCurrentError>{
+    fn try_io_or_main_or_current(&self) -> Result<Handle, TryCurrentError>{
         match self {
-            Self::None => {Handle::try_current()}
-            Self::Some(handle) => {
+            None => {Handle::try_current()}
+            Some(handle) => {
                 Ok(handle.io_or_main().clone())
             }
         }
     }
 
-    pub fn try_io(&self) -> Result<Handle, TryIOError> {
+    fn try_io(&self) -> Result<Handle, OptionalAtraHandleError> {
         match self {
-            Self::None => {Err(TryIOError)}
-            Self::Some(handle) => {
+            None => {Err(OptionalAtraHandleError::IONotFound)}
+            Some(handle) => {
                 match handle.io {
-                    None => {Err(TryIOError)}
+                    None => {Err(OptionalAtraHandleError::IONotFound)}
                     Some(ref handle) => {Ok(handle.clone())}
                 }
             }
         }
     }
 
-    pub fn try_main(&self) -> Result<Handle, TryMainError> {
+    fn try_main(&self) -> Result<Handle, OptionalAtraHandleError> {
         match self {
-            Self::None => {Err(TryMainError)}
-            Self::Some(handle) => {
+            None => {Err(OptionalAtraHandleError::MainNotFound)}
+            Some(handle) => {
                 Ok(handle.main.clone())
             }
         }
@@ -170,9 +177,12 @@ impl OptionalAtraHandle {
 }
 
 #[derive(Debug, Copy, Clone, Error)]
-#[error("No io handle found")]
-pub struct TryIOError;
+pub enum OptionalAtraHandleError {
+    #[error("No io handle found")]
+    IONotFound,
+    #[error("No main handle found")]
+    MainNotFound
+}
 
-#[derive(Debug, Copy, Clone, Error)]
-#[error("No main handle found")]
-pub struct TryMainError;
+
+

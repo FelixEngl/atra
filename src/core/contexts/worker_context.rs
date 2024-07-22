@@ -413,7 +413,7 @@ impl SpecialWarcWriter for RawWorkerWarcWriter {
             WarcWriter::new(BufWriter::new(file)),
             DataFilePathBuf::new(path)
         );
-        old_writer.flush().map_err(|value| FSAError::IOError(path.as_path().to_string(), value))?;
+        old_writer.flush().map_err(|value| FSAError(path.as_path().to_string(), value))?;
         Ok(path)
     }
 }

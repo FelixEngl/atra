@@ -32,12 +32,8 @@ use crate::warc::reader::WarcCursor;
 
 /// The errors when working with the FileSystemAccess
 #[derive(Debug, Error)]
-pub enum FSAError {
-    #[error("IOError at {0:?}\n{1}")]
-    IOError(String, #[source] io::Error),
-    // #[error("The path {0:?} already exists but it was expected to be fresh!")]
-    // AlreadyExits(String),
-}
+#[error("IOError at {0:?}\n{1}")]
+pub struct FSAError(pub String, #[source] pub io::Error);
 
 /// Helper trait to convert Result-enums to Result-enums with FSAError
 pub trait ToFSAError<T> {
@@ -48,7 +44,7 @@ pub trait ToFSAError<T> {
 impl<T> ToFSAError<T> for Result<T, io::Error> {
     #[inline]
     fn to_fsa_error<F: FnOnce() -> String>(self, path_provider: F) -> Result<T, FSAError> {
-        self.map_err(|err| FSAError::IOError(path_provider(), err))
+        self.map_err(|err| FSAError(path_provider(), err))
     }
 }
 

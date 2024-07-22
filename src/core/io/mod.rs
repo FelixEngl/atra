@@ -15,5 +15,7 @@
 pub mod fs;
 pub mod paths;
 pub mod simple_line;
+pub mod unique_path_provider;
+pub mod templating;
 
 pub use paths::{AtraPathBuf};

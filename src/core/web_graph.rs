@@ -26,6 +26,7 @@ use tokio::sync::mpsc::{Sender};
 use tokio::sync::mpsc::error::{SendError};
 use ubyte::ByteUnit;
 use crate::core::crawl::seed::CrawlSeed;
+use crate::core::runtime::AtraHandleOption;
 use crate::core::UrlWithDepth;
 use crate::util::RuntimeContext;
 
