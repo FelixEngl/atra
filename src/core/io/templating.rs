@@ -2,7 +2,7 @@ use std::fmt::{Display, Formatter, Write};
 use std::marker::PhantomData;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-use itertools::{Itertools, Position};
+use itertools::{Itertools};
 use thiserror::Error;
 use time::format_description::{OwnedFormatItem, parse_owned};
 use time::OffsetDateTime;
@@ -99,11 +99,13 @@ impl FileNameTemplate {
         Self{ parts }
     }
 
-    pub fn write(&self, f: &mut dyn Write, serial_provider: &impl SerialProvider) -> Result<(), TemplateError> {
+    /// Writes the template element to `f`. Returns true if some kind of content was written.
+    pub fn write(&self, f: &mut dyn Write, serial_provider: &impl SerialProvider) -> Result<bool, TemplateError> {
+        let mut wrote_something = false;
         for value in self.parts.iter() {
-            value.write(f, serial_provider)?;
+            wrote_something |= value.write(f, serial_provider)?;
         }
-        Ok(())
+        Ok(wrote_something)
     }
 
     pub fn with_serial_provider<'a, 'b, S: SerialProvider>(&'a self, serial_provider: &'b S) -> FileNameTemplateWithSerialProvider<'a, 'b, S> {
@@ -129,6 +131,7 @@ impl From<Vec<FileNameTemplateElement>> for FileNameTemplate {
         Self::new(Arc::new(value))
     }
 }
+
 
 
 
@@ -185,7 +188,6 @@ impl SerialProvider for DefaultSerialProvider {
     fn provide_serial(&self) -> Option<Self::Serial> {
         Some(self.get_next_serial())
     }
-
 }
 
 
@@ -212,7 +214,8 @@ impl FileNameTemplateElement {
         Ok(Self::FormattedTimestamp(parse_owned::<2>(format.as_ref())?))
     }
 
-    pub fn write(&self, f: &mut dyn Write, serial_provider: &impl SerialProvider) -> Result<(), TemplateError> {
+    /// Writes the template element to `f`. Returns true if some kind of content was written.
+    pub fn write(&self, f: &mut dyn Write, serial_provider: &impl SerialProvider) -> Result<bool, TemplateError> {
         match self {
             FileNameTemplateElement::Static(value) => {
                 write!(f, "{}", value)?
@@ -230,13 +233,15 @@ impl FileNameTemplateElement {
             FileNameTemplateElement::Serial => {
                 if let Some(serial) = serial_provider.provide_serial() {
                     write!(f, "{serial}")?
+                } else {
+                    return Ok(false)
                 }
             }
             FileNameTemplateElement::FileNameTemplate(template) => {
-                template.write(f, serial_provider)?
+                return template.write(f, serial_provider)
             }
         }
-        Ok(())
+        Ok(true)
     }
 }
 

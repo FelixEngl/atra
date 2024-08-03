@@ -347,7 +347,7 @@ impl RobotsManager for OffMemoryRobotsManager {
     /// Returns None if there is no robots.txt in any cache level.
     async fn get(&self, agent: &str, url: &UrlWithDepth, max_age: Option<&Duration>) -> Result<Option<Arc<CachedRobots>>, RobotsError> {
         let now = OffsetDateTime::now_utc();
-        let key = CaseInsensitiveString::new(url.url.domain().ok_or(RobotsError::NoDomainForUrl)?);
+        let key = CaseInsensitiveString::new(url.url().domain().ok_or(RobotsError::NoDomainForUrl)?);
         let found = self._get_cached(&key, now.clone(), max_age.clone()).await;
         if found.is_some() {
             return Ok(found)
@@ -364,7 +364,7 @@ impl RobotsManager for OffMemoryRobotsManager {
     /// If nothing is in any cache it downloads the robots.txt with the client.
     async fn get_or_retrieve(&self, client: &Client, agent: &str, url: &UrlWithDepth, max_age: Option<&Duration>) -> Result<Arc<CachedRobots>, RobotsError> {
         let now = OffsetDateTime::now_utc();
-        let key = CaseInsensitiveString::new(url.url.domain().ok_or(RobotsError::NoDomainForUrl)?);
+        let key = CaseInsensitiveString::new(url.url().domain().ok_or(RobotsError::NoDomainForUrl)?);
         match self._get_cached(&key, now.clone(), max_age).await {
             Some(found) => {
                 return Ok(found)

@@ -13,12 +13,12 @@
 //limitations under the License.
 
 use std::slice::Iter;
+use std::str::FromStr;
 use encoding_rs::Encoding;
 use file_format::FileFormat;
 use scraper::Html;
 use crate::core::mime::{DocumentType, EncodingSupplier, IS_HTML, MimeType, TypedMime};
 use crate::static_selectors;
-use url::Url;
 use reqwest::header::HeaderMap;
 use reqwest::StatusCode;
 use smallvec::SmallVec;
@@ -27,7 +27,7 @@ use crate::core::{UrlWithDepth, VecDataHolder};
 use crate::core::fetching::{FetchedRequestData};
 use crate::core::file_format_inference::infer_by_content;
 use crate::core::page_type::PageType;
-
+use crate::core::url::atra_uri::AtraUri;
 
 /// The response for a request
 #[derive(Debug)]
@@ -102,16 +102,16 @@ impl ResponseData {
     }
 
     /// Returns the parsed url
-    pub fn get_url_parsed(&self) -> &Url {
-        return &self.url.url
+    pub fn get_url_parsed(&self) -> &AtraUri {
+        return &self.url.url()
     }
 
     /// Returns the url used after resolving all redirects
-    #[allow(dead_code)] pub fn get_url_final(&self) -> Url {
+    pub fn get_url_final(&self) -> AtraUri {
         if let Some(ref found) = self.final_redirect_destination {
-            Url::parse(found.as_str()).unwrap_or_else(|_| self.url.url.clone())
+            AtraUri::from_str(found.as_str()).unwrap_or_else(|_| self.url.url.clone())
         } else {
-            self.url.url.clone()
+            self.url.url().clone()
         }
     }
 }

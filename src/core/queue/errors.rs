@@ -13,6 +13,7 @@
 //limitations under the License.
 
 use thiserror::Error;
+use crate::core::url::atra_uri::ParseError;
 
 /// Error of an url queue file
 #[derive(Debug, Error)]
@@ -22,5 +23,5 @@ pub enum QueueError {
     #[error(transparent)]
     EncodingError(#[from] bincode::Error),
     #[error(transparent)]
-    UrlError(#[from] url::ParseError),
+    UrlError(#[from] ParseError),
 }

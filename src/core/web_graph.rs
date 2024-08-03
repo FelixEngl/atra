@@ -45,14 +45,14 @@ pub enum WebGraphEntry {
 impl WebGraphEntry {
     pub fn create_link(from: &UrlWithDepth, to: &UrlWithDepth) -> Self {
         Self::Link {
-            from: from.url.to_string(),
-            to: to.url.to_string()
+            from: from.url().to_string(),
+            to: to.url().to_string()
         }
     }
 
     pub fn create_seed(seed: &impl CrawlSeed) -> Self {
         Self::Seed {
-            seed: seed.url().url.to_string(),
+            seed: seed.url().url().to_string(),
             domain: seed.domain().clone()
         }
     }

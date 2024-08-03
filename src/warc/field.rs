@@ -30,7 +30,7 @@ use time::error::Format;
 use time::format_description::well_known::Iso8601;
 use time::OffsetDateTime;
 use ubyte::ByteUnit;
-
+use crate::core::url::atra_uri::AtraUri;
 use crate::core::UrlWithDepth;
 use crate::warc::media_type::{MediaType, parse_media_type};
 use crate::warc::record_type::WarcRecordType;
@@ -480,6 +480,12 @@ impl Deref for UriLikeFieldValue {
 impl<T: IntoUrl> From<T> for UriLikeFieldValue {
     fn from(value: T) -> Self {
         UriLikeFieldValue::from_string(value.as_str().to_string()).expect("This does never fail!")
+    }
+}
+
+impl From<AtraUri> for UriLikeFieldValue {
+    fn from(value: AtraUri) -> Self {
+        UriLikeFieldValue::from_string(value.to_string()).expect("This does never fail!")
     }
 }
 

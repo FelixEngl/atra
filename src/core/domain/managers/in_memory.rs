@@ -67,7 +67,7 @@ impl DomainManager for InMemoryDomainManager {
             }
             let reserved_at = SystemTime::now();
             found.last_modification = Some(reserved_at.clone());
-            found.depth = found.depth.merge_to_lowes(&url.depth);
+            found.depth = found.depth.merge_to_lowes(url.depth());
             found.is_in_use = true;
 
             return Ok(
@@ -84,7 +84,7 @@ impl DomainManager for InMemoryDomainManager {
         let domain_entry = DomainEntry {
             is_in_use: true,
             last_modification: None,
-            depth: url.depth
+            depth: url.depth().clone()
         };
         holder.insert(
             domain.clone(),
@@ -109,7 +109,7 @@ impl DomainManager for InMemoryDomainManager {
                 match holder.get(value) {
                     None => {true}
                     Some(value) => {
-                        url.depth < value.depth
+                        url.depth() < &value.depth
                     }
                 }
             }

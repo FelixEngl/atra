@@ -140,7 +140,7 @@ impl LinkStateType {
             self.clone(),
             Self::Unset,
             OffsetDateTime::now_utc(),
-            url.depth,
+            url.depth().clone(),
             payload
         )
     }

@@ -20,7 +20,6 @@ use itertools::Itertools;
 use time::{Duration, OffsetDateTime};
 use tokio::sync::{Mutex};
 use tokio::sync::broadcast::Receiver;
-use url::Url;
 use crate::core::blacklist::PolyBlackList;
 use crate::core::config::Configs;
 use crate::core::contexts::{Context, LinkHandlingError, RecoveryCommand, RecoveryError, SlimCrawlTaskContext};
@@ -37,7 +36,7 @@ use crate::core::queue::QueueError;
 use crate::core::robots::{InMemoryRobotsManager, ShareableRobotsManager};
 use crate::core::url::queue::{EnqueueCalled, UrlQueue, UrlQueueElement, UrlQueueElementWeak};
 use crate::core::{UrlWithDepth, VecDataHolder};
-
+use crate::core::url::atra_uri::AtraUri;
 
 #[derive(Debug)]
 pub struct InMemoryContext {
@@ -45,8 +44,8 @@ pub struct InMemoryContext {
     ct_found_websites: AtomicUsize,
     robots_manager: ShareableRobotsManager,
     blacklist: PolyBlackList,
-    crawled_websites: tokio::sync::RwLock<HashMap<Url, SlimCrawlResult>>,
-    state: tokio::sync::RwLock<HashMap<Url, LinkState>>,
+    crawled_websites: tokio::sync::RwLock<HashMap<AtraUri, SlimCrawlResult>>,
+    state: tokio::sync::RwLock<HashMap<AtraUri, LinkState>>,
     data_urls: Mutex<Vec<(UrlWithDepth, UrlWithDepth)>>,
     configs: Configs,
     domain_manager: InMemoryDomainManager,
@@ -82,7 +81,7 @@ impl InMemoryContext {
         }
     }
 
-    pub fn get_all_crawled_websites(self) -> (HashMap<Url, CrawlResult>, HashMap<Url, LinkState>) {
+    pub fn get_all_crawled_websites(self) -> (HashMap<AtraUri, CrawlResult>, HashMap<AtraUri, LinkState>) {
         let data = self.crawled_websites.into_inner().into_iter().map(|value| (value.0, value.1.inflate(None))).collect();
         let found = self.state.into_inner();
         (data, found)
@@ -153,7 +152,7 @@ impl super::Context for InMemoryContext {
 
     async fn retrieve_slim_crawled_website(&self, url: &UrlWithDepth) -> Result<Option<SlimCrawlResult>, DatabaseError> {
         let crawled = self.crawled_websites.read().await;
-        if let Some(found) = crawled.get(&url.url) {
+        if let Some(found) = crawled.get(url.url()) {
             Ok(Some(found.clone()))
         } else {
             Ok(None)
@@ -204,27 +203,29 @@ impl super::Context for InMemoryContext {
 
     async fn update_link_state(&self, url: &UrlWithDepth, state: LinkStateType) -> Result<(), LinkStateDBError> {
         let mut lock = self.state.write().await;
-        if let Some(target) = lock.get_mut(&url.url) {
+        let raw_url = url.url();
+        if let Some(target) = lock.get_mut(raw_url) {
             target.update_in_place(state.into_update(url, None));
         } else {
-            lock.insert(url.url.clone(), state.into_update(url, None));
+            lock.insert(raw_url.clone(), state.into_update(url, None));
         }
         Ok(())
     }
 
     async fn update_link_state_with_payload(&self, url: &UrlWithDepth, state: LinkStateType, payload: Vec<u8>) -> Result<(), LinkStateDBError> {
         let mut lock = self.state.write().await;
-        if let Some(target) = lock.get_mut(&url.url) {
+        let raw_url = url.url();
+        if let Some(target) = lock.get_mut(raw_url) {
             target.update_in_place(state.into_update(url, Some(payload)));
         } else {
-            lock.insert(url.url.clone(), state.into_update(url, Some(payload)));
+            lock.insert(raw_url.clone(), state.into_update(url, Some(payload)));
         }
         Ok(())
     }
 
     async fn get_link_state(&self, url: &UrlWithDepth) -> Result<Option<LinkState>, LinkStateDBError> {
         let lock = self.state.read().await;
-        Ok(lock.get(&url.url).map(|value| value.clone()))
+        Ok(lock.get(url.url()).map(|value| value.clone()))
     }
 
     async fn check_if_there_are_any_crawlable_links(&self, max_age: Duration) -> bool {
@@ -243,7 +244,7 @@ impl super::SlimCrawlTaskContext for InMemoryContext {
     async fn store_slim_crawled_website(&self, result: SlimCrawlResult) -> Result<(), DatabaseError> {
         self.ct_crawled_websites.fetch_add(1, Ordering::Relaxed);
         let mut crawled = self.crawled_websites.write().await;
-        crawled.insert(result.url.url.clone(), result);
+        crawled.insert(result.url.url().clone(), result);
         Ok(())
     }
 }

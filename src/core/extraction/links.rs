@@ -16,6 +16,7 @@ use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use serde::{Deserialize, Serialize};
 use crate::core::extraction::marker::ExtractorMethodHint;
+use crate::core::url::atra_uri::ParseError;
 use crate::core::UrlWithDepth;
 
 /// An extracted link, this is either a new URL or the base URL with some
@@ -124,7 +125,7 @@ impl PartialEq<Self> for ExtractedLink {
 
 impl ExtractedLink {
     /// Packs the extracted [url] and applies [base] if necessary.
-    pub fn pack(base:  &UrlWithDepth, url: &str, extraction_method: ExtractorMethodHint) -> Result<Self, url::ParseError> {
+    pub fn pack(base:  &UrlWithDepth, url: &str, extraction_method: ExtractorMethodHint) -> Result<Self, ParseError> {
         if url.starts_with("data:") {
             let url = UrlWithDepth::new_like_with_base(base, url)?;
             Ok(ExtractedLink::Data {
@@ -134,7 +135,7 @@ impl ExtractedLink {
             })
         } else {
             let next = UrlWithDepth::with_base(base, url)?;
-            if base.depth.distance_to_seed != next.depth.distance_to_seed {
+            if base.depth().distance_to_seed != next.depth().distance_to_seed {
                 Ok(Self::Outgoing {
                     url: next,
                     extraction_method

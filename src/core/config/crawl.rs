@@ -306,16 +306,17 @@ impl BudgetSettings {
         &self,
         url: &UrlWithDepth
     ) -> bool {
+        let url_depth = url.depth();
         match self {
             BudgetSettings::SeedOnly { depth_on_website: depth, .. } => {
-                url.depth.distance_to_seed == 0 && (0.eq(depth)  || url.depth.depth_on_website.le(depth))
+                url_depth.distance_to_seed == 0 && (0.eq(depth)  || url_depth.depth_on_website.le(depth))
             }
             BudgetSettings::Normal { depth_on_website: depth, depth: depth_distance, .. } => {
-                (0.eq(depth)  || url.depth.depth_on_website.le(depth))
-                    && url.depth.distance_to_seed.le(depth_distance)
+                (0.eq(depth)  || url_depth.depth_on_website.le(depth))
+                    && url_depth.distance_to_seed.le(depth_distance)
             }
             BudgetSettings::Absolute { depth, .. } => {
-                0.eq(depth) || url.depth.total_distance_to_seed.le(depth)
+                0.eq(depth) || url_depth.total_distance_to_seed.le(depth)
             }
         }
     }

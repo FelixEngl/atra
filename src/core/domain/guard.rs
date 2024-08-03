@@ -80,7 +80,7 @@ impl<'a, T: DomainManager> DomainGuard<'a, T> {
 
     /// Returns true if the url has some kind of potential to add additional value to the crawl.
     pub fn has_additional_value(&self, url: &UrlWithDepth) -> bool {
-        url.depth < self.domain_entry.depth
+        url.depth() < &self.domain_entry.depth
     }
 }
 

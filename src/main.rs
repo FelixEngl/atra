@@ -13,7 +13,6 @@
 //limitations under the License.
 
 use clap::Parser;
-use once_cell::sync::Lazy;
 use crate::application::{Atra, ApplicationMode};
 use crate::args::{consume_args, AtraArgs, ConsumedArgs};
 use crate::core::config::Configs;

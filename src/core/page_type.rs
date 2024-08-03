@@ -33,8 +33,12 @@ pub enum PageType {
 
 impl PageType {
     fn check_file_ending<const N: usize>(page: &ResponseData, endings: [&'static str; N]) -> bool {
-        let scheme = page.url.url.path().to_lowercase();
-        endings.into_iter().any(|it| scheme.ends_with(it))
+        if let Some(scheme) = page.url.url().path() {
+            let scheme = scheme.to_lowercase();
+            endings.into_iter().any(|it| scheme.ends_with(it))
+        } else {
+            false
+        }
     }
 
     fn check_all<const N1: usize, const N2: usize>(

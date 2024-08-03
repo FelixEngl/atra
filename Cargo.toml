@@ -102,6 +102,7 @@ byteorder = "1"
 
 # Macros
 paste = "1"
+sealed = "0"
 
 # Logging
 log = { version = "0.4", features = ["serde"] }

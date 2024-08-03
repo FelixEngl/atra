@@ -216,13 +216,8 @@ impl<'a> WebsiteCrawlerBuilder<'a> {
                             domain_name(attempt.url()).unwrap_or_default();
 
                         if tld && attempt_url == host_domain_name
-                            || subdomains
-                            && attempt
-                            .url()
-                            .host_str()
-                            .unwrap_or_default()
-                            .ends_with(host_s.as_ref())
-                            || attempt.url().host() == to_mode.url.host()
+                            || subdomains && attempt.url().host_str().unwrap_or_default().ends_with(host_s.as_ref())
+                            || to_mode.url().same_host_url(&attempt.url())
                         {
                             default_policy.redirect(attempt)
                         } else if attempt.previous().len() > redirect_limit {
@@ -285,7 +280,9 @@ impl<'a> WebsiteCrawlerBuilder<'a> {
         client = if let Some(cookies) = &self.configuration.cookies {
             if let Some(cookie) = cookies.get_cookies_for(seed.domain()) {
                 let cookie_store = reqwest::cookie::Jar::default();
-                cookie_store.add_cookie_str(cookie.as_str(), &url.clean_url());
+                if let Some(url) = url.clean_url().as_url() {
+                    cookie_store.add_cookie_str(cookie.as_str(), url);
+                }
                 client.cookie_provider(cookie_store.into())
             } else {
                 client.cookie_store(self.configuration.use_cookies)
