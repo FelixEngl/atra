@@ -18,7 +18,7 @@ pub enum AtraUri {
 
 
 
-#[derive(Debug, Copy, Clone, Error)]
+#[derive(Debug, Copy, Clone, Error, Eq, PartialEq)]
 pub enum HostComparisonError {
     /// Only for [AtraUri::Url], returned when there is no host.
     #[error("The left has {} and right has {}!", if(*(.left_has_host)) {"host"} else {"no host"}, if(*(.right_has_host)) {"host"} else {"no host"})]
@@ -181,7 +181,8 @@ impl Display for AtraUri {
 
 #[cfg(test)]
 mod test {
-    use crate::core::url::atra_uri::AtraUri;
+    use url::Url;
+    use crate::core::url::atra_uri::{AtraUri, HostComparisonError};
 
     #[test]
     fn spaces_do_not_matter() {
@@ -189,6 +190,50 @@ mod test {
         let b: AtraUri = "  https://www.example.com/  ".parse().expect("Expected a sucessfull parse!");
         assert_eq!(a, b);
         assert_eq!(a.as_str(), b.as_str());
+    }
+
+
+    fn old_impl(base: &Url, url: &Url) -> Result<bool, HostComparisonError> {
+        if let Some(host) = url.host_str() {
+            if let Some(base_host) = base.host_str() {
+                Ok(host.eq_ignore_ascii_case(base_host))
+            } else {
+                Err(
+                    HostComparisonError::NoHost {
+                        left_has_host: true,
+                        right_has_host: false
+                    }
+                )
+            }
+        } else {
+            Err(
+                HostComparisonError::NoHost {
+                    left_has_host: false,
+                    right_has_host: base.has_host()
+                }
+            )
+        }
+    }
+
+    #[test]
+    fn has_same_behaviour_than_old_impl(){
+        let base1 = "https://www.siemens.com/".parse::<Url>().expect("Success!");
+        let base2 = "https://127.0.0.1:8081/whaat".parse::<Url>().expect("Success!");
+        let base3 = "file://data/simpen.txt".parse::<Url>().expect("Success!");
+        let other1 = "https://www.siemens.com/lookup".parse::<Url>().expect("Success!");
+        let other2 = "https://www.google.com/lookup".parse::<Url>().expect("Success!");
+        let other3 = "https://127.0.0.1:8080/lookup".parse::<Url>().expect("Success!");
+        let other4 = "file://data/simpen.txt".parse::<Url>().expect("Success!");
+        let other5 = "file://data/readme.md".parse::<Url>().expect("Success!");
+        let bases = [base1, base2, base3];
+        let others = [other1, other2, other3, other4, other5];
+        for base in &bases{
+            for other in &others {
+                let old = old_impl(base, other);
+                let new =  AtraUri::from(other.clone()).compare_hosts(&base.clone().into());
+                assert_eq!(old, new, "Failed {old:?} {new:?} for base={base}, other={other}");
+            }
+        }
     }
 }
 
