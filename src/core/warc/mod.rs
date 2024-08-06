@@ -13,20 +13,28 @@
 //limitations under the License.
 
 pub mod writer;
+pub mod reader;
+pub mod skip_pointer;
 
 use std::borrow::Cow;
-use data_encoding::BASE64;
+use std::cmp::min;
+use std::fs::File;
+use std::io::{Error, Read, Seek, SeekFrom};
+use data_encoding::{BASE64, DecodeError};
 use uuid::Uuid;
 use itertools::{Itertools, Position};
 use reqwest::header::{CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
-use ubyte::ToByteUnit;
+use thiserror::Error;
+use ubyte::{ByteUnit, ToByteUnit};
 use crate::core::crawl::result::CrawlResult;
 use crate::core::{VecDataHolder};
 use crate::core::database_error::DatabaseError;
 use crate::core::digest::labeled_xxh128_digest;
+use crate::core::io::errors::{ErrorWithPath, ToErrorWithPath};
+use crate::core::io::file_owner::FileOwner;
 use crate::core::page_type::PageType;
-use crate::core::warc::writer::{WarcSkipPointerWithOffsets};
+use crate::core::warc::skip_pointer::{WarcSkipPointer, WarcSkipPointerWithPath};
 use crate::warc::media_type::{MediaType, parse_media_type};
 use crate::warc::header::{WarcHeader};
 use crate::warc::field::{UriLikeFieldValue};
@@ -37,11 +45,12 @@ pub use self::writer::SpecialWarcWriter;
 #[cfg(test)]
 pub use self::writer::MockSpecialWarcWriter;
 
+/// An instruction for skipping in a warc file.
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub enum WarcSkipInstruction {
     Single {
         /// The associated skip ponter
-        pointer: WarcSkipPointerWithOffsets,
+        pointer: WarcSkipPointerWithPath,
         /// The number of octets in the body for the header signature
         header_signature_octet_count: u32,
         /// Base64 marker
@@ -49,7 +58,7 @@ pub enum WarcSkipInstruction {
     },
     Multiple {
         /// All skip pointers, sorted in continuation order
-        pointers: Vec<WarcSkipPointerWithOffsets>,
+        pointers: Vec<WarcSkipPointerWithPath>,
         /// The number of octets in the first pointer
         header_signature_octet_count: u32,
         /// Base64 marker
@@ -58,7 +67,7 @@ pub enum WarcSkipInstruction {
 }
 
 impl WarcSkipInstruction {
-    pub fn new_single(pointer: WarcSkipPointerWithOffsets, header_signature_octet_count: u32, is_base64: bool) -> Self {
+    pub fn new_single(pointer: WarcSkipPointerWithPath, header_signature_octet_count: u32, is_base64: bool) -> Self {
         Self::Single {
             pointer,
             header_signature_octet_count,
@@ -66,13 +75,96 @@ impl WarcSkipInstruction {
         }
     }
 
-    pub fn new_multi(pointers: Vec<WarcSkipPointerWithOffsets>, header_signature_octet_count: u32, is_base64: bool) -> Self {
+    pub fn new_multi(pointers: Vec<WarcSkipPointerWithPath>, header_signature_octet_count: u32, is_base64: bool) -> Self {
         Self::Multiple {
             pointers,
             header_signature_octet_count,
             is_base64
         }
     }
+
+    /// Reads this in the context of [file_owner].
+    pub async fn read_in_context(&self, file_owner: &impl FileOwner) -> Result<Option<Vec<u8>>, WarcReadError> {
+        match self {
+            value @ WarcSkipInstruction::Single { pointer, .. } => {
+                file_owner.wait_until_free_path(pointer.path()).await?;
+                value.read()
+            }
+            value @ WarcSkipInstruction::Multiple { pointers, .. } => {
+                for value in pointers {
+                    file_owner.wait_until_free_path(value.path()).await?;
+                }
+                value.read()
+            }
+        }
+    }
+
+    /// Reads this from the pointer.
+    pub fn read(&self) -> Result<Option<Vec<u8>>, WarcReadError> {
+        fn read_impl(pointer: &WarcSkipPointerWithPath, header_signature_octet_count: u32) -> Result<Option<Vec<u8>>, ErrorWithPath> {
+            let mut file = File::options().read(true).open(pointer.path()).to_error_with_path(pointer.path())?;
+            return read_body(&mut file, pointer.pointer(), header_signature_octet_count).to_error_with_path(pointer.path())
+        }
+
+        match self {
+            WarcSkipInstruction::Single { pointer, header_signature_octet_count, is_base64 } => {
+                let data = read_impl(pointer, *header_signature_octet_count)?;
+                Ok(
+                    if *is_base64 {
+                        if let Some(value) = data {
+                            Some(BASE64.decode(&value)?)
+                        } else {
+                            None
+                        }
+                    } else {
+                        data
+                    }
+                )
+            }
+            WarcSkipInstruction::Multiple { pointers, header_signature_octet_count, is_base64 } => {
+                let mut collected_data = Vec::new();
+                for (pos, value) in pointers.iter().with_position() {
+                    match pos {
+                        Position::First | Position::Only => {
+                            match read_impl(value, *header_signature_octet_count)? {
+                                None => {}
+                                Some(value) => {
+                                    collected_data.extend(value)
+                                }
+                            }
+                        }
+                        _ => {
+                            match read_impl(value, 0)? {
+                                None => {}
+                                Some(value) => {
+                                    collected_data.extend(value)
+                                }
+                            }
+                        }
+                    }
+
+                }
+                if collected_data.is_empty() {
+                    Ok(None)
+                } else {
+                    let collected_data = if *is_base64 {
+                        BASE64.decode(&collected_data)?
+                    } else {
+                        collected_data
+                    };
+                    Ok(Some(collected_data))
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum WarcReadError {
+    #[error(transparent)]
+    IO(#[from] ErrorWithPath),
+    #[error(transparent)]
+    Decode(#[from] DecodeError),
 }
 
 
@@ -117,7 +209,7 @@ fn pack_header(page: &CrawlResult) -> Vec<u8> {
 }
 
 /// Creates a war entry
-pub fn write_warc<W: SpecialWarcWriter>(content: &CrawlResult, worker_warc_writer: &mut W) -> Result<WarcSkipInstruction, DatabaseError> {
+pub fn write_warc<W: SpecialWarcWriter>(worker_warc_writer: &mut W, content: &CrawlResult) -> Result<WarcSkipInstruction, DatabaseError> {
     let mut builder = WarcHeader::new();
     log_consume!(builder.warc_type(WarcRecordType::Response));
     let first_id = Uuid::new_v5(&Uuid::NAMESPACE_URL, (&content.url).as_str().as_bytes()).as_urn().to_string();
@@ -185,7 +277,7 @@ pub fn write_warc<W: SpecialWarcWriter>(content: &CrawlResult, worker_warc_write
     let data = match &content.content {
         VecDataHolder::ExternalFile { file } => {
             log::trace!("Warc-Write: External");
-            let skip_pointer = worker_warc_writer.get_skip_pointer()?;
+            let (skip_pointer_path, position) = worker_warc_writer.get_skip_pointer()?;
             log_consume!(builder.external_bin_file_string(file.file_name().unwrap()));
             log_consume!(builder.content_length(header_signature_octet_count as u64));
             log_consume!(builder.header_length(header_signature_octet_count as u64));
@@ -193,8 +285,9 @@ pub fn write_warc<W: SpecialWarcWriter>(content: &CrawlResult, worker_warc_write
             let warc_header_offset = worker_warc_writer.write_header(builder)?;
             worker_warc_writer.write_body_complete(&header)?;
             return Ok(WarcSkipInstruction::new_single(
-                WarcSkipPointerWithOffsets::new(
-                    skip_pointer,
+                WarcSkipPointerWithPath::create(
+                    skip_pointer_path,
+                    position,
                     warc_header_offset as u32,
                     header_signature_octet_count as u64
                 ),
@@ -204,14 +297,15 @@ pub fn write_warc<W: SpecialWarcWriter>(content: &CrawlResult, worker_warc_write
         }
         VecDataHolder::None => {
             log::trace!("Warc-Write: No Payload");
-            let skip_pointer = worker_warc_writer.get_skip_pointer()?;
+            let (skip_pointer_path, skip_position) = worker_warc_writer.get_skip_pointer()?;
             log_consume!(builder.content_length(header_signature_octet_count as u64));
             log_consume!(builder.header_length(header_signature_octet_count as u64));
             let warc_header_offset = worker_warc_writer.write_header(builder)?;
             worker_warc_writer.write_body_complete(&header)?;
             return Ok(WarcSkipInstruction::new_single(
-                WarcSkipPointerWithOffsets::new(
-                    skip_pointer,
+                WarcSkipPointerWithPath::create(
+                    skip_pointer_path,
+                    skip_position,
                     warc_header_offset as u32,
                     header_signature_octet_count as u64
                 ),
@@ -223,14 +317,15 @@ pub fn write_warc<W: SpecialWarcWriter>(content: &CrawlResult, worker_warc_write
         VecDataHolder::InMemory { data } => {
             if data.is_empty() {
                 log::warn!("Warc-Write: No Payload, but was detected as payload. Falling back!");
-                let skip_pointer = worker_warc_writer.get_skip_pointer()?;
+                let (skip_pointer_path, skip_position) = worker_warc_writer.get_skip_pointer()?;
                 log_consume!(builder.content_length(header_signature_octet_count as u64));
                 log_consume!(builder.header_length(header_signature_octet_count as u64));
                 let warc_header_offset = worker_warc_writer.write_header(builder)?;
                 worker_warc_writer.write_body_complete(&header)?;
                 return Ok(WarcSkipInstruction::new_single(
-                    WarcSkipPointerWithOffsets::new(
-                        skip_pointer,
+                    WarcSkipPointerWithPath::create(
+                        skip_pointer_path,
+                        skip_position,
                         warc_header_offset as u32,
                         header_signature_octet_count as u64
                     ),
@@ -293,12 +388,13 @@ pub fn write_warc<W: SpecialWarcWriter>(content: &CrawlResult, worker_warc_write
             log_consume!(sub_builder.segment_origin_id_string(first_id.clone()));
             let content_length = value.len() as u64;
             log_consume!(sub_builder.content_length(content_length));
-            let skip_pointer = worker_warc_writer.get_skip_pointer()?;
+            let (skip_pointer_path, skip_position) = worker_warc_writer.get_skip_pointer()?;
             let warc_header_offset = worker_warc_writer.write_header(sub_builder)?;
             worker_warc_writer.write_body_complete(&value)?;
             skip_pointers.push(
-                WarcSkipPointerWithOffsets::new(
-                    skip_pointer,
+                WarcSkipPointerWithPath::create(
+                    skip_pointer_path,
+                    skip_position,
                     warc_header_offset as u32,
                     content_length
                 )
@@ -312,13 +408,14 @@ pub fn write_warc<W: SpecialWarcWriter>(content: &CrawlResult, worker_warc_write
         log_consume!(builder.block_digest_bytes(digest.clone()));
         log_consume!(builder.payload_digest_bytes(digest));
         log_consume!(builder.content_length(body.len() as u64));
-        let skip_pointer = worker_warc_writer.get_skip_pointer()?;
+        let (skip_pointer_path, skip_position) = worker_warc_writer.get_skip_pointer()?;
         let warc_header_offset = worker_warc_writer.write_header(builder)?;
         worker_warc_writer.write_body_complete(&body)?;
         worker_warc_writer.forward_if_filesize(1.gigabytes().as_u64() as usize)?;
         return Ok(WarcSkipInstruction::new_single(
-            WarcSkipPointerWithOffsets::new(
-                skip_pointer,
+            WarcSkipPointerWithPath::create(
+                skip_pointer_path,
+                skip_position,
                 warc_header_offset as u32,
                 body.len() as u64
             ),
@@ -326,6 +423,27 @@ pub fn write_warc<W: SpecialWarcWriter>(content: &CrawlResult, worker_warc_write
             is_base64
         ))
     }
+}
+
+
+/// Reads the body from [reader] for a provided [pointer]
+pub fn read_body<R: Seek + Read>(reader: &mut R, pointer: &WarcSkipPointer, header_octet_count: u32) -> Result<Option<Vec<u8>>, Error> {
+    let header_octet_count = header_octet_count as u64;
+    reader.seek(SeekFrom::Start(pointer.position() + pointer.warc_header_offset() as u64 + header_octet_count))?;
+    let mut to_read = (pointer.body_octet_count() - header_octet_count) as usize;
+    if to_read == 0 {
+        return Ok(None)
+    }
+
+    let mut data = Vec::new();
+    const BUF_SIZE: usize = ByteUnit::Megabyte(2).as_u64() as usize;
+    let buffer = &mut [0u8; BUF_SIZE];
+    while data.len() < to_read {
+        reader.read(&mut buffer[..min(BUF_SIZE, to_read)])?;
+        data.extend_from_slice(&buffer[..min(BUF_SIZE, to_read)]);
+        to_read = to_read.saturating_sub(BUF_SIZE);
+    }
+    return Ok(Some(data));
 }
 
 
@@ -339,10 +457,8 @@ mod test {
     use crate::core::fetching::FetchedRequestData;
     use crate::core::response::ResponseData;
     use crate::core::{UrlWithDepth, VecDataHolder};
-    use crate::core::io::paths::DataFilePathBuf;
     use crate::core::page_type::PageType;
     use crate::core::warc::{MockSpecialWarcWriter, write_warc};
-    use crate::core::warc::writer::WarcSkipPointer;
 
     #[test]
     fn can_write_html(){
@@ -369,8 +485,8 @@ mod test {
 
         special.expect_get_skip_pointer().returning(|| {
             Ok(
-                WarcSkipPointer::new(
-                    DataFilePathBuf::new(Utf8PathBuf::new()),
+                (
+                    Utf8PathBuf::new(),
                     0
                 )
             )
@@ -397,7 +513,7 @@ mod test {
         special.expect_forward_if_filesize().returning(|_| Ok(None));
 
 
-        let instruction = write_warc(&result, &mut special).expect("Should work!");
+        let instruction = write_warc(&mut special, &result).expect("Should work!");
 
         println!("{instruction:?}")
     }
@@ -431,8 +547,8 @@ mod test {
 
         special.expect_get_skip_pointer().returning(|| {
             Ok(
-                WarcSkipPointer::new(
-                    DataFilePathBuf::new(Utf8PathBuf::new()),
+                (
+                    Utf8PathBuf::new(),
                     0
                 )
             )
@@ -458,7 +574,7 @@ mod test {
 
         special.expect_forward_if_filesize().returning(|_| Ok(None));
 
-        let instruction = write_warc(&result, &mut special).expect("Should work!");
+        let instruction = write_warc(&mut special, &result).expect("Should work!");
 
         println!("{instruction:?}")
     }

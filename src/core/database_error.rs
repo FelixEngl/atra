@@ -16,7 +16,8 @@ use std::fmt::{Debug, Display, Formatter};
 use data_encoding::{BASE64, DecodeError};
 use rocksdb::{Error, ErrorKind};
 use thiserror::Error;
-use crate::core::io::fs::FSAError;
+use crate::core::io::errors::ErrorWithPath;
+use crate::core::warc::WarcReadError;
 use crate::warc::header::{WarcHeaderValueError};
 use crate::warc::reader::WarcCursorReadError;
 use crate::warc::writer::WarcWriterError;
@@ -93,7 +94,7 @@ pub enum DatabaseError {
     #[error(transparent)]
     WarcError(#[from] WarcCursorReadError),
     #[error(transparent)]
-    FSAError(#[from]FSAError),
+    IOErrorWithPath(#[from] ErrorWithPath),
     #[error(transparent)]
     IOError(#[from]std::io::Error),
     #[error(transparent)]
@@ -101,7 +102,9 @@ pub enum DatabaseError {
     #[error(transparent)]
     WarcHeaderValueError(#[from] WarcHeaderValueError),
     #[error(transparent)]
-    Base64DecodeError(#[from] DecodeError)
+    Base64DecodeError(#[from] DecodeError),
+    #[error(transparent)]
+    WarcReadError(#[from] WarcReadError)
 }
 
 

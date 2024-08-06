@@ -12,6 +12,7 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+use camino::Utf8PathBuf;
 use encoding_rs::Encoding;
 use reqwest::header::HeaderMap;
 use reqwest::StatusCode;
@@ -19,7 +20,6 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use crate::core::crawl::result::CrawlResult;
 use crate::core::extraction::ExtractedLink;
-use crate::core::io::paths::DataFilePathBuf;
 use crate::core::page_type::PageType;
 use crate::core::{DataHolder, UrlWithDepth};
 use crate::core::serde_util::*;
@@ -55,7 +55,7 @@ pub struct SlimCrawlResult {
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub enum StoredDataHint {
     /// Stored externally on the filesystem
-    External(DataFilePathBuf),
+    External(Utf8PathBuf),
     /// Stored in a warc file
     Warc(WarcSkipInstruction),
     /// The data is stored in memory
@@ -123,20 +123,22 @@ mod test {
     use camino::Utf8PathBuf;
     use crate::core::crawl::result::test::create_test_data;
     use crate::core::crawl::slim::{SlimCrawlResult, StoredDataHint};
-    use crate::core::io::paths::DataFilePathBuf;
     use crate::core::UrlWithDepth;
     use crate::core::warc::WarcSkipInstruction;
-    use crate::core::warc::writer::{WarcSkipPointer, WarcSkipPointerWithOffsets};
+    use crate::core::warc::skip_pointer::{WarcSkipPointer, WarcSkipPointerWithPath};
 
     #[test]
     fn serde_test(){
         let ptr = StoredDataHint::Warc(WarcSkipInstruction::new_single(
-            WarcSkipPointerWithOffsets::new(
-                WarcSkipPointer::new(DataFilePathBuf::new(Utf8PathBuf::from("test.warc".to_string())), 12589),
-                1,
-                2
+            WarcSkipPointerWithPath::new(
+                Utf8PathBuf::from("test.warc".to_string()),
+                WarcSkipPointer::new(
+                    12589,
+                    1,
+                    2
+                ),
             ),
-        123,
+            123,
             false
         ));
 

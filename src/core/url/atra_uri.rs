@@ -1,7 +1,6 @@
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use case_insensitive_string::CaseInsensitiveString;
-use reqwest::IntoUrl;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use url::Url;
@@ -21,7 +20,7 @@ pub enum AtraUri {
 #[derive(Debug, Copy, Clone, Error, Eq, PartialEq)]
 pub enum HostComparisonError {
     /// Only for [AtraUri::Url], returned when there is no host.
-    #[error("The left has {} and right has {}!", if(*(.left_has_host)) {"host"} else {"no host"}, if(*(.right_has_host)) {"host"} else {"no host"})]
+    #[error("The left has {} and right has {}!", if *(.left_has_host) {"host"} else {"no host"}, if *(.right_has_host) {"host"} else {"no host"})]
     NoHost {
         left_has_host: bool,
         right_has_host: bool

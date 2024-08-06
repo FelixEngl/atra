@@ -1,59 +1,108 @@
 use std::fs::File;
-use std::io::{BufWriter, Read};
+use std::io::{BufWriter, Read, Write};
 use std::sync::Arc;
-use camino::Utf8Path;
+use camino::{Utf8Path, Utf8PathBuf};
 use tokio::sync::RwLock;
-use crate::core::io::fs::{FSAError, ToFSAError, WorkerFileProvider};
-use crate::core::io::paths::DataFilePathBuf;
-use crate::core::io::templating::FileNameTemplate;
+use crate::core::io::errors::{ErrorWithPath, ToErrorWithPath};
+use crate::core::io::file_owner::FileOwner;
+use crate::core::io::fs::WorkerFileProvider;
 use crate::core::warc::SpecialWarcWriter;
-use crate::core::warc::writer::WarcSkipPointer;
 use crate::warc::header::WarcHeader;
 use crate::warc::writer::{WarcWriter, WarcWriterError};
 
-#[derive(Debug)]
-pub struct ThreadsafeWarcWriter {
-    template: FileNameTemplate,
-    writer: Arc<RwLock<RawWorkerWarcWriter>>
+pub trait WarcFilePathProvider {
+    /// Creates a fresh warc file
+    fn create_new_warc_file_path(&self) -> Result<Utf8PathBuf, ErrorWithPath>;
 }
 
-impl ThreadsafeWarcWriter {
-    pub fn new(template: FileNameTemplate, fp: Arc<WorkerFileProvider>) -> Result<Self, FSAError> {
-        let (file, path) = fp.create_fresh_warc_file(None::<&str>)?;
+
+pub trait RawWriter: Write {
+    fn create_for_warc(path: impl AsRef<Utf8Path>) -> Result<Self, ErrorWithPath> where Self: Sized;
+}
+impl RawWriter for File {
+    fn create_for_warc(path: impl AsRef<Utf8Path>) -> Result<Self, ErrorWithPath> {
+        let result = path.as_ref();
+        File::options().write(true).create_new(true).open(result).to_error_with_path(result)
+    }
+}
+
+
+
+#[derive(Debug)]
+pub struct ThreadsafeMultiFileWarcWriter<W: Write + RawWriter = File, P: WarcFilePathProvider = WorkerFileProvider> {
+    writer: Arc<RwLock<RawMultifileWarcWriter<W, P>>>
+}
+
+impl ThreadsafeMultiFileWarcWriter<File, WorkerFileProvider> {
+    pub fn new_for_worker(fp: Arc<WorkerFileProvider>) -> Result<Self, ErrorWithPath> {
+        Self::try_from(fp)
+    }
+}
+
+impl<W: Write + RawWriter, P: WarcFilePathProvider> TryFrom<Arc<P>> for ThreadsafeMultiFileWarcWriter<W, P> {
+    type Error = ErrorWithPath;
+
+    fn try_from(value: Arc<P>) -> Result<Self, Self::Error> {
+        let path = value.create_new_warc_file_path()?;
+        let writer = W::create_for_warc(&path)?;
         Ok(
             Self {
-                template,
-                writer: Arc::new(RwLock::new(RawWorkerWarcWriter::new(
-                    fp,
-                    WarcWriter::new(BufWriter::new(file)),
-                    DataFilePathBuf::new(path)
-                ))),
+                writer: Arc::new(RwLock::new(RawMultifileWarcWriter::new(
+                    value,
+                    WarcWriter::new(BufWriter::new(writer)),
+                    path
+                )))
             }
         )
     }
+}
 
-    #[allow(dead_code)]
-    pub async fn current_file(&self) -> DataFilePathBuf {
+impl<W: Write + RawWriter, P: WarcFilePathProvider> ThreadsafeMultiFileWarcWriter<W, P> {
+
+    pub fn new(writer: W, provider: P, path: Utf8PathBuf) -> Self {
+        Self {
+            writer: Arc::new(RwLock::new(RawMultifileWarcWriter::new(
+                Arc::new(provider),
+                WarcWriter::new(BufWriter::new(writer)),
+                path
+            )))
+        }
+    }
+
+    pub async fn current_file(&self) -> Utf8PathBuf {
         let writer = self.writer.read().await;
         writer.path.clone()
     }
 
-    #[allow(dead_code)]
-    pub async fn flush(&self) -> Result<(), FSAError> {
+    pub async fn flush(&self) -> Result<(), ErrorWithPath> {
         let mut writer = self.writer.write().await;
         writer.flush()
     }
 
-    pub async fn execute_on_writer<R, E, F: FnOnce(&mut RawWorkerWarcWriter) -> Result<R, E>>(&self, to_execute: F) -> Result<R, E> {
+    pub async fn execute_on_writer<R, E, F: FnOnce(&mut RawMultifileWarcWriter<W, P>) -> Result<R, E>>(&self, to_execute: F) -> Result<R, E> {
         log::trace!("Get WARC-Write lock");
         let mut writer = self.writer.write().await;
         log::trace!("Get WARC-Write lock - success");
         to_execute(&mut writer)
     }
+}
 
-    pub async fn make_sure_is_not_write_target(&self, path: &Utf8Path) -> Result<(), FSAError> {
+impl<W: Write + RawWriter, P: WarcFilePathProvider> FileOwner for ThreadsafeMultiFileWarcWriter<W, P> {
+    fn is_in_use<Q: AsRef<Utf8Path>>(&self, path: Q) -> bool {
+        match self.writer.try_read() {
+            Ok(value) => {
+                value.path.as_path() == path.as_ref()
+            }
+            Err(_) => {
+                true
+            }
+        }
+    }
+
+    async fn wait_until_free_path<Q: AsRef<Utf8Path>>(&self, target: Q) -> Result<(), ErrorWithPath> {
+        let path = target.as_ref();
         let writer = self.writer.read().await;
-        if writer.path.as_path().eq(path) {
+        if writer.path.as_path() == path {
             drop(writer);
             let mut writer = self.writer.write().await;
             let _ = writer.forward_if_filesize(0)?;
@@ -64,29 +113,28 @@ impl ThreadsafeWarcWriter {
     }
 }
 
-impl Clone for ThreadsafeWarcWriter {
+impl<W: Write + RawWriter, P: WarcFilePathProvider> Clone for ThreadsafeMultiFileWarcWriter<W, P> {
     fn clone(&self) -> Self {
         Self {
-            writer: self.writer.clone(),
-            template: self.template.clone()
+            writer: self.writer.clone()
         }
     }
 }
 
 
 #[derive(Debug)]
-pub struct RawWorkerWarcWriter {
-    fp: Arc<WorkerFileProvider>,
-    writer: WarcWriter<BufWriter<File>>,
-    path: DataFilePathBuf
+pub struct RawMultifileWarcWriter<W: Write + RawWriter, P: WarcFilePathProvider> {
+    fp: Arc<P>,
+    writer: WarcWriter<BufWriter<W>>,
+    path: Utf8PathBuf
 }
 
-impl RawWorkerWarcWriter {
+impl<W: Write + RawWriter, P: WarcFilePathProvider> RawMultifileWarcWriter<W, P> {
 
     pub fn new(
-        fp: Arc<WorkerFileProvider>,
-        writer: WarcWriter<BufWriter<File>>,
-        path: DataFilePathBuf
+        fp: Arc<P>,
+        writer: WarcWriter<BufWriter<W>>,
+        path: Utf8PathBuf
     ) -> Self {
         Self {
             fp,
@@ -95,29 +143,28 @@ impl RawWorkerWarcWriter {
         }
     }
 
-    #[allow(dead_code)]
-    fn flush(&mut self) -> Result<(), FSAError> {
-        self.writer.flush().to_fsa_error(|| self.path.to_string())
+    fn flush(&mut self) -> Result<(), ErrorWithPath> {
+        self.writer.flush().to_error_with_path(&self.path)
     }
 
-    fn replace_writer(&mut self, writer: WarcWriter<BufWriter<File>>, path: DataFilePathBuf) -> (WarcWriter<BufWriter<File>>, DataFilePathBuf) {
+    fn replace_writer(&mut self, writer: WarcWriter<BufWriter<W>>, path: Utf8PathBuf) -> (WarcWriter<BufWriter<W>>, Utf8PathBuf) {
         (std::mem::replace(&mut self.writer, writer), std::mem::replace(&mut self.path, path))
     }
 }
 
-impl SpecialWarcWriter for RawWorkerWarcWriter {
-    fn get_skip_pointer(&self) -> Result<WarcSkipPointer, WarcWriterError> {
+impl<W: Write + RawWriter, P: WarcFilePathProvider> SpecialWarcWriter for RawMultifileWarcWriter<W, P> {
+    fn get_skip_pointer(&self) -> Result<(Utf8PathBuf, u64), WarcWriterError> {
         self.writer.check_if_state(crate::warc::states::State::ExpectHeader)?;
         Ok(
-            WarcSkipPointer::new(
+            (
                 self.path.clone(),
                 self.writer.bytes_written() as u64
             )
         )
     }
 
-    unsafe fn get_skip_pointer_unchecked(&self) -> WarcSkipPointer {
-        WarcSkipPointer::new(
+    unsafe fn get_skip_pointer_unchecked(&self) -> (Utf8PathBuf, u64) {
+        (
             self.path.clone(),
             self.writer.bytes_written() as u64
         )
@@ -145,13 +192,13 @@ impl SpecialWarcWriter for RawWorkerWarcWriter {
         self.writer.write_complete_body(&[])
     }
 
-    fn forward(&mut self) -> Result<DataFilePathBuf, FSAError> {
-        let (file, path) = self.fp.create_fresh_warc_file(None::<&str>)?;
+    fn forward(&mut self) -> Result<Utf8PathBuf, ErrorWithPath> {
+        let path = self.fp.create_new_warc_file_path()?;
         let (mut old_writer, path) = self.replace_writer(
-            WarcWriter::new(BufWriter::new(file)),
-            DataFilePathBuf::new(path)
+            WarcWriter::new(BufWriter::new(W::create_for_warc(&path)?)),
+            path
         );
-        old_writer.flush().map_err(|value| FSAError(path.as_path().to_string(), value))?;
+        old_writer.flush().to_error_with_path(&path)?;
         Ok(path)
     }
 }

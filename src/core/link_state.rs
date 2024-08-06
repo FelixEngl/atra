@@ -357,6 +357,7 @@ impl LinkStateDB {
             )?
         )
     }
+
     async fn scan_for_any_link_state_internal<T: RangeBounds<LinkStateType>>(&self, states: T) -> bool {
         let mut options = ReadOptions::default();
         options.fill_cache(false);

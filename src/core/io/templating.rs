@@ -1,62 +1,119 @@
+use std::borrow::{Borrow, Cow};
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter, Write};
-use std::marker::PhantomData;
+use std::hash::Hash;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
-use itertools::{Itertools};
+use data_encoding::BASE64URL_NOPAD;
 use thiserror::Error;
 use time::format_description::{OwnedFormatItem, parse_owned};
 use time::OffsetDateTime;
+use crate::core::io::templating::TemplateError::ArgumentMissing;
+use crate::core::io::serial::{NoSerial, SerialProvider};
+
 
 macro_rules! file_name_template_element {
     ($result: ident, $value: literal $($tt:tt)*) => {
-        $result.push($crate::core::io::templating::FileNameTemplateElement::Static($value));
-        file_name_template_element!($result, $($tt)*);
+        if let Ok(res) = $result.as_mut() {
+            res.push($crate::core::io::templating::FileNameTemplateElement::Static($value));
+        }
+        crate::core::io::templating::file_name_template_element!($result, $($tt)*);
     };
     ($result: ident, dyn @ $value: tt $($tt:tt)*) => {
-        $result.push($crate::core::io::templating::FileNameTemplateElement::Dynamic($value.to_string()));
-        file_name_template_element!($result, $($tt)*);
+        if let Ok(res) = $result.as_mut() {
+            res.push($crate::core::io::templating::FileNameTemplateElement::Dynamic($value.to_string()));
+        }
+        crate::core::io::templating::file_name_template_element!($result, $($tt)*);
+    };
+    ($result: ident, arg @ $value: literal $($tt:tt)*) => {
+        if let Ok(res) = $result.as_mut() {
+            res.push($crate::core::io::templating::FileNameTemplateElement::Arg($value, false));
+        }
+        crate::core::io::templating::file_name_template_element!($result, $($tt)*);
+    };
+    ($result: ident, arg! @ $value: literal $($tt:tt)*) => {
+        if let Ok(res) = $result.as_mut() {
+            res.push($crate::core::io::templating::FileNameTemplateElement::Arg($value, true));
+        }
+        crate::core::io::templating::file_name_template_element!($result, $($tt)*);
     };
     ($result: ident, timestamp $($tt:tt)*) => {
-        $result.push($crate::core::io::templating::FileNameTemplateElement::UnixTimestamp);
-        file_name_template_element!($result, $($tt)*);
+        if let Ok(res) = $result.as_mut() {
+            res.push($crate::core::io::templating::FileNameTemplateElement::UnixTimestamp(false));
+        }
+        crate::core::io::templating::file_name_template_element!($result, $($tt)*);
+    };
+    ($result: ident, timestamp64 $($tt:tt)*) => {
+        if let Ok(res) = $result.as_mut() {
+            res.push($crate::core::io::templating::FileNameTemplateElement::UnixTimestamp(true));
+        }
+        crate::core::io::templating::file_name_template_element!($result, $($tt)*);
     };
     ($result: ident, timestamp @ $value: tt $($tt:tt)*) => {
-        $result.push($crate::core::io::templating::FileNameTemplateElement::formatted_timestamp($value)?);
-        file_name_template_element!($result, $($tt)*);
+        $result = match $result {
+            Ok(mut res) => {
+                match $crate::core::io::templating::FileNameTemplateElement::formatted_timestamp($value) {
+                    Ok(value) => {
+                        res.push($crate::core::io::templating::FileNameTemplateElement::FormattedTimestamp(value));
+                        Ok(res)
+                    };
+                    Err(err) => {
+                        Err(err)
+                    }
+                }
+            }
+            Err(res) => {
+                Err(res)
+            }
+        }
+        crate::core::io::templating::file_name_template_element!($result, $($tt)*);
     };
     ($result: ident, serial $($tt:tt)*) => {
-        $result.push($crate::core::io::templating::FileNameTemplateElement::Serial);
-        file_name_template_element!($result, $($tt)*);
+        if let Ok(res) = $result.as_mut() {
+            res.push($crate::core::io::templating::FileNameTemplateElement::Serial);
+        }
+        crate::core::io::templating::file_name_template_element!($result, $($tt)*);
     };
-    ($result: ident, template @ $value: tt $($tt:tt)*) => {
-        $result.push($crate::core::io::templating::FileNameTemplateElement::FileNameTemplate($value));
-        file_name_template_element!($result, $($tt)*);
+    ($result: ident, ref $value: ident $($tt:tt)*) => {
+        if let Ok(res) = $result.as_mut() {
+            res.push($crate::core::io::templating::FileNameTemplateElement::FileNameTemplate($value.clone()));
+        }
+        crate::core::io::templating::file_name_template_element!($result, $($tt)*);
     };
     ($result: ident, raw @ $value: tt $($tt:tt)*) => {
-        $result.push($value);
-        file_name_template_element!($result, $($tt)*);
+        if let Ok(res) = $result.as_mut() {
+            res.push($value);
+        }
+        crate::core::io::templating::file_name_template_element!($result, $($tt)*);
     };
     ($result: ident, sep @ $value:tt $($tt:tt)*) => {
-        $result.push($crate::core::io::templating::FileNameTemplateElement::Static(stringify!($value)));
-        file_name_template_element!($result, $($tt)*);
+        if let Ok(res) = $result.as_mut() {
+            res.push($crate::core::io::templating::FileNameTemplateElement::Static(stringify!($value)));
+        }
+        crate::core::io::templating::file_name_template_element!($result, $($tt)*);
+    };
+    ($result: ident, $value:ident $($tt:tt)*) => {
+        if let Ok(res) = $result.as_mut() {
+            res.push($crate::core::io::templating::FileNameTemplateElement::Dynamic((&$value).to_string()));
+        }
+        crate::core::io::templating::file_name_template_element!($result, $($tt)*);
     };
     ($result: ident, $value:tt $($tt:tt)*) => {
-        $result.push($crate::core::io::templating::FileNameTemplateElement::Static(stringify!($value)));
-        file_name_template_element!($result, $($tt)*);
+        if let Ok(res) = $result.as_mut() {
+            res.push($crate::core::io::templating::FileNameTemplateElement::Static(stringify!($value)));
+        }
+        crate::core::io::templating::file_name_template_element!($result, $($tt)*);
     };
     ($result: ident,) => {}
 }
 
+/// A macro to generate file template names.
 macro_rules! file_name_template {
     ($($tt:tt)+) => {
         {
-            let mut result: Vec<$crate::core::io::templating::FileNameTemplateElement> = Vec::new();
-            fn __build(result: &mut Vec<$crate::core::io::templating::FileNameTemplateElement>) -> Result<(), time::error::InvalidFormatDescription> {
-                file_name_template_element!(result, $($tt)+);
-                Ok(())
-            }
-            match __build(&mut result) {
-                Ok(_) => {
+            let mut result: Result<Vec<$crate::core::io::templating::FileNameTemplateElement>, time::error::InvalidFormatDescription> = Ok(Vec::new());
+            crate::core::io::templating::file_name_template_element!(result, $($tt)+);
+            match result {
+                Ok(mut result) => {
                     result.shrink_to_fit();
                     Ok($crate::core::io::templating::FileNameTemplate::new(std::sync::Arc::new(result)))
                 }
@@ -68,24 +125,7 @@ macro_rules! file_name_template {
     }
 }
 
-pub(crate) use file_name_template;
-
-#[derive(Debug, Clone, Copy)]
-pub struct FileNameTemplateWithSerialProvider<'a, 'b, S> {
-    template: &'a FileNameTemplate,
-    provider: &'b S
-}
-
-
-impl<T> Display for FileNameTemplateWithSerialProvider<'_, '_, T> where T: SerialProvider {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if let Ok(_) = self.template.write(f, self.provider) {
-            Ok(())
-        } else {
-            Err(std::fmt::Error)
-        }
-    }
-}
+pub(crate) use {file_name_template, file_name_template_element};
 
 /// A template for a filename
 #[derive(Debug, Clone)]
@@ -100,25 +140,18 @@ impl FileNameTemplate {
     }
 
     /// Writes the template element to `f`. Returns true if some kind of content was written.
-    pub fn write(&self, f: &mut dyn Write, serial_provider: &impl SerialProvider) -> Result<bool, TemplateError> {
+    pub fn write(&self, f: &mut impl Write, serial_provider: &impl SerialProvider, args: Option<&FileNameTemplateArgs>) -> Result<bool, TemplateError> {
         let mut wrote_something = false;
         for value in self.parts.iter() {
-            wrote_something |= value.write(f, serial_provider)?;
+            wrote_something |= value.write(f, serial_provider, args)?;
         }
         Ok(wrote_something)
-    }
-
-    pub fn with_serial_provider<'a, 'b, S: SerialProvider>(&'a self, serial_provider: &'b S) -> FileNameTemplateWithSerialProvider<'a, 'b, S> {
-        FileNameTemplateWithSerialProvider {
-            template: self,
-            provider: serial_provider
-        }
     }
 }
 
 impl Display for FileNameTemplate {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if let Ok(_) = self.write(f, &NoSerial::<u8>::default()) {
+        if let Ok(_) = self.write(f, &NoSerial::<u8>::default(), None) {
             Ok(())
         } else {
             Err(std::fmt::Error)
@@ -135,67 +168,49 @@ impl From<Vec<FileNameTemplateElement>> for FileNameTemplate {
 
 
 
-/// Provides a serial
-pub trait SerialProvider: Sync + Send {
-    type Serial: Display;
+/// Template args
+#[derive(Debug, Clone)]
+#[repr(transparent)]
+pub struct FileNameTemplateArgs(HashMap<String, Cow<'static, str>>);
 
-    fn provide_serial(&self) -> Option<Self::Serial>;
-}
+impl FileNameTemplateArgs {
+    pub fn new() -> Self {
+        Self(HashMap::new())
+    }
 
-#[derive(Debug, Copy, Clone)]
-pub struct NoSerial<S=u8>{
-    _phantom: PhantomData<S>
-}
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self(HashMap::with_capacity(capacity))
+    }
 
-unsafe impl<S> Send for NoSerial<S>{}
-unsafe impl<S> Sync for NoSerial<S>{}
+    pub fn insert_str(&mut self, key: impl AsRef<str>, value: &'static str) -> Option<Cow<'static, str>> {
+        self.0.insert(key.as_ref().to_string(), Cow::Borrowed(value))
+    }
 
-impl<S> SerialProvider for NoSerial<S> where S: Display {
-    type Serial = S;
+    pub fn insert(&mut self, key: impl AsRef<str>, value: String) -> Option<Cow<'static, str>> {
+        self.0.insert(key.as_ref().to_string(), Cow::Owned(value))
+    }
 
-    #[inline(always)]
-    fn provide_serial(&self) -> Option<Self::Serial> {
-        None
+    pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<&Cow<'static, str>> where String: Borrow<Q>, Q: Hash + Eq {
+        self.0.get(key)
+    }
+
+    pub fn insert_value(&mut self, key: impl AsRef<str>, value: impl ToString) -> Option<Cow<'static, str>> {
+        self.0.insert(key.as_ref().to_string(), Cow::Owned(value.to_string()))
     }
 }
 
-impl<S> Default for NoSerial<S> {
-    fn default() -> Self {
-        Self{_phantom: PhantomData}
+impl Extend<(String, Cow<'static, str>)> for FileNameTemplateArgs {
+    fn extend<T: IntoIterator<Item=(String, Cow<'static, str>)>>(&mut self, iter: T) {
+        self.0.extend(iter)
     }
 }
-
-
-#[derive(Debug, Clone, Default)]
-pub struct DefaultSerialProvider {
-    state: Arc<AtomicU32>,
-}
-
-impl DefaultSerialProvider {
-    pub fn get_next_serial(&self) -> u32 {
-        unsafe {
-            self.state.fetch_update(
-                Ordering::SeqCst,
-                Ordering::Relaxed,
-                |next| Some(next.overflowing_add(1).0)
-            ).unwrap_unchecked()
-        }
-    }
-}
-
-impl SerialProvider for DefaultSerialProvider {
-    type Serial = u32;
-    fn provide_serial(&self) -> Option<Self::Serial> {
-        Some(self.get_next_serial())
-    }
-}
-
 
 #[derive(Debug, Clone)]
 pub enum FileNameTemplateElement {
     Static(&'static str),
     Dynamic(String),
-    UnixTimestamp,
+    Arg(&'static str, bool),
+    UnixTimestamp(bool),
     FormattedTimestamp(OwnedFormatItem),
     Serial,
     FileNameTemplate(FileNameTemplate)
@@ -206,7 +221,9 @@ pub enum TemplateError {
     #[error(transparent)]
     Time(#[from] time::error::Format),
     #[error(transparent)]
-    Fmt(#[from] std::fmt::Error)
+    Fmt(#[from] std::fmt::Error),
+    #[error("The required argument value {0:?} is missing!")]
+    ArgumentMissing(&'static str)
 }
 
 impl FileNameTemplateElement {
@@ -215,7 +232,7 @@ impl FileNameTemplateElement {
     }
 
     /// Writes the template element to `f`. Returns true if some kind of content was written.
-    pub fn write(&self, f: &mut dyn Write, serial_provider: &impl SerialProvider) -> Result<bool, TemplateError> {
+    pub fn write(&self, f: &mut impl Write, serial_provider: &impl SerialProvider, args: Option<&FileNameTemplateArgs>) -> Result<bool, TemplateError> {
         match self {
             FileNameTemplateElement::Static(value) => {
                 write!(f, "{}", value)?
@@ -223,12 +240,15 @@ impl FileNameTemplateElement {
             FileNameTemplateElement::Dynamic(value) => {
                 write!(f, "{}", value)?
             }
-            FileNameTemplateElement::UnixTimestamp => {
-                write!(f, "{}", OffsetDateTime::now_utc().unix_timestamp_nanos())?
+            FileNameTemplateElement::UnixTimestamp(base64) => {
+                if *base64 {
+                    BASE64URL_NOPAD.encode_write(&OffsetDateTime::now_utc().unix_timestamp_nanos().to_be_bytes(), f)?;
+                } else {
+                    write!(f, "{}", OffsetDateTime::now_utc().unix_timestamp_nanos())?
+                }
             }
             FileNameTemplateElement::FormattedTimestamp(value) => {
                 write!(f, "{}", OffsetDateTime::now_utc().format(value)?)?
-
             }
             FileNameTemplateElement::Serial => {
                 if let Some(serial) = serial_provider.provide_serial() {
@@ -238,7 +258,26 @@ impl FileNameTemplateElement {
                 }
             }
             FileNameTemplateElement::FileNameTemplate(template) => {
-                return template.write(f, serial_provider)
+                return template.write(f, serial_provider, args)
+            }
+            FileNameTemplateElement::Arg(key, required) => {
+                if let Some(template_args) = args {
+                    if let Some(found) = template_args.get(*key) {
+                        write!(f, "{found}")?
+                    } else {
+                        return if *required {
+                            Err(ArgumentMissing(*key))
+                        } else {
+                            Ok(false)
+                        }
+                    }
+                } else {
+                    return if *required {
+                        Err(ArgumentMissing(*key))
+                    } else {
+                        Ok(false)
+                    }
+                }
             }
         }
         Ok(true)
@@ -272,17 +311,32 @@ impl From<&'static str> for FileNameTemplateElement {
 
 #[cfg(test)]
 mod test {
-    use crate::core::io::templating::DefaultSerialProvider;
+    use crate::core::io::serial::DefaultSerialProvider;
+    use crate::core::io::templating::{FileNameTemplateArgs};
 
     #[test]
     fn can_build(){
         let serial_provider = DefaultSerialProvider::default();
 
+        let template1 = file_name_template!(
+            "wasser" _ "<ist>" _ "nass"
+        ).expect("Why?");
+
+        let mut s = String::new();
+        s.push('a');
+
         let template = file_name_template!(
-            "test" _ "here" _ dyn@123 _ timestamp _ serial ".exe"
-        ).expect("This shoudl work!");
-        println!("{}", template.with_serial_provider(
-            &serial_provider
-        ))
+            s _ "test" _ ref template1 _ arg@"testi" _ "here" _ dyn@123 _ timestamp _ serial ".exe"
+        ).expect("Why?");
+
+        let mut result = String::new();
+
+        let mut args = FileNameTemplateArgs::new();
+        args.insert_str("testi", "<my_testi_value>");
+
+        template.write(&mut result, &serial_provider, Some(&args)).expect("Success!");
+
+        assert!(result.starts_with("test_wasser_<ist>_nass_<my_testi_value>_here_123_"));
+        assert!(result.ends_with("_0.exe"));
     }
 }

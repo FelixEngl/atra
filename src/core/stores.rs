@@ -1,5 +1,5 @@
-mod crawl_results;
-mod warc;
+pub mod crawl_results;
+pub mod warc;
 
 use std::error::Error;
 

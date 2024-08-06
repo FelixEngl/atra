@@ -13,7 +13,6 @@
 //limitations under the License.
 
 use std::ops::Deref;
-use bincode::Options;
 use thiserror::Error;
 use tokio::runtime::{Handle, Runtime, TryCurrentError};
 

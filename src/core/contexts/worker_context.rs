@@ -12,18 +12,11 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::cmp::min;
 use std::collections::HashSet;
-use std::fs::File;
-use std::io::{BufWriter, Read, Seek, SeekFrom};
-use std::sync::{Arc, };
-use camino::{Utf8Path};
-use data_encoding::BASE64;
-use itertools::{Itertools, Position};
-use tokio::sync::RwLock;
+use std::sync::Arc;
+use itertools::Position;
 use thiserror::Error;
 use time::Duration;
-use ubyte::ByteUnit;
 use crate::core::blacklist::PolyBlackList;
 use crate::core::config::Configs;
 use crate::core::contexts::{Context, CrawlTaskContext, LinkHandlingError, RecoveryCommand, RecoveryError, SlimCrawlTaskContext};
@@ -32,14 +25,12 @@ use crate::core::crawl::seed::CrawlSeed;
 use crate::core::crawl::slim::{SlimCrawlResult, StoredDataHint};
 use crate::core::database_error::DatabaseError;
 use crate::core::extraction::ExtractedLink;
-use crate::core::io::fs::{FSAError, ToFSAError, WorkerFileProvider};
-use crate::core::io::paths::DataFilePathBuf;
+use crate::core::io::fs::{WorkerFileProvider};
 use crate::core::link_state::{LinkState, LinkStateDBError, LinkStateType};
 use crate::core::{UrlWithDepth, VecDataHolder};
-use crate::core::warc::{SpecialWarcWriter, WarcSkipInstruction, write_warc};
-use crate::core::warc::writer::{WarcSkipPointer, WarcSkipPointerWithOffsets};
-use crate::warc::header::{WarcHeader};
-use crate::warc::writer::{WarcWriter, WarcWriterError};
+use crate::core::io::errors::{ErrorWithPath};
+use crate::core::stores::warc::ThreadsafeMultiFileWarcWriter;
+use crate::core::warc::{write_warc};
 
 /// A context for a specific worker
 #[derive(Debug)]
@@ -47,7 +38,7 @@ pub struct WorkerContext<T: SlimCrawlTaskContext> {
     worker_id: usize,
     inner: Arc<T>,
     worker_file_provider: Arc<WorkerFileProvider>,
-    worker_warc_writer: WorkerWarcWriter
+    worker_warc_writer: ThreadsafeMultiFileWarcWriter
 }
 
 impl<T: SlimCrawlTaskContext> Clone for WorkerContext<T> {
@@ -66,14 +57,14 @@ impl<T: SlimCrawlTaskContext> WorkerContext<T> {
         self.worker_id
     }
 
-    pub async fn create(worker_id: usize, inner: Arc<T>) -> Result<Self, FSAError> {
+    pub async fn create(worker_id: usize, inner: Arc<T>) -> Result<Self, ErrorWithPath> {
         let worker_warc_system = inner.fs().create_worker_file_provider(worker_id).await?;
         Ok(Self::new(worker_id, inner, worker_warc_system)?)
     }
 
-    pub fn new(worker_id: usize, inner: Arc<T>, worker_warc_system: WorkerFileProvider) -> Result<Self, FSAError> {
+    pub fn new(worker_id: usize, inner: Arc<T>, worker_warc_system: WorkerFileProvider) -> Result<Self, ErrorWithPath> {
         let worker_file_provider = Arc::new(worker_warc_system);
-        let worker_warc_writer = WorkerWarcWriter::new(worker_file_provider.clone())?;
+        let worker_warc_writer = ThreadsafeMultiFileWarcWriter::new_for_worker(worker_file_provider.clone())?;
         Ok(
             Self {
                 worker_id,
@@ -82,27 +73,6 @@ impl<T: SlimCrawlTaskContext> WorkerContext<T> {
                 worker_warc_writer
             }
         )
-    }
-
-    async fn read_body(&self, pointer: &WarcSkipPointerWithOffsets, header_octet_count: u32) -> Result<Option<Vec<u8>>, DatabaseError> {
-        self.worker_warc_writer.make_sure_is_not_write_target(pointer.file()).await?;
-        let mut file = File::options().read(true).open(pointer.file())?;
-        let header_octet_count = header_octet_count as u64;
-        file.seek(SeekFrom::Start(pointer.position() + pointer.warc_header_offset() as u64 + header_octet_count))?;
-        let mut to_read = (pointer.body_octet_count() - header_octet_count) as usize;
-        if to_read == 0 {
-            return Ok(None)
-        }
-
-        let mut data = Vec::new();
-        const BUF_SIZE: usize = ByteUnit::Megabyte(2).as_u64() as usize;
-        let buffer = &mut [0u8; BUF_SIZE];
-        while data.len() < to_read {
-            file.read(&mut buffer[..min(BUF_SIZE, to_read)])?;
-            data.extend_from_slice(&buffer[..min(BUF_SIZE, to_read)]);
-            to_read = to_read.saturating_sub(BUF_SIZE);
-        }
-        return Ok(Some(data));
     }
 }
 
@@ -196,7 +166,7 @@ impl<T: SlimCrawlTaskContext> CrawlTaskContext for WorkerContext<T> {
                 log::debug!("Store in warc: {}", result.url);
                 StoredDataHint::Warc(self.worker_warc_writer.execute_on_writer(|value| {
                     log::debug!("WARC-Writer start:");
-                    write_warc(result, value)
+                    write_warc(value, result)
                 }).await?)
             }
             VecDataHolder::ExternalFile { file } => {
@@ -209,212 +179,21 @@ impl<T: SlimCrawlTaskContext> CrawlTaskContext for WorkerContext<T> {
     }
 
 
-
     async fn retrieve_crawled_website(&self, url: &UrlWithDepth) -> Result<Option<CrawlResult>, DatabaseError> {
         if let Some(found) = self.retrieve_slim_crawled_website(url).await? {
             match &found.stored_data_hint {
                 StoredDataHint::External(_) | StoredDataHint::None | StoredDataHint::InMemory(_) => {
-                    Ok(Some(found.inflate(None)))
+                    return Ok(Some(found.inflate(None)));
                 }
                 StoredDataHint::Warc(pointers) => {
-                    match pointers {
-                        WarcSkipInstruction::Single{pointer, header_signature_octet_count: header_octet_count, is_base64 } => {
-                            let data = self.read_body(pointer, *header_octet_count).await?;
-                            let data = if *is_base64 {
-                                if let Some(value) = data {
-                                    Some(BASE64.decode(&value)?)
-                                } else {
-                                    None
-                                }
-                            } else {
-                                data
-                            };
-                            Ok(Some(found.inflate(data)))
-                        },
-                        WarcSkipInstruction::Multiple{ pointers, header_signature_octet_count: header_octet_count, is_base64 } => {
-                            let mut collected_data = Vec::new();
-                            for (pos, value) in pointers.iter().with_position() {
-                                match pos {
-                                    Position::First | Position::Only => {
-                                        match self.read_body(value, *header_octet_count).await? {
-                                            None => {}
-                                            Some(value) => {
-                                                collected_data.extend(value)
-                                            }
-                                        }
-                                    }
-                                    _ => {
-                                        match self.read_body(value, 0).await? {
-                                            None => {}
-                                            Some(value) => {
-                                                collected_data.extend(value)
-                                            }
-                                        }
-                                    }
-                                }
-
-                            }
-                            if collected_data.is_empty() {
-                                Ok(Some(found.inflate(None)))
-                            } else {
-                                let collected_data = if *is_base64 {
-                                    BASE64.decode(&collected_data)?
-                                } else {
-                                    collected_data
-                                };
-                                Ok(Some(found.inflate(Some(collected_data))))
-                            }
-
-                        }
-                    }
+                    let read = pointers.read_in_context(&self.worker_warc_writer).await?;
+                    return Ok(Some(found.inflate(read)));
                 }
                 StoredDataHint::Associated => unreachable!()
             }
         } else {
             Ok(None)
         }
-    }
-}
-
-#[derive(Debug)]
-pub struct WorkerWarcWriter {
-    writer: Arc<RwLock<RawWorkerWarcWriter>>
-}
-
-impl WorkerWarcWriter {
-    pub fn new(fp: Arc<WorkerFileProvider>) -> Result<Self, FSAError> {
-        let (file, path) = fp.create_fresh_warc_file(None::<&str>)?;
-        Ok(
-            Self {
-                writer: Arc::new(RwLock::new(RawWorkerWarcWriter::new(
-                    fp,
-                    WarcWriter::new(BufWriter::new(file)),
-                    DataFilePathBuf::new(path)
-                ))),
-            }
-        )
-    }
-
-    #[allow(dead_code)]
-    pub async fn current_file(&self) -> DataFilePathBuf {
-        let writer = self.writer.read().await;
-        writer.path.clone()
-    }
-
-    #[allow(dead_code)]
-    pub async fn flush(&self) -> Result<(), FSAError> {
-        let mut writer = self.writer.write().await;
-        writer.flush()
-    }
-
-    pub async fn execute_on_writer<R, E, F: FnOnce(&mut RawWorkerWarcWriter) -> Result<R, E>>(&self, to_execute: F) -> Result<R, E> {
-        log::trace!("Get WARC-Write lock");
-        let mut writer = self.writer.write().await;
-        log::trace!("Get WARC-Write lock - success");
-        to_execute(&mut writer)
-    }
-
-    pub async fn make_sure_is_not_write_target(&self, path: &Utf8Path) -> Result<(), FSAError> {
-        let writer = self.writer.read().await;
-        if writer.path.as_path().eq(path) {
-            drop(writer);
-            let mut writer = self.writer.write().await;
-            let _ = writer.forward_if_filesize(0)?;
-            Ok(())
-        } else {
-            Ok(())
-        }
-    }
-}
-
-impl Clone for WorkerWarcWriter {
-    fn clone(&self) -> Self {
-        Self {
-            writer: self.writer.clone()
-        }
-    }
-}
-
-
-#[derive(Debug)]
-pub struct RawWorkerWarcWriter {
-    fp: Arc<WorkerFileProvider>,
-    writer: WarcWriter<BufWriter<File>>,
-    path: DataFilePathBuf
-}
-
-impl RawWorkerWarcWriter {
-
-    pub fn new(
-        fp: Arc<WorkerFileProvider>,
-        writer: WarcWriter<BufWriter<File>>,
-        path: DataFilePathBuf
-    ) -> Self {
-        Self {
-            fp,
-            writer,
-            path
-        }
-    }
-
-    #[allow(dead_code)]
-    fn flush(&mut self) -> Result<(), FSAError> {
-        self.writer.flush().to_fsa_error(|| self.path.to_string())
-    }
-
-    fn replace_writer(&mut self, writer: WarcWriter<BufWriter<File>>, path: DataFilePathBuf) -> (WarcWriter<BufWriter<File>>, DataFilePathBuf) {
-        (std::mem::replace(&mut self.writer, writer), std::mem::replace(&mut self.path, path))
-    }
-}
-
-impl SpecialWarcWriter for RawWorkerWarcWriter {
-    fn get_skip_pointer(&self) -> Result<WarcSkipPointer, WarcWriterError> {
-        self.writer.check_if_state(crate::warc::states::State::ExpectHeader)?;
-        Ok(
-            WarcSkipPointer::new(
-                self.path.clone(),
-                self.writer.bytes_written() as u64
-            )
-        )
-    }
-
-    unsafe fn get_skip_pointer_unchecked(&self) -> WarcSkipPointer {
-        WarcSkipPointer::new(
-            self.path.clone(),
-            self.writer.bytes_written() as u64
-        )
-    }
-
-
-    #[inline] fn bytes_written(&self) -> usize {
-        self.writer.bytes_written()
-    }
-
-    #[inline] fn write_header(&mut self, header: WarcHeader) -> Result<usize, WarcWriterError> {
-        self.writer.write_header(&header)
-    }
-
-    #[inline] fn write_body_complete(&mut self, buf: &[u8]) -> Result<usize, WarcWriterError> {
-        self.writer.write_complete_body(buf)
-    }
-
-
-    #[inline] fn write_body<R: Read>(&mut self, body: &mut R) -> Result<usize, WarcWriterError> {
-        self.writer.write_body(body)
-    }
-
-    #[inline] fn write_empty_body(&mut self) -> Result<usize, WarcWriterError> {
-        self.writer.write_complete_body(&[])
-    }
-
-    fn forward(&mut self) -> Result<DataFilePathBuf, FSAError> {
-        let (file, path) = self.fp.create_fresh_warc_file(None::<&str>)?;
-        let (mut old_writer, path) = self.replace_writer(
-            WarcWriter::new(BufWriter::new(file)),
-            DataFilePathBuf::new(path)
-        );
-        old_writer.flush().map_err(|value| FSAError(path.as_path().to_string(), value))?;
-        Ok(path)
     }
 }
 
@@ -427,16 +206,17 @@ pub(crate) mod test {
     use ubyte::ByteUnit;
     use crate::core::config::Configs;
     use crate::core::contexts::{Context, CrawlTaskContext, LocalContext};
-    use crate::core::contexts::worker_context::{WorkerContext, WorkerWarcWriter};
+    use crate::core::contexts::worker_context::{WorkerContext};
     use crate::core::crawl::result::test::{create_test_data, create_test_data_unknown, create_testdata_with_on_seed};
     use crate::core::io::fs::{FileSystemAccess};
     use crate::core::{UrlWithDepth, VecDataHolder};
+    use crate::core::stores::warc::ThreadsafeMultiFileWarcWriter;
     use crate::core::warc::SpecialWarcWriter;
     use crate::util::RuntimeContext;
     use crate::warc::parser::test::create_test_header;
 
 
-    pub async fn create_writers() -> (FileSystemAccess, WorkerWarcWriter) {
+    pub async fn create_writers() -> (FileSystemAccess, ThreadsafeMultiFileWarcWriter) {
         let x = Utf8PathBuf::from("test\\data");
         if x.exists() {
             std::fs::remove_dir_all(x).unwrap();
@@ -449,9 +229,9 @@ pub(crate) mod test {
             0,
             Utf8PathBuf::from("test\\data"),
             Utf8PathBuf::from("test\\data\\blobs"),
-        );
+        ).unwrap();
 
-        let wwr = WorkerWarcWriter::new(
+        let wwr = ThreadsafeMultiFileWarcWriter::new_for_worker(
             Arc::new(
                 fs.create_worker_file_provider(0).await.unwrap()
             )

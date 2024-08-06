@@ -71,7 +71,13 @@ impl LocalContext {
         if !output_path.exists() {
             std::fs::create_dir_all(output_path)?;
         }
-        let file_provider = Arc::new(FileSystemAccess::from(&configs));
+        let file_provider = Arc::new(FileSystemAccess::new(
+            configs.session.service_name.clone(),
+            configs.session.collection_name.clone(),
+            configs.session.crawl_job_id,
+            configs.paths.root_path(),
+            configs.paths.dir_big_files()
+        )?);
 
         let db = Arc::new(open_db(configs.paths().dir_database())?);
         let link_states = LinkStateDB::new(db.clone())?;

@@ -18,6 +18,7 @@ use std::borrow::Cow;
 use std::fs::File;
 use std::io;
 use std::io::{BufRead, BufReader, Write};
+use camino::Utf8PathBuf;
 use chardetng::EncodingDetector;
 use encoding_rs::{DecoderResult, Encoding, UTF_8};
 use itertools::Itertools;
@@ -28,7 +29,6 @@ use tokio::task::yield_now;
 pub use data_holder::DecodedData;
 use crate::core::contexts::Context;
 use crate::core::{DataHolder, VecDataHolder};
-use crate::core::io::paths::DecodedDataFilePathBuf;
 use crate::core::response::ResponseDataWithMeta;
 use crate::core::page_type::PageType;
 use crate::static_selectors;
@@ -60,7 +60,7 @@ pub enum DecodingError {
 /// a segment of the input instead of the whole input. Use `new_decoder()`
 /// when decoding segmented input.
 
-pub async fn decode<'a>(context: &impl Context, page: &'a ResponseDataWithMeta<'a>) -> Result<DecodedData<Cow<'a, str>, DecodedDataFilePathBuf>, DecodingError> {
+pub async fn decode<'a>(context: &impl Context, page: &'a ResponseDataWithMeta<'a>) -> Result<DecodedData<Cow<'a, str>, Utf8PathBuf>, DecodingError> {
 
     match page.data.content() {
         VecDataHolder::None => {return Ok(DecodedData::None)}
@@ -197,7 +197,7 @@ pub async fn decode<'a>(context: &impl Context, page: &'a ResponseDataWithMeta<'
 }
 
 /// Decodes the content of [page] with [encoding]
-pub async fn do_decode<'a>(page: &'a ResponseDataWithMeta<'a>, encoding: &'static Encoding) -> Result<DecodedData<Cow<'a, str>, DecodedDataFilePathBuf>, DecodingError> {
+pub async fn do_decode<'a>(page: &'a ResponseDataWithMeta<'a>, encoding: &'static Encoding) -> Result<DecodedData<Cow<'a, str>, Utf8PathBuf>, DecodingError> {
     match &page.data.content {
         DataHolder::InMemory { data } => {
             let decoded = encoding.decode(data.as_slice());
@@ -208,7 +208,13 @@ pub async fn do_decode<'a>(page: &'a ResponseDataWithMeta<'a>, encoding: &'stati
         }
         DataHolder::ExternalFile { file } => {
             let mut decoder = encoding.new_decoder_with_bom_removal();
-            let out_path = file.join_to_decode(decoder.encoding());
+            let mut out_path = file.clone();
+            {
+                let mut name = out_path.file_name().expect("A DataFile always has a name!").to_string();
+                name.push_str("_decoded_");
+                name.push_str(encoding.name());
+                out_path.set_file_name(name);
+            }
             let mut output = File::options().write(true).open(&out_path)?;
             let mut reader = BufReader::new(File::options().read(true).open(&file)?);
             let mut output_buf = [0u8; crate::core::DEFAULT_BUF_SIZE];

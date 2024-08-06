@@ -16,9 +16,9 @@ use std::cmp::min;
 use std::fs::File;
 use std::io;
 use std::io::{Cursor, IoSliceMut, SeekFrom, Read};
+use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 use crate::core::contexts::Context;
-use crate::core::io::paths::DataFilePathBuf;
 
 pub type VecDataHolder = DataHolder<Vec<u8>>;
 
@@ -30,7 +30,7 @@ pub enum DataHolder<T> {
     /// We got some data
     InMemory { data: T },
     /// If we are too big we store it in a separate file on the file system
-    ExternalFile { file: DataFilePathBuf }
+    ExternalFile { file: Utf8PathBuf }
 }
 
 impl<T> DataHolder<T> {
@@ -40,7 +40,7 @@ impl<T> DataHolder<T> {
     }
 
     /// Create a data holder when the
-    #[inline] pub fn from_external(file: DataFilePathBuf) -> Self {
+    #[inline] pub fn from_external(file: Utf8PathBuf) -> Self {
         Self::ExternalFile { file }
     }
 
@@ -151,7 +151,7 @@ impl<T: AsRef<[u8]>> io::Seek for DataHolderCursor<T> {
     }
 }
 
-impl<T: AsRef<[u8]>> io::Read for DataHolderCursor<T> {
+impl<T: AsRef<[u8]>> Read for DataHolderCursor<T> {
     delegate::delegate! {
         to match self {
             Self::InMemory{cursor, ..} => cursor,

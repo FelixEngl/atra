@@ -12,11 +12,11 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+use camino::Utf8PathBuf;
 use encoding_rs::{UTF_8};
 use tokio::task::yield_now;
 use crate::core::contexts::Context;
 use crate::core::decoding::{decode, DecodedData, DecodingError, do_decode};
-use crate::core::io::paths::DecodedDataFilePathBuf;
 use crate::core::mime::IS_UTF8;
 use crate::core::response::{ResponseData, ResponseDataWithMeta};
 use crate::core::page_type::PageType;
@@ -60,5 +60,5 @@ pub async fn process<'a>(context: &impl Context, page: &'a ResponseData) -> Resu
 /// A tuple containing the preprocessed page data
 pub struct ProcessedData<'a>(
     pub ResponseDataWithMeta<'a>,
-    pub DecodedData<String, DecodedDataFilePathBuf>,
+    pub DecodedData<String, Utf8PathBuf>,
 );

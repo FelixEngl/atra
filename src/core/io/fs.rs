@@ -13,52 +13,23 @@
 //limitations under the License.
 
 use std::borrow::Cow;
-use std::fmt::{Debug, Display, Formatter};
-use std::fs::{File};
+use std::fmt::Debug;
 use std::io;
-use camino::{Utf8PathBuf as PathBuf, Utf8Path as Path, Utf8PathBuf, Utf8Path};
-use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
-use std::time::SystemTime;
+use std::io::ErrorKind;
+use camino::{Utf8PathBuf, Utf8Path};
 use data_encoding::{BASE64URL_NOPAD};
-use serde::{Deserialize, Serialize};
-use thiserror::Error;
-use time::OffsetDateTime;
 use tokio::sync::Mutex;
-use crate::core::config::configs::Configs;
-use crate::core::io::{AtraPathBuf};
-use crate::core::io::paths::{DataFilePathBuf};
-use crate::warc::reader::WarcCursor;
-
-
-/// The errors when working with the FileSystemAccess
-#[derive(Debug, Error)]
-#[error("IOError at {0:?}\n{1}")]
-pub struct FSAError(pub String, #[source] pub io::Error);
-
-/// Helper trait to convert Result-enums to Result-enums with FSAError
-pub trait ToFSAError<T> {
-
-    fn to_fsa_error<F: FnOnce() -> String>(self, path_provider: F) -> Result<T, FSAError>;
-}
-
-impl<T> ToFSAError<T> for Result<T, io::Error> {
-    #[inline]
-    fn to_fsa_error<F: FnOnce() -> String>(self, path_provider: F) -> Result<T, FSAError> {
-        self.map_err(|err| FSAError(path_provider(), err))
-    }
-}
-
-
+use crate::core::io::errors::{ErrorWithPath, ToErrorWithPath};
+use crate::core::io::templating::{file_name_template, FileNameTemplate, FileNameTemplateArgs};
+use crate::core::io::unique_path_provider::{UniquePathProvider, UniquePathProviderWithTemplate};
+use crate::core::stores::warc::WarcFilePathProvider;
 
 /// Provides the paths in the application
 #[derive(Debug)]
 pub struct FileSystemAccess {
-    service: String,
-    collection: String,
-    crawl_job_id: u64,
-    data_serial: AtomicU64,
-    output_folder: PathBuf,
-    big_file_folder: PathBuf,
+    collection_root: Utf8PathBuf,
+    worker_base: FileNameTemplate,
+    big_file: UniquePathProviderWithTemplate,
     filesystem_lock: Mutex<()>,
 }
 
@@ -68,227 +39,127 @@ impl FileSystemAccess {
         service: String,
         collection: String,
         crawl_job_id: u64,
-        output_folder: PathBuf,
-        big_file_folder: PathBuf,
-    ) -> Self {
-        let output_folder =  PathBuf::from(output_folder);
-        let ouput_path = Path::new(&output_folder);
-        if !ouput_path.exists() {
-            std::fs::create_dir_all(ouput_path).expect("Can not create necessary directories.");
+        output_folder: Utf8PathBuf,
+        big_file_folder: Utf8PathBuf,
+    ) -> Result<Self, ErrorWithPath> {
+        let collection_root = output_folder.join(&collection);
+        if !collection_root.exists() {
+            std::fs::create_dir_all(&collection_root).to_error_with_path(&collection_root)?;
         }
+
+        let template_base =
+            file_name_template!(service _ crawl_job_id).unwrap();
+
 
         if !big_file_folder.exists() {
-            std::fs::create_dir_all(big_file_folder.clone()).expect("Can not create necessary directories.");
+            std::fs::create_dir_all(&big_file_folder).to_error_with_path(&collection_root)?;
         }
 
-        Self {
-            service,
-            collection,
-            crawl_job_id,
-            output_folder,
-            big_file_folder,
-            data_serial: AtomicU64::default(),
-            filesystem_lock: Mutex::new(()),
-        }
+        let path_provider_big_file =
+            UniquePathProvider::new(big_file_folder)
+                .with_template(file_name_template!(arg!@"url64" _ timestamp64 _ serial ".dat").unwrap());
+
+        Ok(
+            Self {
+                collection_root,
+                worker_base: template_base,
+                big_file: path_provider_big_file,
+                filesystem_lock: Mutex::new(()),
+            }
+        )
     }
 
 
     /// Creates a unique path to a fresh data file.
-    pub fn create_unique_path_for_dat_file(&self, url: &str) -> DataFilePathBuf {
-        let part1 = BASE64URL_NOPAD.encode(url.as_bytes());
-        let part2 = BASE64URL_NOPAD.encode(&OffsetDateTime::now_utc().unix_timestamp_nanos().to_be_bytes());
-        let part3 = BASE64URL_NOPAD.encode(&self.data_serial.fetch_add(1, Ordering::SeqCst).to_be_bytes());
-        let name = format!("{part1}_{part2}_{part3}.dat");
-        self.get_unique_path_for_data_file(&name)
+    pub fn create_unique_path_for_dat_file(&self, url: &str) -> Utf8PathBuf {
+        let mut args = FileNameTemplateArgs::with_capacity(1);
+        args.insert("url64", BASE64URL_NOPAD.encode(url.as_bytes()));
+        return self.big_file.provide_path_with_args(&args).unwrap();
     }
 
     /// Builds the path to the data-file with a given name
-    pub fn get_unique_path_for_data_file(&self, name: impl AsRef<Path>) -> DataFilePathBuf {
-        AtraPathBuf::new(PathBuf::from(&self.big_file_folder).join(name))
+    pub fn get_unique_path_for_data_file(&self, name: impl AsRef<Utf8Path>) -> Utf8PathBuf {
+        self.big_file.root().join(name)
     }
-
 
 
     /// Deletes a datafile
-    pub fn cleanup_data_file(&self, name: impl AsRef<Path> + Debug) -> std::io::Result<()> {
+    pub fn cleanup_data_file(&self, name: impl AsRef<Utf8Path> + Debug) -> io::Result<()> {
         log::debug!("Delete the file {name:?}");
-        let path = self.big_file_folder.join(name);
+        let path = self.big_file.root().join(name);
         std::fs::remove_file(path)
     }
 
-    pub async fn create_worker_file_provider(&self, worker_id: usize) -> Result<WorkerFileProvider, FSAError> {
+    pub async fn create_worker_file_provider(&self, worker_id: usize) -> Result<WorkerFileProvider, ErrorWithPath> {
         let _ = self.filesystem_lock.lock().await;
-        return WorkerFileProvider::build(worker_id, &self)
+        WorkerFileProvider::new(
+            self.collection_root.clone(),
+            self.worker_base.clone(),
+            worker_id
+        )
     }
 }
+
+
 
 /// A worker bound access for writing warcs
 #[derive(Debug)]
 pub struct WorkerFileProvider {
-    warc_writer_serial: AtomicU16,
-    warc_dir: PathBuf,
-    service: String,
-    collection: String,
-    crawl_job_id: u64,
+    // worker_root: Utf8PathBuf,
+    // worker_base: FileNameTemplate,
+    provider: UniquePathProviderWithTemplate
 }
 
 impl WorkerFileProvider {
 
     pub fn new(
-        warc_dir: PathBuf,
-        service: String,
-        collection: String,
-        crawl_job_id: u64,
-    ) -> Self {
-        Self {
-            warc_writer_serial: AtomicU16::default(),
-            warc_dir,
-            service,
-            collection,
-            crawl_job_id,
-        }
-    }
-
-
-    /// Creates the new WorkerWarcFileProvider
-    pub fn build(
+        collection_root: Utf8PathBuf,
+        worker_base: FileNameTemplate,
         worker_id: usize,
-        base: &FileSystemAccess
-    ) -> Result<Self, FSAError> {
-        let worker_dir = base.output_folder.join(format!("worker_{}", worker_id));
-        if !worker_dir.exists() {
-            std::fs::create_dir_all(&worker_dir).to_fsa_error(|| worker_dir.to_string())?;
+    ) -> Result<Self, ErrorWithPath> {
+        let worker_root = collection_root.join(format!("worker_{worker_id}"));
+        if !worker_root.exists() {
+            std::fs::create_dir_all(&worker_root).to_error_with_path(&worker_root)?;
         }
-        let warc_dir = worker_dir.join("warc");
-        if !warc_dir.exists() {
-            std::fs::create_dir_all(&warc_dir).to_fsa_error(|| warc_dir.to_string())?;
-        }
-        Ok(
-            Self::new(
-                warc_dir,
-                base.service.clone(),
-                base.collection.clone(),
-                base.crawl_job_id,
-            )
-        )
-    }
-
-    /// Increment the serial
-    fn get_serial(serial: &AtomicU16) -> u16 {
-        unsafe {
-            serial.fetch_update(
-                Ordering::SeqCst,
-                Ordering::Relaxed,
-                |next| Some(next.overflowing_add(1).0)
-            ).unwrap_unchecked()
-        }
-    }
-
-    /// Creates a file in the dir of a specific worker.
-    /// Also makes sure, that the returned file is new IFF [NEW] is set.
-    fn create_worker_file<const NEW: bool>(&self, path: Utf8PathBuf, serial: u16, extension: &str) -> Result<(File, Utf8PathBuf), FSAError> {
-        let context = Template::new(
-            &self.service,
-            &self.collection,
-            self.crawl_job_id,
-            serial,
-            extension
+        let provider = UniquePathProvider::new(&worker_root).with_template(
+            file_name_template!(ref worker_base _ worker_id _ timestamp64 _ serial ".warc").unwrap()
         );
-        let final_path = path.join(context.to_string());
-        let file = if NEW {
-            File::options().read(true).write(true).create_new(true).open(&final_path).to_fsa_error(|| final_path.clone().into_string())?
-        } else {
-            File::create(&final_path).to_fsa_error(|| final_path.clone().into_string())?
-        };
-        Ok((file, final_path))
-    }
-
-    /// Build the proper extension for a file
-    fn build_extension(base: &'static str, others: Option<impl AsRef<str>>) -> Cow<str> {
-        if let Some(extensions) = others {
-            let value = extensions.as_ref();
-            if value.starts_with('.') {
-                Cow::Owned(format!("{base}{value}"))
-            } else {
-                Cow::Owned(format!("{base}.{value}"))
+        Ok(
+            Self {
+                // worker_root,
+                // worker_base,
+                provider
             }
-        } else {
-            Cow::Borrowed(base)
-        }
-    }
-
-    /// Creates a fresh warc file
-    pub fn create_fresh_warc_file<T: AsRef<str>>(&self, additional_extension: Option<T>) -> Result<(File, Utf8PathBuf), FSAError> {
-        let serial = Self::get_serial(&self.warc_writer_serial);
-        let extension = Self::build_extension("warc", additional_extension);
-        self.create_worker_file::<true>(self.warc_dir.clone(), serial, extension.as_ref())
-    }
-
-    #[allow(dead_code)]
-    pub fn warc_file_reader<P: AsRef<Utf8Path>>(&self, path: P) -> Result<WarcCursor<File>, FSAError> {
-        let path = path.as_ref();
-        let file = if path.exists() {
-            File::options().read(true).open(path).to_fsa_error(|| path.to_string())?
-        } else {
-            let new = self.warc_dir.clone().join(path);
-            File::options().read(true).open(new).to_fsa_error(|| path.to_string())?
-        };
-        Ok(WarcCursor::new(file))
-    }
-}
-
-impl From<&Configs> for FileSystemAccess {
-    fn from(value: &Configs) -> Self {
-        Self::new(
-            value.session().service_name.clone(),
-            value.session().collection_name.clone(),
-            value.session().crawl_job_id,
-            value.paths().root_path(),
-            value.paths().dir_big_files(),
         )
     }
 }
 
-/// A template used to generate a specific file names
-#[derive(Debug, Clone, Deserialize, Serialize)]
-struct Template<'a> {
-    service: &'a str,
-    collection: &'a str,
-    crawl_job_id: u64,
-    timestamp: OffsetDateTime,
-    serial: u16,
-    extensions: &'a str
-}
-impl<'a> Template<'a> {
-    pub fn new(
-        service: &'a str,
-        collection: &'a str,
-        crawl_job_id: u64,
-        serial: u16,
-        extensions: &'a str
-    ) -> Self {
-        Self {
-            service,
-            collection,
-            crawl_job_id,
-            timestamp: SystemTime::now().into(),
-            serial,
-            extensions
-        }
-    }
-}
-impl Display for Template<'_> {
+impl WarcFilePathProvider for WorkerFileProvider {
+    fn create_new_warc_file_path(&self) -> Result<Utf8PathBuf, ErrorWithPath> {
+        let mut last: Option<Utf8PathBuf> = None;
+        loop {
+            let result = self.provider.provide_path_no_args().unwrap();
+            if !result.exists() {
+                break Ok(result);
+            }
 
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}-{}-{}-{}-{}.{}",
-            self.service,
-            self.collection,
-            self.crawl_job_id,
-            self.timestamp.unix_timestamp_nanos(),
-            self.serial,
-            self.extensions
-        )
+            match last {
+                None => {
+                    last = Some(result);
+                }
+                Some(value) => {
+                    if result == value {
+                        return Err(
+                            ErrorWithPath::new(
+                                result,
+                                io::Error::new(ErrorKind::AlreadyExists, "The path was already generated once, this should not be happening!")
+                            )
+                        )
+                    } else {
+                        last = Some(result);
+                    }
+                }
+            }
+        }
     }
 }
