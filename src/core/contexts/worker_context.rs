@@ -19,15 +19,16 @@ use thiserror::Error;
 use time::Duration;
 use crate::core::blacklist::PolyBlackList;
 use crate::core::config::Configs;
-use crate::core::contexts::{Context, CrawlTaskContext, LinkHandlingError, RecoveryCommand, RecoveryError, SlimCrawlTaskContext};
+use crate::core::contexts::{Context, CrawlTaskContext, RecoveryCommand, SlimCrawlTaskContext};
 use crate::core::crawl::result::CrawlResult;
 use crate::core::crawl::seed::CrawlSeed;
 use crate::core::crawl::slim::{SlimCrawlResult, StoredDataHint};
 use crate::core::database_error::DatabaseError;
 use crate::core::extraction::ExtractedLink;
-use crate::core::io::fs::{WorkerFileProvider};
+use crate::core::io::fs::{WorkerFileSystemAccess};
 use crate::core::link_state::{LinkState, LinkStateDBError, LinkStateType};
 use crate::core::{UrlWithDepth, VecDataHolder};
+use crate::core::contexts::errors::{LinkHandlingError, RecoveryError};
 use crate::core::io::errors::{ErrorWithPath};
 use crate::core::stores::warc::ThreadsafeMultiFileWarcWriter;
 use crate::core::warc::{write_warc};
@@ -37,7 +38,7 @@ use crate::core::warc::{write_warc};
 pub struct WorkerContext<T: SlimCrawlTaskContext> {
     worker_id: usize,
     inner: Arc<T>,
-    worker_file_provider: Arc<WorkerFileProvider>,
+    worker_file_provider: Arc<WorkerFileSystemAccess>,
     worker_warc_writer: ThreadsafeMultiFileWarcWriter
 }
 
@@ -62,7 +63,7 @@ impl<T: SlimCrawlTaskContext> WorkerContext<T> {
         Ok(Self::new(worker_id, inner, worker_warc_system)?)
     }
 
-    pub fn new(worker_id: usize, inner: Arc<T>, worker_warc_system: WorkerFileProvider) -> Result<Self, ErrorWithPath> {
+    pub fn new(worker_id: usize, inner: Arc<T>, worker_warc_system: WorkerFileSystemAccess) -> Result<Self, ErrorWithPath> {
         let worker_file_provider = Arc::new(worker_warc_system);
         let worker_warc_writer = ThreadsafeMultiFileWarcWriter::new_for_worker(worker_file_provider.clone())?;
         Ok(
@@ -273,7 +274,7 @@ pub(crate) mod test {
 
 
         let mut cfg = Configs::default();
-        cfg.paths.root_folder = "test".to_string();
+        cfg.paths.root = "test".parse().unwrap();
 
         let local = Arc::new(LocalContext::new(cfg, RuntimeContext::unbound()).await.unwrap());
 
@@ -307,7 +308,7 @@ pub(crate) mod test {
 
 
         let mut cfg = Configs::default();
-        cfg.paths.root_folder = "test".to_string();
+        cfg.paths.root = "test".parse().unwrap();
 
         let local = Arc::new(LocalContext::new(cfg, RuntimeContext::unbound()).await.unwrap());
 

@@ -248,7 +248,6 @@ dependencies = [
  "rio_api",
  "rio_turtle",
  "rocksdb",
- "rust-ini 0.20.0",
  "rust-stemmers",
  "scopeguard",
  "scraper",
@@ -716,7 +715,7 @@ dependencies = [
  "nom",
  "pathdiff",
  "ron",
- "rust-ini 0.19.0",
+ "rust-ini",
  "serde",
  "serde_json",
  "toml",
@@ -2264,16 +2263,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ordered-multimap"
-version = "0.7.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49203cdcae0030493bad186b28da2fa25645fa276a51b6fec8010d281e02ef79"
-dependencies = [
- "dlv-list",
- "hashbrown 0.14.5",
-]
-
-[[package]]
 name = "overload"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2868,17 +2857,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e2a3bcec1f113553ef1c88aae6c020a369d03d55b58de9869a0908930385091"
 dependencies = [
  "cfg-if",
- "ordered-multimap 0.6.0",
-]
-
-[[package]]
-name = "rust-ini"
-version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e0698206bcb8882bf2a9ecb4c1e7785db57ff052297085a6efd4fe42302068a"
-dependencies = [
- "cfg-if",
- "ordered-multimap 0.7.3",
+ "ordered-multimap",
 ]
 
 [[package]]

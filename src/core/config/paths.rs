@@ -12,76 +12,54 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use camino::Utf8PathBuf as PathBuf;
-use ini::Ini;
+use camino::{Utf8Path, Utf8PathBuf};
 use serde::{Deserialize, Serialize};
-use std::borrow::Cow;
-use crate::core::ini_ext::{FromIni, IniExt, IntoIni, SectionSetterExt};
 
 /// Config of the session, basically paths etc.
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
+#[serde(rename(serialize = "Paths"))]
 pub struct PathsConfig {
-
     /// The root path where the application runs
-    pub root_folder: String,
-    pub db_dir_name: Option<String>,
-    pub queue_file_name: Option<String>,
-    pub blacklist_name: Option<String>,
-    pub big_file_dir_name: Option<String>,
-    pub web_graph_file_name: Option<String>
+    #[serde(default = "_default_root_folder")]
+    pub root: Utf8PathBuf,
+    directories: Directories,
+    files: Files
 }
 
-const DEFAULT_ATRA_DATA_ROOT: &str = "atra_data";
+fn _default_root_folder() -> Utf8PathBuf { "./atra_data".parse::<Utf8PathBuf>().unwrap() }
 
 
-impl FromIni for PathsConfig {
-    fn from_ini(ini: &Ini) -> Self {
+impl Default for PathsConfig {
+    fn default() -> Self {
         Self {
-            root_folder: ini.get_or(Some("Paths"), "root", DEFAULT_ATRA_DATA_ROOT.to_string()),
-            db_dir_name: ini.get(Some("Paths"), "db_dir_name"),
-            queue_file_name: ini.get(Some("Paths"), "queue_file_name"),
-            blacklist_name: ini.get(Some("Paths"), "blacklist_name"),
-            big_file_dir_name: ini.get(Some("Paths"), "big_file_dir_name"),
-            web_graph_file_name: ini.get(Some("Paths"), "web_graph_file_name")
+            root: _default_root_folder(),
+            files: Files::default(),
+            directories: Directories::default()
         }
     }
 }
 
-impl IntoIni for PathsConfig {
-    fn insert_into(&self, ini: &mut Ini) {
-        ini.with_section(Some("Paths"))
-            .set("root", &self.root_folder)
-            .set_optional("db_dir_name", self.db_dir_name.as_ref())
-            .set_optional("queue_file_name", self.queue_file_name.as_ref())
-            .set_optional("blacklist_name", self.blacklist_name.as_ref())
-            .set_optional("big_file_dir_name", self.big_file_dir_name.as_ref())
-            .set_optional("web_graph_file_name", self.web_graph_file_name.as_ref());
+impl PathsConfig {
+    pub fn new(root: impl AsRef<Utf8Path>, directories: Directories, files: Files) -> Self {
+        Self {
+            root: root.as_ref().to_path_buf(),
+            directories,
+            files
+        }
     }
 }
 
 
 macro_rules! path_constructors {
-    ($self: ident: $($name: ident($optional_path: ident, $root: ident => $default: literal);)+) => {
+    ($self: ident.($($root: ident => $name: ident = $path1: ident.$path2: ident;)+)) => {
         $(
-            pub fn $name(&$self) -> PathBuf {
-                let mut new = PathBuf::new();
-                if let Some(ref path) = $self.$optional_path {
-                    new.push(&$self.$root);
-                    new.push(path);
-                } else {
-                    new.push(&$self.$root);
-                    new.push($default);
-                }
-                new
+            pub fn $name(&$self) -> Utf8PathBuf {
+                $self.$root.join(&$self.$path1.$path2)
             }
 
             paste::paste! {
-                pub fn [<$name _name>](&$self) -> Cow<str> {
-                    if let Some(ref path) = $self.$optional_path {
-                        Cow::Borrowed(path)
-                    } else {
-                        Cow::Borrowed($default)
-                    }
+                pub fn [<$name _name>](&$self) -> Option<&str> {
+                    $self.$path1.$path2.file_name()
                 }
             }
         )+
@@ -90,61 +68,99 @@ macro_rules! path_constructors {
 
 impl PathsConfig {
 
-    pub fn root_path(&self) -> PathBuf {
-        PathBuf::from(&self.root_folder)
+    pub fn root_path(&self) -> &Utf8Path  {
+        self.root.as_path()
     }
 
-    /// Allows to update the session config with another one
-    #[allow(dead_code)]
-    pub fn override_with(self, other: Self) -> Self {
-        Self {
-            root_folder: if other.root_folder == DEFAULT_ATRA_DATA_ROOT { self.root_folder } else { other.root_folder },
-            db_dir_name: other.db_dir_name.or(self.db_dir_name),
-            blacklist_name: other.blacklist_name.or(self.blacklist_name),
-            queue_file_name: other.queue_file_name.or(self.queue_file_name),
-            big_file_dir_name: other.big_file_dir_name.or(self.big_file_dir_name),
-            web_graph_file_name: other.web_graph_file_name.or(self.web_graph_file_name),
-        }
-    }
 
     path_constructors! {
-        self:
-        dir_database(db_dir_name, root_folder => "rocksdb");
-        file_queue(queue_file_name, root_folder => "queue.tmp");
-        file_blacklist(blacklist_name, root_folder => "blacklist.txt");
-        dir_big_files(big_file_dir_name, root_folder => "big_files");
-        file_web_graph(web_graph_file_name, root_folder => "web_graph.rdf");
+        self.(
+            root => dir_database = directories.database;
+            root => file_queue = files.queue;
+            root => file_blacklist = files.blacklist;
+            root => file_web_graph = files.web_graph;
+            root => dir_big_files = directories.big_files;
+        )
     }
 
 }
 
-impl Default for PathsConfig {
-    fn default() -> Self {
+
+
+#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
+pub struct Directories {
+    /// Path to the database directory
+    #[serde(default = "_default_database_dir")]
+    pub database: Utf8PathBuf,
+    /// Path to the big files directory
+    #[serde(default = "_default_big_files_dir")]
+    pub big_files: Utf8PathBuf,
+}
+
+impl Directories {
+    pub fn new(database: impl AsRef<Utf8Path>, big_files: impl AsRef<Utf8Path>) -> Self {
         Self {
-            root_folder: DEFAULT_ATRA_DATA_ROOT.to_string(),
-            blacklist_name: None,
-            queue_file_name: None,
-            db_dir_name: None,
-            big_file_dir_name: None,
-            web_graph_file_name: None
+            database: database.as_ref().to_path_buf(),
+            big_files: big_files.as_ref().to_path_buf()
         }
     }
 }
+
+impl Default for Directories {
+    fn default() -> Self {
+        Self {
+            database: _default_database_dir(),
+            big_files: _default_big_files_dir()
+        }
+    }
+}
+
+fn _default_database_dir() -> Utf8PathBuf { "./rocksdb".parse::<Utf8PathBuf>().unwrap() }
+fn _default_big_files_dir() -> Utf8PathBuf { "./big_files".parse::<Utf8PathBuf>().unwrap() }
+
+#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
+pub struct Files {
+    #[serde(default = "_default_queue_file")]
+    pub queue: Utf8PathBuf,
+    #[serde(default = "_default_blacklist_file")]
+    pub blacklist: Utf8PathBuf,
+    #[serde(default = "_default_web_graph_file")]
+    pub web_graph: Utf8PathBuf
+}
+
+impl Files {
+    pub fn new(queue: impl AsRef<Utf8Path>, blacklist: impl AsRef<Utf8Path>, web_graph: impl AsRef<Utf8Path>) -> Self {
+        Self {
+            queue: queue.as_ref().to_path_buf(),
+            blacklist: blacklist.as_ref().to_path_buf(),
+            web_graph: web_graph.as_ref().to_path_buf()
+        }
+    }
+}
+
+impl Default for Files {
+    fn default() -> Self {
+        Self {
+            queue: _default_queue_file(),
+            blacklist: _default_blacklist_file(),
+            web_graph: _default_web_graph_file()
+        }
+    }
+}
+
+
+fn _default_queue_file() -> Utf8PathBuf { "./queue.tmp".parse::<Utf8PathBuf>().unwrap() }
+fn _default_blacklist_file() -> Utf8PathBuf { "./blacklist.txt".parse::<Utf8PathBuf>().unwrap() }
+fn _default_web_graph_file() -> Utf8PathBuf { "./web_graph.rdf".parse::<Utf8PathBuf>().unwrap() }
+
 
 #[cfg(test)]
 mod test {
     use crate::core::config::paths::PathsConfig;
-    use crate::core::ini_ext::IntoIni;
 
     #[test]
     fn can_make_init(){
         let mut config = PathsConfig::default();
-        config.db_dir_name = Some(config.dir_database().to_string());
-        config.queue_file_name = Some(config.file_queue().to_string());
-        config.blacklist_name = Some(config.file_blacklist().to_string());
-        config.big_file_dir_name = Some(config.dir_big_files().to_string());
-
-        let ini = config.to_ini();
-        ini.write_to_file("session-config.ini").unwrap();
+        println!("{}", config.dir_big_files())
     }
 }

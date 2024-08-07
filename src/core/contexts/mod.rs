@@ -17,6 +17,7 @@ pub mod context;
 #[cfg(test)]
 pub mod inmemory;
 pub mod worker_context;
+pub mod errors;
 
 pub use context::*;
 pub use local::LocalContext;

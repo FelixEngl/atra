@@ -28,9 +28,15 @@ use crate::core::extraction::extractor_method::ExtractorMethod;
 */
 
 /// A struct acting as an extractor
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Eq)]
 #[repr(transparent)]
 pub struct Extractor(pub Vec<ExtractorCommand>);
+
+impl PartialEq for Extractor {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.len() == other.0.len() && self.0.iter().all(|value| other.0.contains(value))
+    }
+}
 
 impl Extractor {
 

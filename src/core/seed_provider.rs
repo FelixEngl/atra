@@ -131,9 +131,6 @@ pub async fn get_seed_from_context<'a, C: Context>(context_ref: &'a C, shutdown_
     } else {
         const MISSED_KEEPER_CACHE: usize = 8;
 
-
-
-
         let max_age = context_ref.configs().crawl().max_queue_age;
         let manager = context_ref.get_domain_manager();
         let mut missed_domains = 0;

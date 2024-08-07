@@ -18,6 +18,7 @@ use thiserror::Error;
 use time::Duration;
 use crate::core::blacklist::PolyBlackList;
 use crate::core::config::Configs;
+use crate::core::contexts::errors::{LinkHandlingError, RecoveryError};
 use crate::core::crawl::result::CrawlResult;
 use crate::core::crawl::seed::CrawlSeed;
 use crate::core::crawl::slim::{SlimCrawlResult};
@@ -32,16 +33,6 @@ use crate::core::url::queue::UrlQueue;
 use crate::core::UrlWithDepth;
 
 
-/// Error messages when the context fails somehow.
-#[derive(Debug, Error)]
-pub enum LinkHandlingError {
-    #[error(transparent)]
-    LinkState(#[from] LinkStateDBError),
-    #[error(transparent)]
-    UrlQueue(#[from] QueueError),
-    #[error(transparent)]
-    LinkNetError(#[from] LinkNetError)
-}
 
 /// What do you want to recover?
 #[allow(dead_code)]
@@ -53,18 +44,6 @@ pub enum RecoveryCommand<'a> {
     )
 }
 
-/// An error thrown when the recovery fails
-#[derive(Debug, Error)]
-pub enum RecoveryError {
-    #[error("Failed to recover {0}")]
-    LinkStateDB(#[from] LinkStateDBError),
-    #[error(transparent)]
-    UrlQueue(#[from] QueueError),
-    #[error(transparent)]
-    Database(#[from] DatabaseError),
-    #[error("Failed for an unknown reason.")]
-    UnknownReason
-}
 
 
 /// The context for a crawl

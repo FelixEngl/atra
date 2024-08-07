@@ -22,7 +22,7 @@ use tokio::sync::{Mutex};
 use tokio::sync::broadcast::Receiver;
 use crate::core::blacklist::PolyBlackList;
 use crate::core::config::Configs;
-use crate::core::contexts::{Context, LinkHandlingError, RecoveryCommand, RecoveryError, SlimCrawlTaskContext};
+use crate::core::contexts::{Context, RecoveryCommand, SlimCrawlTaskContext};
 use crate::core::crawl::result::CrawlResult;
 use crate::core::crawl::seed::CrawlSeed;
 use crate::core::crawl::slim::{SlimCrawlResult, StoredDataHint};
@@ -36,6 +36,7 @@ use crate::core::queue::QueueError;
 use crate::core::robots::{InMemoryRobotsManager, ShareableRobotsManager};
 use crate::core::url::queue::{EnqueueCalled, UrlQueue, UrlQueueElement, UrlQueueElementWeak};
 use crate::core::{UrlWithDepth, VecDataHolder};
+use crate::core::contexts::errors::{LinkHandlingError, RecoveryError};
 use crate::core::url::atra_uri::AtraUri;
 
 #[derive(Debug)]

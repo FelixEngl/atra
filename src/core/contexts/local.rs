@@ -21,7 +21,8 @@ use tokio::sync::{RwLock};
 use crate::core::blacklist::{PolyBlackList, BlacklistManager};
 use crate::core::link_state::{LinkStateManager, LinkState, LinkStateDB, LinkStateDBError, LinkStateType};
 use crate::core::config::configs::Configs;
-use crate::core::contexts::{LinkHandlingError, RecoveryCommand, RecoveryError};
+use crate::core::contexts::{RecoveryCommand};
+use crate::core::contexts::errors::{LinkHandlingError, RecoveryError};
 use crate::core::crawl::db::{CrawlDB};
 use crate::core::crawl::seed::CrawlSeed;
 use crate::core::crawl::slim::{SlimCrawlResult};
@@ -72,10 +73,10 @@ impl LocalContext {
             std::fs::create_dir_all(output_path)?;
         }
         let file_provider = Arc::new(FileSystemAccess::new(
-            configs.session.service_name.clone(),
-            configs.session.collection_name.clone(),
+            configs.session.service.clone(),
+            configs.session.collection.clone(),
             configs.session.crawl_job_id,
-            configs.paths.root_path(),
+            configs.paths.root_path().to_path_buf(),
             configs.paths.dir_big_files()
         )?);
 

@@ -14,3 +14,13 @@
 
 pub mod requests;
 pub use requests::*;
+
+
+pub trait Downloader {
+
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum Fetcher {
+
+}

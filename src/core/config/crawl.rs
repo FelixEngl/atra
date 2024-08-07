@@ -17,6 +17,7 @@
 use std::collections::HashMap;
 use std::num::{NonZeroU64};
 use case_insensitive_string::CaseInsensitiveString;
+use moka::ops::compute::Op;
 use time::Duration;
 use reqwest::header::HeaderMap;
 use crate::core::header_map_extensions::optional_header_map;
@@ -28,7 +29,9 @@ use crate::core::extraction::extractor::{Extractor};
 use crate::core::UrlWithDepth;
 
 /// The general crawling settings for a single
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename(serialize = "Crawl"))]
+#[serde(default)]
 pub struct CrawlConfig {
     /// The user agent used by the crawler
     pub user_agent: UserAgent,
@@ -64,16 +67,13 @@ pub struct CrawlConfig {
     pub cookies: Option<CookieSettings>,
 
     /// Headers to include with requests.
-    #[serde(default)]
     #[serde(with = "optional_header_map")]
     pub headers: Option<HeaderMap>,
     /// Use proxy list for performing network request.
-    #[serde(default)]
     pub proxies: Option<Vec<String>>,
     /// Allow all tlds for domain.
     pub tld: bool,
     /// Polite crawling delay
-    #[serde(default)]
     pub delay: Option<Duration>,
     /// The budget settings for this crawl
     pub budget: CrawlBudget,
@@ -84,7 +84,6 @@ pub struct CrawlConfig {
     /// The max redirections allowed for request. (default: 5 like Google-Bot)
     pub redirect_limit: usize,
     /// The redirect policy type to use.
-    #[serde(default)]
     pub redirect_policy: RedirectPolicy,
 
     /// Dangerously accept invalid certficates
@@ -101,7 +100,6 @@ pub struct CrawlConfig {
     /// The settings for a chrome instance
     pub chrome_settings: Option<ChromeSettings>,
 }
-
 
 
 impl Default for CrawlConfig {
@@ -138,7 +136,7 @@ impl Default for CrawlConfig {
 }
 
 /// The cookie settings for each host.
-#[derive(Debug, Default, Clone, Deserialize, Serialize)]
+#[derive(Debug, Default, Clone, Deserialize, Serialize, Eq, PartialEq)]
 pub struct CookieSettings {
     pub default: Option<String>,
     pub per_domain: Option<HashMap<CaseInsensitiveString, String>>
@@ -160,7 +158,7 @@ impl CookieSettings {
 }
 
 /// Redirect policy configuration for request
-#[derive(Debug, Default, Clone, Deserialize, Serialize)]
+#[derive(Debug, Default, Clone, Deserialize, Serialize, Eq, PartialEq)]
 pub enum RedirectPolicy {
     #[default]
     /// A loose policy that allows all request up to the redirect limit.
@@ -171,7 +169,7 @@ pub enum RedirectPolicy {
 
 
 /// The selected user agent
-#[derive(Debug, Default, Clone, Deserialize, Serialize, EnumString, Display)]
+#[derive(Debug, Default, Clone, Deserialize, Serialize, EnumString, Display, Eq, PartialEq)]
 pub enum UserAgent {
     /// Spoofs the user agent with a random useragent every time called.
     #[strum(ascii_case_insensitive = true)]
@@ -210,7 +208,7 @@ impl AsRef<str> for UserAgent {
 
 
 /// The budget for each host.
-#[derive(Debug, Default, Clone, Deserialize, Serialize)]
+#[derive(Debug, Default, Clone, Deserialize, Serialize, Eq, PartialEq)]
 pub struct CrawlBudget {
     pub default: BudgetSettings,
     pub per_host: Option<HashMap<CaseInsensitiveString, BudgetSettings>>
@@ -231,7 +229,7 @@ impl CrawlBudget {
 
 
 /// The budget for the crawled website
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
 pub enum BudgetSettings {
     /// Only crawls the seed domains
     SeedOnly {
@@ -336,7 +334,7 @@ impl Default for BudgetSettings {
 
 /// Chrome specific settings
 #[cfg(feature = "chrome")]
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default, Eq, PartialEq)]
 pub struct ChromeSettings {
     /// Use stealth mode for requests.
     pub stealth_mode: bool,
@@ -351,7 +349,8 @@ pub struct ChromeSettings {
 }
 
 /// The intercept settings for chrome
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
+#[cfg(feature = "chrome")]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, Eq, PartialEq)]
 pub enum InterceptSettings {
     /// No intercepting
     #[default]
@@ -367,7 +366,7 @@ pub enum InterceptSettings {
 
 
 #[cfg(feature = "chrome")]
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 /// View port handling for chrome.
 pub struct Viewport {
     /// Device screen Width
@@ -412,6 +411,7 @@ impl From<Viewport> for chromiumoxide::handler::viewport::Viewport {
     }
 }
 
+#[cfg(feature = "chrome")]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default, EnumString, Display, Serialize, Deserialize)]
 /// Capture screenshot options for chrome.
 pub enum CaptureScreenshotFormat {
@@ -445,7 +445,8 @@ for chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotFormat
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[cfg(feature = "chrome")]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
 /// The view port clip for screenshots.
 pub struct ClipViewport {
     #[doc = "X offset in device independent pixels (dip)."]

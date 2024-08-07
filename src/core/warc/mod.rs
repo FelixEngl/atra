@@ -13,7 +13,6 @@
 //limitations under the License.
 
 pub mod writer;
-pub mod reader;
 pub mod skip_pointer;
 
 use std::borrow::Cow;

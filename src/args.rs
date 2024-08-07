@@ -13,22 +13,19 @@
 //limitations under the License.
 
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufWriter, Write};
 use std::num::{NonZeroU64, NonZeroUsize};
-use std::path::Path;
-use clap::{Parser, Subcommand};
-use crate::core::config::crawl::{CookieSettings, RedirectPolicy, UserAgent};
 use std::str::FromStr;
+
 use case_insensitive_string::CaseInsensitiveString;
-use ini::Ini;
+use clap::{Parser, Subcommand};
 use reqwest::header::{HeaderMap, HeaderValue};
 use time::Duration;
 use ubyte::ToByteUnit;
+
 use crate::application::ApplicationMode;
 use crate::core::config::{BudgetSettings, Configs};
-use crate::core::extraction::extractor::{Extractor};
-use crate::core::ini_ext::IntoIni;
+use crate::core::config::crawl::{CookieSettings, RedirectPolicy, UserAgent};
+use crate::core::extraction::extractor::Extractor;
 use crate::core::seeds::seed_definition::SeedDefinition;
 
 #[derive(Parser, Debug, Default)]
@@ -113,19 +110,19 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
     if let Some(mode) = args.mode {
         match mode {
             RunMode::SINGLE { session_name, absolute, agent, seeds, depth, timeout, log_level, log_to_file} => {
-                let mut configs = Configs::discover_or_default();
+                let mut configs = Configs::discover_or_default().expect("Expected some kind of config!");
 
-                configs.paths.root_folder = configs.paths.root_path().join(
+                configs.paths.root = configs.paths.root_path().join(
                     format!("single_{}_{}",
                             data_encoding::BASE32.encode(&time::OffsetDateTime::now_utc().unix_timestamp_nanos().to_be_bytes()),
                             data_encoding::BASE32.encode(&rand::random::<u64>().to_be_bytes()),
                     )
-                ).to_string();
+                );
 
                 configs.crawl.user_agent = agent;
 
                 if let Some(session_name) = session_name {
-                    configs.session.service_name = session_name
+                    configs.session.service = session_name
                 }
 
                 configs.crawl.budget.default = if absolute {
@@ -155,20 +152,20 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
             RunMode::MULTI { session_name, seeds, config: configs_folder, threads, override_log_level: log_level, log_to_file } => {
                 let mut configs = match configs_folder {
                     None => {Configs::discover_or_default()}
-                    Some(path) => {Configs::load_from_config_folder(path)}
-                };
+                    Some(path) => {Configs::load_from(path)}
+                }.expect("Expected some kind of config!");
 
-                configs.paths.root_folder = configs.paths.root_path().join(
+                configs.paths.root = configs.paths.root_path().join(
                     format!("multi_{}_{}",
                             data_encoding::BASE32.encode(&time::OffsetDateTime::now_utc().unix_timestamp_nanos().to_be_bytes()),
                             data_encoding::BASE32.encode(&rand::random::<u64>().to_be_bytes()),
                     )
-                ).to_string();
+                );
 
                 configs.system.log_to_file = log_to_file;
 
                 if let Some(session_name) = session_name {
-                    configs.session.service_name = session_name
+                    configs.session.service = session_name
                 }
 
                 if let Some(log_level) = log_level {
@@ -185,16 +182,10 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
     } else {
         if args.generate_example_config {
             let mut cfg = Configs::default();
-            cfg.paths.root_folder = "atra_data".to_string();
-            cfg.paths.db_dir_name = Some(cfg.paths.dir_database_name().to_string());
-            cfg.paths.queue_file_name = Some(cfg.paths.file_queue_name().to_string());
-            cfg.paths.blacklist_name = Some(cfg.paths.file_blacklist_name().to_string());
-            cfg.paths.big_file_dir_name = Some(cfg.paths.dir_big_files_name().to_string());
-            cfg.paths.web_graph_file_name = Some(cfg.paths.file_web_graph_name().to_string());
 
             cfg.session.crawl_job_id = 0;
-            cfg.session.service_name = "MyServiceName".to_string();
-            cfg.session.collection_name = "MyCollection".to_string();
+            cfg.session.service = "MyServiceName".to_string();
+            cfg.session.collection = "MyCollection".to_string();
 
             cfg.system.web_graph_cache_size = NonZeroUsize::new(20_000).unwrap();
             cfg.system.max_file_size_in_memory = 100.megabytes().as_u64();
@@ -270,26 +261,8 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
 
             cfg.crawl.decode_big_files_up_to = Some(200.megabytes().as_u64());
 
-            fn export<P: AsRef<Path>>(config: &Configs, path: P) {
-                let path = path.as_ref();
-                let system_config_path = path.join("atra.example.ini");
-                let mut ini = Ini::new();
-                config.paths.insert_into(&mut ini);
-                config.system.insert_into(&mut ini);
-                config.session.insert_into(&mut ini);
-                ini.write_to_file(system_config_path).unwrap();
-                let crawl_config_path = path.join("crawl.example.yaml");
-                let result = serde_yaml::to_string(config.crawl()).unwrap();
-                let mut data = BufWriter::new(File::options().write(true).truncate(true).create(true).open(crawl_config_path).unwrap());
-                data.write(result.as_bytes()).unwrap();
 
-                File::options().write(true).create(true).truncate(true).open(path.join("ReadMe.txt")).unwrap().write_all(
-                    b"Every value in the example configs can be deleted if not needed.\n\
-                    Rename the files to atra.ini and crawl.yaml to use them as default configs."
-                ).unwrap();
-            }
 
-            export(&cfg, ".");
             ConsumedArgs::Nothing
         } else {
             ConsumedArgs::Nothing

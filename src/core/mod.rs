@@ -33,7 +33,6 @@ pub mod crawl;
 pub mod database_error;
 pub mod extraction;
 pub mod file_format_inference;
-pub mod ini_ext;
 pub mod config;
 pub mod io;
 pub mod seeds;
@@ -50,7 +49,6 @@ pub mod digest;
 pub mod runtime;
 pub mod worker;
 pub mod sync;
-mod config2;
 mod stores;
 
 pub use url::url_with_depth::UrlWithDepth;

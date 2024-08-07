@@ -90,9 +90,9 @@ impl FileSystemAccess {
         std::fs::remove_file(path)
     }
 
-    pub async fn create_worker_file_provider(&self, worker_id: usize) -> Result<WorkerFileProvider, ErrorWithPath> {
+    pub async fn create_worker_file_provider(&self, worker_id: usize) -> Result<WorkerFileSystemAccess, ErrorWithPath> {
         let _ = self.filesystem_lock.lock().await;
-        WorkerFileProvider::new(
+        WorkerFileSystemAccess::new(
             self.collection_root.clone(),
             self.worker_base.clone(),
             worker_id
@@ -104,13 +104,13 @@ impl FileSystemAccess {
 
 /// A worker bound access for writing warcs
 #[derive(Debug)]
-pub struct WorkerFileProvider {
+pub struct WorkerFileSystemAccess {
     // worker_root: Utf8PathBuf,
     // worker_base: FileNameTemplate,
     provider: UniquePathProviderWithTemplate
 }
 
-impl WorkerFileProvider {
+impl WorkerFileSystemAccess {
 
     pub fn new(
         collection_root: Utf8PathBuf,
@@ -134,7 +134,7 @@ impl WorkerFileProvider {
     }
 }
 
-impl WarcFilePathProvider for WorkerFileProvider {
+impl WarcFilePathProvider for WorkerFileSystemAccess {
     fn create_new_warc_file_path(&self) -> Result<Utf8PathBuf, ErrorWithPath> {
         let mut last: Option<Utf8PathBuf> = None;
         loop {

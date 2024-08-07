@@ -5,7 +5,7 @@ use camino::{Utf8Path, Utf8PathBuf};
 use tokio::sync::RwLock;
 use crate::core::io::errors::{ErrorWithPath, ToErrorWithPath};
 use crate::core::io::file_owner::FileOwner;
-use crate::core::io::fs::WorkerFileProvider;
+use crate::core::io::fs::WorkerFileSystemAccess;
 use crate::core::warc::SpecialWarcWriter;
 use crate::warc::header::WarcHeader;
 use crate::warc::writer::{WarcWriter, WarcWriterError};
@@ -29,12 +29,12 @@ impl RawWriter for File {
 
 
 #[derive(Debug)]
-pub struct ThreadsafeMultiFileWarcWriter<W: Write + RawWriter = File, P: WarcFilePathProvider = WorkerFileProvider> {
+pub struct ThreadsafeMultiFileWarcWriter<W: Write + RawWriter = File, P: WarcFilePathProvider = WorkerFileSystemAccess> {
     writer: Arc<RwLock<RawMultifileWarcWriter<W, P>>>
 }
 
-impl ThreadsafeMultiFileWarcWriter<File, WorkerFileProvider> {
-    pub fn new_for_worker(fp: Arc<WorkerFileProvider>) -> Result<Self, ErrorWithPath> {
+impl ThreadsafeMultiFileWarcWriter<File, WorkerFileSystemAccess> {
+    pub fn new_for_worker(fp: Arc<WorkerFileSystemAccess>) -> Result<Self, ErrorWithPath> {
         Self::try_from(fp)
     }
 }

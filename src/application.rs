@@ -330,7 +330,7 @@ mod config_test {
 
     #[test]
     fn can_load(){
-        Configs::load_from_config_folder("test_crawl/atra");
+        Configs::load_from("test_crawl/atra");
         read_seeds("test_crawl/atra/seeds.txt").expect("Was not able to read file");
     }
 }
