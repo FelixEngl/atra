@@ -13,42 +13,18 @@
 //limitations under the License.
 
 use camino::Utf8PathBuf;
-use encoding_rs::Encoding;
-use reqwest::header::HeaderMap;
-use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
-use crate::core::crawl::result::CrawlResult;
-use crate::core::extraction::ExtractedLink;
-use crate::core::page_type::PageType;
-use crate::core::{DataHolder, UrlWithDepth};
-use crate::core::serde_util::*;
-use crate::core::header_map_extensions::optional_header_map;
+use crate::core::crawl::result::{CrawlResult, CrawlResultMeta};
+use crate::core::DataHolder;
 use crate::core::warc::WarcSkipInstruction;
 
 /// The header information of a [CrawlResult]
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub struct SlimCrawlResult {
-    /// Timestamp
-    pub created_at: OffsetDateTime,
-    /// The url of the page
-    pub url: UrlWithDepth,
-    /// The status code of the page request.
-    #[serde(with="status_code")]
-    pub status_code: StatusCode,
-    /// The identified type of the page
-    pub page_type: PageType,
+    /// The meta for any kind of entry.
+    pub meta: CrawlResultMeta,
     /// The information where the data is stored.
     pub stored_data_hint: StoredDataHint,
-    /// The encoding recognized for the data
-    pub recognized_encoding: Option<&'static Encoding>,
-    /// The headers of the page request response.
-    #[serde(with = "optional_header_map")]
-    pub headers: Option<HeaderMap>,
-    /// The final destination of the page if redirects were performed [Not implemented in the chrome feature].
-    pub final_redirect_destination: Option<String>,
-    /// The outgoing links found, they are guaranteed to be unique.
-    pub links: Option<Vec<ExtractedLink>>,
 }
 
 /// A hint where the data is stored
@@ -69,14 +45,7 @@ pub enum StoredDataHint {
 impl SlimCrawlResult {
     pub fn new(crawl_result: &CrawlResult, stored_data_hint: StoredDataHint) -> Self {
         Self {
-            headers: crawl_result.headers.clone(),
-            url: crawl_result.url.clone(),
-            status_code: crawl_result.status_code,
-            links: crawl_result.links.clone(),
-            page_type: crawl_result.page_type,
-            recognized_encoding: crawl_result.recognized_encoding,
-            created_at: crawl_result.created_at,
-            final_redirect_destination: crawl_result.final_redirect_destination.clone(),
+            meta: crawl_result.meta.clone(),
             stored_data_hint
         }
     }
@@ -105,14 +74,7 @@ impl SlimCrawlResult {
         };
 
         CrawlResult {
-            headers: self.headers,
-            url: self.url,
-            status_code: self.status_code,
-            links: self.links,
-            page_type: self.page_type,
-            recognized_encoding: self.recognized_encoding,
-            created_at: self.created_at,
-            final_redirect_destination: self.final_redirect_destination,
+            meta: self.meta,
             content,
         }
     }

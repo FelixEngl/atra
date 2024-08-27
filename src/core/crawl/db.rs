@@ -50,7 +50,7 @@ impl CrawlDB {
 
     /// Adds a single [value]
     pub fn add(&self, value: &SlimCrawlResult) -> Result<(), DatabaseError> {
-        let key = &value.url;
+        let key = &value.meta.url;
         let serialized = match bincode::serialize(&value) {
             Ok(value) => value,
             Err(err) => return Err(err.enrich_ser(

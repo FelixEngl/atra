@@ -14,51 +14,27 @@
 
 use camino::Utf8PathBuf;
 use encoding_rs::{UTF_8};
-use tokio::task::yield_now;
 use crate::core::contexts::Context;
 use crate::core::decoding::{decode, DecodedData, DecodingError, do_decode};
-use crate::core::mime::IS_UTF8;
-use crate::core::response::{ResponseData, ResponseDataWithMeta};
-use crate::core::page_type::PageType;
+use crate::core::format::AtraFileInformation;
+use crate::core::format::mime_typing::MimeType;
+use crate::core::response::{ResponseData};
+use crate::core::format::supported::{AtraSupportedFileFormat};
 use crate::core::VecDataHolder;
 
 
 /// Process the page to extract the mime type and the decoded data.
-pub async fn process<'a>(context: &impl Context, page: &'a ResponseData) -> Result<ProcessedData<'a>, DecodingError> {
-    let page = ResponseDataWithMeta::create_from(page, context);
-    yield_now().await;
-
-    match &page.data.content {
+pub async fn process<'a>(context: &impl Context, page: &'a ResponseData, identified_type: &AtraFileInformation) -> Result<DecodedData<String, Utf8PathBuf>, DecodingError> {
+    match &page.content {
         VecDataHolder::None => {
-            return Ok(
-                ProcessedData(
-                    page,
-                    DecodedData::None
-                )
-            )
+            return Ok(DecodedData::None)
         }
         _ => {}
     };
-
-    let decoded = match &page.page_type {
-        PageType::HTML | PageType::JavaScript | PageType::PlainText | PageType::Decodeable =>
-            decode(context, &page).await?.map_in_memory(|value| value.to_string()),
-        _ if page.check_has_document_type(IS_UTF8) =>
-            do_decode(&page, UTF_8).await?.map_in_memory(|value| value.to_string()),
-        _ =>
-            DecodedData::None
+    let decoded = match identified_type.format {
+        AtraSupportedFileFormat::HTML | AtraSupportedFileFormat::JavaScript | AtraSupportedFileFormat::PlainText | AtraSupportedFileFormat::Decodeable => decode(context, &page, &identified_type).await?.map_in_memory(|value| value.to_string()),
+        _ if identified_type.check_has_document_type(MimeType::IS_UTF8) => do_decode(&page, UTF_8).await?.map_in_memory(|value| value.to_string()),
+        _ => DecodedData::None
     };
-    Ok(
-        ProcessedData(
-            page,
-            decoded
-        )
-    )
+    Ok(decoded)
 }
-
-
-/// A tuple containing the preprocessed page data
-pub struct ProcessedData<'a>(
-    pub ResponseDataWithMeta<'a>,
-    pub DecodedData<String, Utf8PathBuf>,
-);

@@ -12,21 +12,11 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::slice::Iter;
 use std::str::FromStr;
-use encoding_rs::Encoding;
-use file_format::FileFormat;
-use scraper::Html;
-use crate::core::mime::{DocumentType, EncodingSupplier, IS_HTML, MimeType, TypedMime};
-use crate::static_selectors;
 use reqwest::header::HeaderMap;
 use reqwest::StatusCode;
-use smallvec::SmallVec;
-use crate::core::contexts::Context;
 use crate::core::{UrlWithDepth, VecDataHolder};
 use crate::core::fetching::{FetchedRequestData};
-use crate::core::file_format_inference::infer_by_content;
-use crate::core::page_type::PageType;
 use crate::core::url::atra_uri::AtraUri;
 
 /// The response for a request
@@ -115,135 +105,3 @@ impl ResponseData {
         }
     }
 }
-
-/// A age with the extracted mime types
-pub struct ResponseDataWithMeta<'a> {
-    pub data: &'a ResponseData,
-    pub mimetype: MimeType,
-    pub page_type: PageType,
-    pub file_formats: FileFormatInfo
-}
-
-pub struct FileFormatInfo {
-    pub mime: SmallVec<[FileFormat; 4]>,
-    pub magic: Option<FileFormat>,
-    /// Can be useful at a later date
-    pub extension: Option<FileFormat>
-}
-
-impl<'a> ResponseDataWithMeta<'a> {
-
-    /// Creates a page with some associated mime type informations
-    /// and the supported page type
-    pub fn create_from(page: &'a ResponseData, context: &impl Context) -> Self {
-        static_selectors! {
-            [
-                META_CONTENT = "meta[http-equiv=\"Content-Type\"][content]"
-            ]
-        }
-
-        fn parse_page_raw(page: &[u8]) -> MimeType {
-            Html::parse_document(&String::from_utf8_lossy(page))
-                .select(&META_CONTENT)
-                .filter_map(|value| value.attr("content").map(|value|value.parse::<MimeType>().unwrap()))
-                .flatten()
-                .collect()
-        }
-
-        let mime =
-            if let Some(result) = page.headers.as_ref().map(|value| MimeType::from(value)) {
-                if result.check_has_document_type(IS_HTML) {
-                    if let Some(dat) = page.content.as_in_memory() {
-                        result.into_iter().chain(parse_page_raw(dat.as_slice())).collect()
-                    } else {
-                        log::debug!("Unable to parse the html because of its size: {:?}!", page.content);
-                        MimeType::None
-                    }
-                } else {
-                    result
-                }
-            } else {
-                if let Some(dat) = page.content.as_in_memory() {
-                    parse_page_raw(dat.as_slice())
-                } else {
-                    log::debug!("Unable to parse the html because of its size!");
-                    MimeType::None
-                }
-            };
-
-        let magic = if let Ok(Some(value)) = page.content.cursor(context) {
-            Some(infer_by_content(value))
-        } else {
-            None
-        };
-
-
-        let mut file_format: FileFormatInfo = FileFormatInfo {
-            mime: SmallVec::new(),
-            extension: None,
-            magic
-        };
-
-        for mim in mime.iter() {
-            if let Some(infered) =  crate::core::file_format_inference::infer_by_mime(mim.1.essence_str()) {
-                for inf in infered {
-                    if !file_format.mime.contains(inf) {
-                        file_format.mime.push(inf.clone())
-                    }
-                }
-            }
-        }
-
-
-        let type_suggestion = PageType::infer(page, &mime, context);
-
-        ResponseDataWithMeta {
-            data: page,
-            mimetype: mime,
-            file_formats: file_format,
-            page_type: type_suggestion
-        }
-    }
-
-    /// returns the extracted types mimes of the page
-    pub fn get_mime_type(&self) -> &MimeType {
-        &self.mimetype
-    }
-
-    /// Returns the page
-    pub fn get_page(&self) -> &ResponseData {
-        self.data
-    }
-
-    /// Extracts all encodings from the associated mime types
-    pub fn get_decoding(&self) -> SmallVec<[&'static Encoding; 8]> {
-        self.mimetype
-            .iter()
-            .map(|value| value.get_encoding())
-            .flatten()
-            .collect()
-    }
-
-    delegate::delegate! {
-        to self.mimetype {
-            // pub fn map<F, R>(&self, f: F) -> Option<SmallVec<[R; 8]>> where F: Fn(&TypedMime) -> R;
-            #[allow(dead_code)] pub fn check_if<F>(&self, check: F) -> Option<bool> where F: Fn(&TypedMime) -> bool;
-            pub fn check_has_document_type<const N: usize>(&self, types: [DocumentType; N]) -> bool;
-            #[allow(dead_code)] pub fn iter(&self) -> Iter<TypedMime>;
-        }
-    }
-}
-
-impl AsRef<ResponseData> for ResponseDataWithMeta<'_> {
-    fn as_ref(&self) -> &ResponseData {
-        return self.data
-    }
-}
-
-impl AsRef<MimeType> for ResponseDataWithMeta<'_> {
-    fn as_ref(&self) -> &MimeType {
-        self.get_mime_type()
-    }
-}
-
-

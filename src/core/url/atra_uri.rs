@@ -155,6 +155,14 @@ impl AtraUri {
     pub fn as_mut_url(&mut self) -> Option<&mut Url> {
         match self { AtraUri::Url(value) => {Some(value)} }
     }
+
+    pub fn file_extension(&self) -> Option<&str> {
+        match self { AtraUri::Url(value) => {
+            let path = value.path();
+            let found = path.rfind('.')?;
+            Some(&path[found..])
+        } }
+    }
 }
 
 impl FromStr for AtraUri {

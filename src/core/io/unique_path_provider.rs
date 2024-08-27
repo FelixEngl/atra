@@ -92,8 +92,3 @@ impl<S> UniquePathProviderWithTemplate<S> where S: SerialProvider {
     }
 }
 
-
-#[cfg(test)]
-mod test {
-
-}

@@ -14,7 +14,6 @@
 
 pub mod link_state;
 pub mod page_writers;
-pub mod mime;
 pub mod data_processing;
 pub mod util_selectors;
 pub mod decoding;
@@ -22,7 +21,6 @@ pub mod response;
 pub mod fetching;
 pub mod robots;
 pub mod header_map_extensions;
-pub mod page_type;
 pub mod blacklist;
 pub mod depth;
 pub mod serde_util;
@@ -49,7 +47,8 @@ pub mod digest;
 pub mod runtime;
 pub mod worker;
 pub mod sync;
-mod stores;
+pub mod stores;
+pub mod format;
 
 pub use url::url_with_depth::UrlWithDepth;
 pub use data_holder::*;

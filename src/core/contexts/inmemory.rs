@@ -245,7 +245,7 @@ impl super::SlimCrawlTaskContext for InMemoryContext {
     async fn store_slim_crawled_website(&self, result: SlimCrawlResult) -> Result<(), DatabaseError> {
         self.ct_crawled_websites.fetch_add(1, Ordering::Relaxed);
         let mut crawled = self.crawled_websites.write().await;
-        crawled.insert(result.url.url().clone(), result);
+        crawled.insert(result.meta.url.url().clone(), result);
         Ok(())
     }
 }

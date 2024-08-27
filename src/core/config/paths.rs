@@ -160,7 +160,7 @@ mod test {
 
     #[test]
     fn can_make_init(){
-        let mut config = PathsConfig::default();
+        let config = PathsConfig::default();
         println!("{}", config.dir_big_files())
     }
 }

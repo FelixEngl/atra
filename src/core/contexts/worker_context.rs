@@ -14,7 +14,6 @@
 
 use std::collections::HashSet;
 use std::sync::Arc;
-use itertools::Position;
 use thiserror::Error;
 use time::Duration;
 use crate::core::blacklist::PolyBlackList;
@@ -164,7 +163,7 @@ impl<T: SlimCrawlTaskContext> CrawlTaskContext for WorkerContext<T> {
         let hint = match &result.content {
             VecDataHolder::None => {StoredDataHint::None}
             VecDataHolder::InMemory { .. } => {
-                log::debug!("Store in warc: {}", result.url);
+                log::debug!("Store in warc: {}", result.meta.url);
                 StoredDataHint::Warc(self.worker_warc_writer.execute_on_writer(|value| {
                     log::debug!("WARC-Writer start:");
                     write_warc(value, result)
@@ -175,7 +174,7 @@ impl<T: SlimCrawlTaskContext> CrawlTaskContext for WorkerContext<T> {
                 StoredDataHint::External(file.clone())
             }
         };
-        log::debug!("Store slim: {}", result.url);
+        log::debug!("Store slim: {}", result.meta.url);
         self.store_slim_crawled_website(SlimCrawlResult::new(result, hint)).await
     }
 
@@ -293,7 +292,7 @@ pub(crate) mod test {
         let found = worker.retrieve_slim_crawled_website(&x).await.unwrap();
         println!("{:?}", found);
 
-        let retrieved = worker.retrieve_crawled_website(&test_data1.url).await.expect("This should work").expect("Expected to exist!");
+        let retrieved = worker.retrieve_crawled_website(&test_data1.meta.url).await.expect("This should work").expect("Expected to exist!");
         println!("->{}<-", String::from_utf8(test_data1.content.as_in_memory().unwrap().clone()).unwrap());
         println!("->{}<-", String::from_utf8(retrieved.content.as_in_memory().unwrap().clone()).unwrap());
         assert_eq!(retrieved, test_data1);
@@ -327,7 +326,7 @@ pub(crate) mod test {
         let found = worker.retrieve_crawled_website(&x).await.expect("This should work").expect("Expected to exist!");
         assert_eq!(test_data2, found, "Failed to compare:\n\nA: {:?}\n\nB: {:?}", test_data2, found);
 
-        let retrieved = worker.retrieve_crawled_website(&test_data1.url).await.expect("This should work").expect("Expected to exist!");
+        let retrieved = worker.retrieve_crawled_website(&test_data1.meta.url).await.expect("This should work").expect("Expected to exist!");
         assert_eq!(test_data1, retrieved);
     }
 }

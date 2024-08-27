@@ -13,6 +13,7 @@
 //limitations under the License.
 
 use clap::Parser;
+use log::info;
 use crate::application::{Atra, ApplicationMode};
 use crate::args::{consume_args, AtraArgs, ConsumedArgs};
 use crate::core::config::Configs;
@@ -31,6 +32,20 @@ mod warc;
 mod logging;
 pub mod util;
 mod config;
+
+pub const ATRA_TEXT: &'static str = r#"
+        |
+|       |       |
+|  |    |    |  |
+ \ |  /°°°\  | /
+  \| /  A  \ |/
+   \ \  T  / /
+   /\/  R  \/\
+  / /\  A  /\ \
+ / /  Oo_oO  \ \
+| |   ´` ´`   | |
+|               |
+"#;
 
 fn main() {
     exec_args(args::AtraArgs::parse())
@@ -54,6 +69,7 @@ fn exec(application_mode: ApplicationMode, seed_definition: SeedDefinition, conf
         shutdown
     );
     let signal_handler = tokio::signal::ctrl_c();
+    info!("{}", ATRA_TEXT);
     runtime.block_on(
         async move {
             tokio::select! {
@@ -70,6 +86,7 @@ fn exec(application_mode: ApplicationMode, seed_definition: SeedDefinition, conf
             barrier.wait().await;
         }
     );
+    info!("Exit application.")
 }
 
 

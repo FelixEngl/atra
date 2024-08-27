@@ -14,14 +14,16 @@
 
 use std::cmp::Ordering;
 use std::collections::HashSet;
+use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString};
 use enum_iterator::{all};
 use crate::core::contexts::Context;
+use crate::core::decoding::DecodedData;
 use super::ExtractedLink;
-use crate::core::data_processing::{ProcessedData};
 use crate::core::extraction::extractor_method::ExtractorMethod;
-
+use crate::core::format::AtraFileInformation;
+use crate::core::response::ResponseData;
 /*
     To register a new extractor, create a extractor_decode_action_declaration
     and extractor_sub_extractor_declaration.
@@ -41,15 +43,15 @@ impl PartialEq for Extractor {
 impl Extractor {
 
     /// If the
-    async fn apply_extractors<const FALLBACK_MODE: bool>(&self, context: &impl Context, page: &ProcessedData<'_>, result: &mut ExtractorResult) {
+    async fn apply_extractors<const FALLBACK_MODE: bool>(&self, context: &impl Context, response: ProcessedData<'_>, result: &mut ExtractorResult) {
         for extractor in &self.0 {
             // Require that both are either true or false
             if FALLBACK_MODE ^ extractor.is_fallback() {
                 continue
             }
-            if extractor.can_apply(context, page) {
+            if extractor.can_apply(context, &response) {
                 if result.apply_extractor(extractor.extractor_method) {
-                    match extractor.extractor_method.extract_links(context, page, result).await {
+                    match extractor.extractor_method.extract_links(context, &response, result).await {
                         Ok(value) => {
                             log::debug!("Extracted {value} links with {extractor:?}.");
                         }
@@ -67,15 +69,16 @@ impl Extractor {
     }
 
     /// Extracts the data this the set extractors
-    pub async fn extract(&self, context: &impl Context, page: &ProcessedData<'_>) -> ExtractorResult {
-        log::trace!("Extractor: {:?} - {}", page.0.page_type, page.0.data.url);
+    pub async fn extract(&self, context: &impl Context, response: &ResponseData, identified_type: &AtraFileInformation, decoded: &DecodedData<String, Utf8PathBuf>) -> ExtractorResult {
+        log::trace!("Extractor: {:?} - {}", identified_type.format, response.url);
         let mut result = ExtractorResult::default();
-        self.apply_extractors::<false>(context, page, &mut result).await;
+        let holder = ProcessedData(response, identified_type, decoded);
+        self.apply_extractors::<false>(context, holder, &mut result).await;
         if result.no_extractor_applied() || result.is_empty() {
             if !result.no_extractor_applied() {
-                log::debug!("Extractor: Unsupported type: {:?}", page.0.page_type);
+                log::debug!("Extractor: Unsupported type: {:?}", identified_type.format);
             }
-            self.apply_extractors::<true>(context, page, &mut result).await;
+            self.apply_extractors::<true>(context, holder, &mut result).await;
         }
         result
     }
@@ -90,6 +93,13 @@ impl Default for Extractor {
         )
     }
 }
+
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct ProcessedData<'a>(
+    pub &'a ResponseData,
+    pub &'a AtraFileInformation,
+    pub &'a DecodedData<String, Utf8PathBuf>,
+);
 
 
 /// The result of an extraction, contains the extracted links as well es the applied extractors.
@@ -221,6 +231,7 @@ mod test {
     use crate::core::contexts::inmemory::InMemoryContext;
     use crate::core::extraction::extractor::Extractor;
     use crate::core::fetching::{FetchedRequestData};
+    use crate::core::format::AtraFileInformation;
     use crate::core::UrlWithDepth;
 
     #[tokio::test]
@@ -239,7 +250,9 @@ mod test {
 
         let context = InMemoryContext::default();
 
-        let preprocessed = process(&context, &page).await.unwrap();
+        let identified_type = AtraFileInformation::determine(&context, &page);
+
+        let preprocessed = process(&context, &page, &identified_type).await.unwrap();
 
         let mut cfg: CrawlConfig = Default::default();
         cfg.respect_nofollow = true;
@@ -247,7 +260,7 @@ mod test {
 
 
 
-        let extracted = Extractor::default().extract(&context, &preprocessed).await.to_optional_links().unwrap();
+        let extracted = Extractor::default().extract(&context, &page, &identified_type, &preprocessed).await.to_optional_links().unwrap();
 
         println!("{}", extracted.len());
 

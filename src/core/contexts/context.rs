@@ -14,7 +14,6 @@
 
 use std::collections::HashSet;
 use std::fmt::Debug;
-use thiserror::Error;
 use time::Duration;
 use crate::core::blacklist::PolyBlackList;
 use crate::core::config::Configs;
@@ -25,10 +24,9 @@ use crate::core::crawl::slim::{SlimCrawlResult};
 use crate::core::database_error::DatabaseError;
 use crate::core::domain::DomainManager;
 use crate::core::extraction::ExtractedLink;
-use crate::core::web_graph::{LinkNetError, WebGraphManager};
+use crate::core::web_graph::{WebGraphManager};
 use crate::core::robots::RobotsManager;
 use crate::core::link_state::{LinkState, LinkStateDBError, LinkStateType};
-use crate::core::queue::QueueError;
 use crate::core::url::queue::UrlQueue;
 use crate::core::UrlWithDepth;
 

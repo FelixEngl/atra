@@ -15,12 +15,13 @@
 use std::io::Read;
 use serde::{Deserialize, Serialize};
 use crate::core::contexts::Context;
-use crate::core::mime::{DocumentType, IS_DECODEABLE, IS_HTML, IS_JS, IS_JSON, IS_PDF, IS_PLAINTEXT, IS_XML, MimeType};
+use crate::core::format::mime::MimeDescriptor;
+use crate::core::format::mime_typing::MimeType;
 use crate::core::response::ResponseData;
 
 /// The inferred processable, type for a complete page for this crawler
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
-pub enum PageType {
+pub enum AtraSupportedFileFormat {
     HTML,
     PDF,
     JavaScript,
@@ -31,7 +32,7 @@ pub enum PageType {
     Unknown // todo: Add identifier for binary
 }
 
-impl PageType {
+impl AtraSupportedFileFormat {
     fn check_file_ending<const N: usize>(page: &ResponseData, endings: [&'static str; N]) -> bool {
         if let Some(scheme) = page.url.url().path() {
             let scheme = scheme.to_lowercase();
@@ -43,8 +44,8 @@ impl PageType {
 
     fn check_all<const N1: usize, const N2: usize>(
         page: &ResponseData,
-        mime: &MimeType,
-        types: [DocumentType; N1],
+        mime: &MimeDescriptor,
+        types: [MimeType; N1],
         endings: [&'static str; N2],
     ) -> bool {
         mime.check_has_document_type(types) || Self::check_file_ending(page, endings)
@@ -88,20 +89,24 @@ impl PageType {
         return false
     }
 
-    pub fn infer(page: &ResponseData, mime: &MimeType, context: &impl Context) -> PageType {
-        if Self::check_all(page, mime, IS_HTML, ["html", "xhtml", "htm"]) {
+    pub fn infer(
+        page: &ResponseData,
+        mime: &MimeDescriptor,
+        context: &impl Context
+    ) -> AtraSupportedFileFormat {
+        if Self::check_all(page, mime, MimeType::IS_HTML, ["html", "xhtml", "htm"]) {
             Self::HTML
-        } else if Self::check_all(page, mime, IS_PDF, ["pdf"]) {
+        } else if Self::check_all(page, mime, MimeType::IS_PDF, ["pdf"]) {
             Self::PDF
-        } else if Self::check_all(page, mime, IS_JS, ["js"]) {
+        } else if Self::check_all(page, mime, MimeType::IS_JS, ["js"]) {
             Self::JavaScript
-        } else if Self::check_all(page, mime, IS_PLAINTEXT, ["txt"]) {
+        } else if Self::check_all(page, mime, MimeType::IS_PLAINTEXT, ["txt"]) {
             Self::PlainText
-        } else if Self::check_all(page, mime, IS_JSON, ["json"]) {
+        } else if Self::check_all(page, mime, MimeType::IS_JSON, ["json"]) {
             Self::JSON
-        } else if Self::check_all(page, mime, IS_XML, ["xml"]) {
+        } else if Self::check_all(page, mime, MimeType::IS_XML, ["xml"]) {
             Self::XML
-        } else if mime.check_has_document_type(IS_DECODEABLE) {
+        } else if mime.check_has_document_type(MimeType::IS_DECODEABLE) {
             Self::Decodeable
         } else {
             if let Ok(Some(reader)) = page.content.cursor(context) {

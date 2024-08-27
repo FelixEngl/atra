@@ -14,6 +14,7 @@
 
 use std::fmt::{Display, Formatter};
 use std::sync::atomic::{AtomicBool, Ordering};
+use log::{info, log};
 use thiserror::Error;
 use tokio::sync::{broadcast, mpsc};
 use tokio::sync::broadcast::error::{RecvError, SendError};
@@ -96,6 +97,7 @@ impl GracefulShutdownBarrier {
     pub async fn wait(&mut self) {
         // Output is never used and always None
         self.receiver.recv().await;
+        info!("Shutting down!")
     }
 }
 

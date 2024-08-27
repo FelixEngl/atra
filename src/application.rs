@@ -13,10 +13,9 @@
 //limitations under the License.
 
 use std::num::NonZeroUsize;
-use std::sync::{Arc, RwLock};
-use config::Config;
+use std::sync::{Arc};
+use log::info;
 use time::OffsetDateTime;
-use tokio::sync::Mutex;
 use tokio::task::JoinSet;
 use crate::core::config::Configs;
 use crate::core::contexts::{Context, LocalContext};
@@ -60,9 +59,6 @@ pub struct Atra {
     /// `shutdown_complete_rx.recv()` completing with `None`. At this point, it
     /// is safe to exit the server process.
     shutdown: GracefulShutdown,
-
-    /// The config of the
-    config: Arc<RwLock<Config>>
 }
 
 /// From tokio
@@ -97,15 +93,13 @@ impl Atra {
         mode: ApplicationMode,
         notify_shutdown: ShutdownSignalSender,
         shutdown: GracefulShutdown,
-        handle: OptionalAtraHandle
+        handle: OptionalAtraHandle,
     ) -> Self {
-
         Self {
             mode,
             _notify_shutdown: notify_shutdown,
             shutdown,
             handle,
-            config: todo!("Have to set that!")
         }
     }
 
@@ -156,6 +150,8 @@ impl Atra {
     //     let (instance, runtime) = Self::build_with_runtime(mode, notify, shutdown);
     //     (instance, runtime, barrier)
     // }
+
+
 
     /// Start the application
     pub async fn run(&mut self, seeds: SeedDefinition, configs: Configs) -> Result<(), anyhow::Error> {
@@ -331,6 +327,6 @@ mod config_test {
     #[test]
     fn can_load(){
         Configs::load_from("test_crawl/atra");
-        read_seeds("test_crawl/atra/seeds.txt").expect("Was not able to read file");
+        let _ = read_seeds("test_crawl/atra/seeds.txt").expect("Was not able to read file");
     }
 }

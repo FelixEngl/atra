@@ -1,5 +1,6 @@
 use crate::core::extraction::raw::extract_possible_urls;
-use crate::core::page_type::PageType;
+use crate::core::format::supported::AtraSupportedFileFormat;
+
 macro_rules! create_extractor_method {
     (
         return $return_type: ty;
@@ -10,7 +11,7 @@ macro_rules! create_extractor_method {
             };
         )+
     ) => {
-        use $crate::core::data_processing::ProcessedData;
+        use $crate::core::extraction::extractor::ProcessedData;
         use $crate::core::contexts::Context;
         use $crate::core::extraction::extractor::ExtractorResult;
         use $crate::core::extraction::marker::ExtractorMethodHint;
@@ -80,14 +81,14 @@ create_extractor_method! {
     return Result<usize, ()>;
     impl HtmlV1 | "HTML_v1": {
         fn is_compatible(&self, _context: &impl Context, page: &ProcessedData<'_>) -> bool {
-            page.0.page_type == PageType::HTML
+            page.1.format == AtraSupportedFileFormat::HTML
         }
 
         async fn extract_links(&self, context: &impl Context, page: &ProcessedData<'_>, output: &mut ExtractorResult) {
-            match &page.1 {
+            match &page.2 {
                 DecodedData::InMemory{ result, .. } => {
                     match crate::core::extraction::html::extract_links(
-                        &page.0.data.url,
+                        &page.0.url,
                         result.as_str(),
                         context.configs().crawl().respect_nofollow,
                         context.configs().crawl().crawl_embedded_data,
@@ -103,7 +104,7 @@ create_extractor_method! {
                                         message.push_str(err.as_ref());
                                         message.push('\n');
                                     }
-                                    log::trace!("Error parsing '{}'\n---START---\n{message}\n---END---\n", page.0.data.url)
+                                    log::trace!("Error parsing '{}'\n---START---\n{message}\n---END---\n", page.0.url)
                                 }
                             }
                             let mut ct = 0usize;
@@ -134,16 +135,16 @@ create_extractor_method! {
 
     impl JSV1 | "js_v1" | "JavaScript_v1" | "JS_v1": {
         fn is_compatible(&self, context: &impl Context, page: &ProcessedData<'_>)-> bool {
-            context.configs().crawl().crawl_javascript && page.0.page_type == PageType::JavaScript
+            context.configs().crawl().crawl_javascript && page.1.format == AtraSupportedFileFormat::JavaScript
         }
 
         async fn extract_links(&self, _context: &impl Context, page: &ProcessedData<'_>, output: &mut ExtractorResult) {
 
-            match &page.1 {
+            match &page.2 {
                 DecodedData::InMemory{ result, .. } => {
                     let mut ct = 0usize;
                     for entry in crate::core::extraction::js::extract_links(result.as_str()) {
-                        match ExtractedLink::pack(&page.0.get_page().url, entry.as_str(), ExtractorMethodHint::new_without_meta(self.clone())) {
+                        match ExtractedLink::pack(&page.0.url, entry.as_str(), ExtractorMethodHint::new_without_meta(self.clone())) {
                             Ok(link) => {
                                 if output.register_link(link) {
                                     ct += 1;
@@ -164,18 +165,18 @@ create_extractor_method! {
 
     impl PlainText | "PlainText_v1" | "PT_v1" | "Plain_v1" : {
         fn is_compatible(&self, _context: &impl Context, page: &ProcessedData<'_>)-> bool {
-            page.0.page_type == PageType::PlainText
+            page.1.format == AtraSupportedFileFormat::PlainText
         }
 
         async fn extract_links(&self, _context: &impl Context, page: &ProcessedData<'_>, output: &mut ExtractorResult) {
-            match &page.1 {
+            match &page.2 {
                 DecodedData::InMemory{ result, .. } => {
                     let mut finder = linkify::LinkFinder::new();
                     finder.kinds(&[linkify::LinkKind::Url]);
 
                     let mut ct = 0usize;
                     for entry in finder.links(result.as_str()) {
-                        match ExtractedLink::pack(&page.0.get_page().url, entry.as_str(), ExtractorMethodHint::new_without_meta(self.clone())) {
+                        match ExtractedLink::pack(&page.0.url, entry.as_str(), ExtractorMethodHint::new_without_meta(self.clone())) {
                             Ok(link) => {
                                 if output.register_link(link) {
                                     ct += 1;
@@ -200,13 +201,13 @@ create_extractor_method! {
         }
 
         async fn extract_links(&self, _context: &impl Context, page: &ProcessedData<'_>, output: &mut ExtractorResult) {
-            if let Some(in_memory) = page.0.data.content.as_in_memory() {
+            if let Some(in_memory) = page.2.as_in_memory() {
                 let mut ct = 0usize;
-                for entry in extract_possible_urls(in_memory.as_slice()) {
-                    if let Some(encoding) = page.1.encoding() {
+                for entry in extract_possible_urls(in_memory.as_bytes()) {
+                    if let Some(encoding) = page.2.encoding() {
                         let encoded = &encoding.decode(entry).0;
                         match ExtractedLink::pack(
-                            &page.0.get_page().url,
+                            &page.0.url,
                             &encoded,
                             ExtractorMethodHint::new_without_meta(self.clone())
                         ) {
@@ -223,7 +224,7 @@ create_extractor_method! {
                     }
                     let encoded = String::from_utf8_lossy(entry);
                     match ExtractedLink::pack(
-                        &page.0.get_page().url,
+                        &page.0.url,
                         &encoded,
                         ExtractorMethodHint::new_without_meta(self.clone())
                     ) {

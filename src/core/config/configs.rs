@@ -98,8 +98,6 @@ mod test {
             .build()
             .unwrap();
 
-        println!("{cfg}");
-
         let config2: Configs = cfg.try_deserialize().unwrap();
 
         std::fs::remove_file("./atra_test.json").unwrap();
@@ -107,6 +105,5 @@ mod test {
         let mut config: Configs = serde_json::from_str(&s).unwrap();
         config.system.log_to_file = true;
         assert_eq!(config, config2);
-
     }
 }

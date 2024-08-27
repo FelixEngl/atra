@@ -48,6 +48,7 @@ use crate::core::link_state::{LinkStateDBError, LinkStateType};
 use crate::core::robots::{GeneralRobotsInformation, RobotsInformation};
 use crate::core::shutdown::ShutdownReceiver;
 use crate::core::database_error::DatabaseError;
+use crate::core::format::AtraFileInformation;
 use crate::core::sitemaps::parse::retrieve_and_parse;
 
 
@@ -565,7 +566,7 @@ impl<S: CrawlSeed> WebsiteCrawler<S> {
                 Ok(value) => {
                     if let Some(already_crawled) = value {
                         if let Some(recrawl) = configuration.budget.get_budget_for(self.seed.domain()).get_recrawl_interval() {
-                            if OffsetDateTime::now_utc() - already_crawled.created_at >= recrawl {
+                            if OffsetDateTime::now_utc() - already_crawled.meta.created_at >= recrawl {
                                 log::debug!("The url was already crawled.");
                                 if !Self::update_linkstate(&mut errors, context, &target, LinkStateType::ProcessedAndStored).await {
                                     log::info!("Failed set correct linkstate of {target}, ignoring.");
@@ -624,9 +625,12 @@ impl<S: CrawlSeed> WebsiteCrawler<S> {
 
                     log::trace!("Fetched: {}", target);
                     let response_data = ResponseData::new(page, target.clone());
-                    let (analyzed, links) = match crate::core::data_processing::process(context, &response_data).await {
+
+                    let file_information = AtraFileInformation::determine(context, &response_data);
+
+                    let (analyzed, links) = match crate::core::data_processing::process(context, &response_data, &file_information).await {
                         Ok(analyzed) => {
-                            let result = context.configs().crawl().extractors.extract(context, &analyzed).await;
+                            let result = context.configs().crawl().extractors.extract(context, &response_data, &file_information, &analyzed).await;
                             (analyzed, result)
                         }
                         Err(err) => {
@@ -679,8 +683,7 @@ impl<S: CrawlSeed> WebsiteCrawler<S> {
                         log::trace!("No links");
                     }
                     self.links_visited.insert(response_data.url.clone());
-                    let recognized_encoding = analyzed.1.encoding();
-                    let page_type = analyzed.0.page_type;
+                    let recognized_encoding = analyzed.encoding();
                     drop(analyzed);
                     if shutdown.is_shutdown() {
                         if !Self::update_linkstate(&mut errors,context,&target,LinkStateType::Discovered).await {
@@ -700,10 +703,9 @@ impl<S: CrawlSeed> WebsiteCrawler<S> {
                         response_data,
                         links,
                         recognized_encoding,
-                        page_type
+                        file_information
                     );
-
-                    log::debug!("Store {}", result.url);
+                    log::debug!("Store {}", result.meta.url);
                     match context.store_crawled_website(&result).await {
                         Err(err) => {
                             log::error!("Failed to store data for {target}. Stopping crawl. {err}");
@@ -715,7 +717,7 @@ impl<S: CrawlSeed> WebsiteCrawler<S> {
                             return Err(errors)
                         }
                         _ => {
-                            log::debug!("Stored: {}", result.url);
+                            log::debug!("Stored: {}", result.meta.url);
                         }
                     }
 
@@ -902,15 +904,15 @@ mod test {
     }
 
     fn check_serialisation(data: &CrawlResult) {
-        check_serialisation_value(&data.url);
+        check_serialisation_value(&data.meta.url);
         check_serialisation_value(&data.content);
-        check_serialisation_value(&data.page_type);
-        check_serialisation_value(&data.final_redirect_destination);
-        check_serialisation_value(&data.created_at);
-        check_serialisation_value(&data.recognized_encoding);
-        check_serialisation_value(&data.links);
-        check_serialisation_value(&HeaderMapSerialize{value: data.headers.clone()});
-        check_serialisation_value(&StatusCodeSerialize{value: data.status_code.clone()});
+        check_serialisation_value(&data.meta.file_information);
+        check_serialisation_value(&data.meta.final_redirect_destination);
+        check_serialisation_value(&data.meta.created_at);
+        check_serialisation_value(&data.meta.recognized_encoding);
+        check_serialisation_value(&data.meta.links);
+        check_serialisation_value(&HeaderMapSerialize{value: data.meta.headers.clone()});
+        check_serialisation_value(&StatusCodeSerialize{value: data.meta.status_code.clone()});
     }
 
     #[tokio::test]
@@ -957,7 +959,7 @@ mod test {
         let values = a.into_values().collect_vec();
 
         for value in &values {
-            println!("--------\n{:?}", &value.url.to_string());
+            println!("--------\n{:?}", &value.meta.url.to_string());
             // if value.url.is_same_url_as("")
             check_serialisation(value);
         }

@@ -30,9 +30,9 @@ use crate::core::crawl::result::CrawlResult;
 use crate::core::{VecDataHolder};
 use crate::core::database_error::DatabaseError;
 use crate::core::digest::labeled_xxh128_digest;
+use crate::core::format::supported::AtraSupportedFileFormat;
 use crate::core::io::errors::{ErrorWithPath, ToErrorWithPath};
 use crate::core::io::file_owner::FileOwner;
-use crate::core::page_type::PageType;
 use crate::core::warc::skip_pointer::{WarcSkipPointer, WarcSkipPointerWithPath};
 use crate::warc::media_type::{MediaType, parse_media_type};
 use crate::warc::header::{WarcHeader};
@@ -188,13 +188,13 @@ fn pack_header(page: &CrawlResult) -> Vec<u8> {
     let mut output = Vec::new();
     // todo: Different rest requests?
     output.extend(b"GET ");
-    output.extend(page.status_code.as_str().as_bytes());
-    if let Some(reason) = page.status_code.canonical_reason() {
+    output.extend(page.meta.status_code.as_str().as_bytes());
+    if let Some(reason) = page.meta.status_code.canonical_reason() {
         output.extend(b" ");
         output.extend(reason.as_bytes());
     }
     output.extend(b"\r\n");
-    if let Some(headers) = &page.headers {
+    if let Some(headers) = &page.meta.headers {
         for (k, v) in headers {
             output.extend(k.as_str().as_bytes());
             output.extend(b": ");
@@ -211,23 +211,23 @@ fn pack_header(page: &CrawlResult) -> Vec<u8> {
 pub fn write_warc<W: SpecialWarcWriter>(worker_warc_writer: &mut W, content: &CrawlResult) -> Result<WarcSkipInstruction, DatabaseError> {
     let mut builder = WarcHeader::new();
     log_consume!(builder.warc_type(WarcRecordType::Response));
-    let first_id = Uuid::new_v5(&Uuid::NAMESPACE_URL, (&content.url).as_str().as_bytes()).as_urn().to_string();
+    let first_id = Uuid::new_v5(&Uuid::NAMESPACE_URL, (&content.meta.url).as_str().as_bytes()).as_urn().to_string();
     log_consume!(builder.warc_record_id_string(first_id.clone()));
-    log_consume!(builder.date(content.created_at));
+    log_consume!(builder.date(content.meta.created_at));
 
-    if let Some(enc) = content.recognized_encoding {
+    if let Some(enc) = content.meta.recognized_encoding {
         log_consume!(builder.atra_content_encoding(enc));
     }
 
-    if let Some(ref redir) = content.final_redirect_destination {
+    if let Some(ref redir) = content.meta.final_redirect_destination {
         let urilike = unsafe{UriLikeFieldValue::from_string_unchecked(redir)};
         log_consume!(builder.target_uri(urilike));
     } else {
-        let urilike_page = unsafe{UriLikeFieldValue::from_string_unchecked(content.url.as_str())};
+        let urilike_page = unsafe{UriLikeFieldValue::from_string_unchecked(content.meta.url.as_str())};
         log_consume!(builder.target_uri(urilike_page));
     }
 
-    let found_ll = if let Some(ref found) = content.headers {
+    let found_ll = if let Some(ref found) = content.meta.headers {
         if let Some(found) = found.get(CONTENT_TYPE) {
             if let Ok(enc) = found.to_str() {
                 Some(enc.to_string())
@@ -254,15 +254,15 @@ pub fn write_warc<W: SpecialWarcWriter>(worker_warc_writer: &mut W, content: &Cr
     } else {
         None
     }.unwrap_or_else(|| {
-        match &content.page_type {
-            PageType::HTML => { MediaType::new("text", "html", None) }
-            PageType::PDF => {MediaType::new("application", "pdf", None) }
-            PageType::JavaScript => {MediaType::new("text", "javascript", None)}
-            PageType::PlainText => {MediaType::new("text", "plain", None)}
-            PageType::JSON => {MediaType::new("application", "json", None)}
-            PageType::XML => {MediaType::new("application", "xml", None)}
-            PageType::Decodeable => {MediaType::new("application", "octet-stream", None)}
-            PageType::Unknown => {MediaType::new("application", "octet-stream", None)}
+        match &content.meta.file_information.format {
+            AtraSupportedFileFormat::HTML => { MediaType::new("text", "html", None) }
+            AtraSupportedFileFormat::PDF => {MediaType::new("application", "pdf", None) }
+            AtraSupportedFileFormat::JavaScript => {MediaType::new("text", "javascript", None)}
+            AtraSupportedFileFormat::PlainText => {MediaType::new("text", "plain", None)}
+            AtraSupportedFileFormat::JSON => {MediaType::new("application", "json", None)}
+            AtraSupportedFileFormat::XML => {MediaType::new("application", "xml", None)}
+            AtraSupportedFileFormat::Decodeable => {MediaType::new("application", "octet-stream", None)}
+            AtraSupportedFileFormat::Unknown => {MediaType::new("application", "octet-stream", None)}
         }
     });
 
@@ -341,8 +341,8 @@ pub fn write_warc<W: SpecialWarcWriter>(worker_warc_writer: &mut W, content: &Cr
 
     let mut body = header;
 
-    let (data, is_base64) = match content.page_type {
-        PageType::Unknown => {
+    let (data, is_base64) = match content.meta.file_information.format {
+        AtraSupportedFileFormat::Unknown => {
             log_consume!(builder.atra_is_base64(true));
             (Cow::Owned(BASE64.encode(data.as_slice()).into_bytes()), true)
         }
@@ -456,7 +456,10 @@ mod test {
     use crate::core::fetching::FetchedRequestData;
     use crate::core::response::ResponseData;
     use crate::core::{UrlWithDepth, VecDataHolder};
-    use crate::core::page_type::PageType;
+    use crate::core::format::AtraFileInformation;
+    use crate::core::format::mime::{MimeDescriptor, TypedMime};
+    use crate::core::format::mime_typing::MimeType;
+    use crate::core::format::supported::AtraSupportedFileFormat;
     use crate::core::warc::{MockSpecialWarcWriter, write_warc};
 
     #[test]
@@ -477,7 +480,11 @@ mod test {
             ),
             None,
             Some(encoding_rs::UTF_8),
-            PageType::HTML
+            AtraFileInformation::new(
+                AtraSupportedFileFormat::HTML,
+                MimeDescriptor::Single(TypedMime(MimeType::HTML, mime::TEXT_HTML_UTF_8)),
+                None
+            )
         );
 
         let mut special = MockSpecialWarcWriter::new();
@@ -539,7 +546,11 @@ mod test {
             ),
             None,
             Some(encoding_rs::UTF_8),
-            PageType::Unknown
+            AtraFileInformation::new(
+                AtraSupportedFileFormat::Unknown,
+                MimeDescriptor::Empty,
+                None
+            )
         );
 
         let mut special = MockSpecialWarcWriter::new();

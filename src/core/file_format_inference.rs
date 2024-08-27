@@ -29,17 +29,6 @@ pub fn infer_by_content<R: Read + Seek>(content_reader: R) -> FileFormat {
     }
 }
 
-include!(concat!(env!("OUT_DIR"), "/codegen_file_format.rs"));
-
-pub fn infer_by_mime(mime_type: &str) -> Option<&'static [FileFormat]> {
-    MEDIA_TYPE_TO_FILE_FORMAT.get(mime_type).map(|value| *value)
-}
-
-#[allow(dead_code)]
-pub fn infer_by_extension(extension: &str) -> Option<&'static [FileFormat]> {
-    EXTENSION_FILE_FORMAT.get(extension).map(|value| *value)
-}
-
 
 
 

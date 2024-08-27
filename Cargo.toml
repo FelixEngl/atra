@@ -130,7 +130,8 @@ encoding_rs = { version = "0.8", features = ["serde"] }
 chardetng = "0.1"
 #publicsuffix = "2.2"
 psl = "2"
-file-format = { version = "0.24", features = ["reader"] }
+file-format = { git = "https://github.com/FelixEngl/file-format.git", branch = "main", features = ["reader", "serde", "extended-enums", "from-all"] }
+
 
 # Parsing
 nom = "7"
@@ -165,7 +166,8 @@ mockall = "0.12"
 lipsum = "0.9"
 
 [build-dependencies]
-file-format = { version = "0.24", features = ["reader"] }
+
+#file-format = { git = "https://github.com/FelixEngl/file-format.git", branch = "main", features = ["reader", "extended-enums"] }
 paste = "1.0"
 phf_codegen = "0.11"
 isolang = "2.4"

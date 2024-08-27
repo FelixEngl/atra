@@ -20,15 +20,15 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use crate::core::extraction::ExtractedLink;
 use crate::core::{VecDataHolder};
+use crate::core::format::AtraFileInformation;
 use crate::core::response::{ResponseData};
-use crate::core::page_type::PageType;
 use crate::core::UrlWithDepth;
 use crate::core::header_map_extensions::optional_header_map;
 use crate::core::serde_util::status_code;
 
-/// The result page of a finished crawl, optimized for memory and serialisation etc.
+/// A container for the meta data
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-pub struct CrawlResult {
+pub struct CrawlResultMeta {
     /// Timestamp
     pub created_at: OffsetDateTime,
     /// The url of the page
@@ -36,19 +36,35 @@ pub struct CrawlResult {
     /// The status code of the page request.
     #[serde(with="status_code")]
     pub status_code: StatusCode,
-    /// The identified type of the page
-    pub page_type: PageType,
+    /// The file format of the data
+    pub file_information: AtraFileInformation,
     /// The encoding recognized for the data
     pub recognized_encoding: Option<&'static Encoding>,
     /// The headers of the page request response.
     #[serde(with = "optional_header_map")]
     pub headers: Option<HeaderMap>,
-    /// The bytes of the resource.
-    pub content: VecDataHolder,
     /// The final destination of the page if redirects were performed [Not implemented in the chrome feature].
     pub final_redirect_destination: Option<String>,
     /// The outgoing links found, they are guaranteed to be unique.
     pub links: Option<Vec<ExtractedLink>>,
+}
+
+impl CrawlResultMeta {
+    pub fn new(created_at: OffsetDateTime, url: UrlWithDepth, status_code: StatusCode, file_information: AtraFileInformation, recognized_encoding: Option<&'static Encoding>, headers: Option<HeaderMap>, final_redirect_destination: Option<String>, links: Option<Vec<ExtractedLink>>) -> Self {
+        Self { created_at, url, status_code, file_information, recognized_encoding, headers, final_redirect_destination, links }
+    }
+}
+
+
+// page_type = AtraFileFormat::format
+
+/// The result page of a finished crawl, optimized for memory and serialisation etc.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct CrawlResult {
+    /// The meta for any kind of entry.
+    pub meta: CrawlResultMeta,
+    /// The bytes of the resource.
+    pub content: VecDataHolder,
 }
 
 impl CrawlResult {
@@ -57,7 +73,7 @@ impl CrawlResult {
         page: ResponseData,
         links: Option<HashSet<ExtractedLink>>,
         recognized_encoding: Option<&'static Encoding>,
-        page_type: PageType,
+        file_information: AtraFileInformation,
     ) -> Self {
         let links = links.map(|value| {
             let mut result = Vec::from_iter(value);
@@ -65,15 +81,17 @@ impl CrawlResult {
             result
         });
         Self {
-            created_at,
+            meta: CrawlResultMeta::new(
+                created_at,
+                page.url,
+                page.status_code,
+                file_information,
+                recognized_encoding,
+                page.headers,
+                page.final_redirect_destination,
+                links
+            ),
             content: page.content,
-            url: page.url,
-            headers: page.headers,
-            status_code: page.status_code,
-            final_redirect_destination: page.final_redirect_destination,
-            links,
-            page_type,
-            recognized_encoding,
         }
     }
 }
@@ -91,7 +109,10 @@ pub(crate) mod test {
     use crate::core::extraction::ExtractedLink;
     use crate::core::extraction::ExtractorMethod;
     use crate::core::extraction::marker::{ExtractorMethodHint};
-    use crate::core::page_type::PageType;
+    use crate::core::format::AtraFileInformation;
+    use crate::core::format::mime::{MimeDescriptor, TypedMime};
+    use crate::core::format::mime_typing::MimeType;
+    use crate::core::format::supported::AtraSupportedFileFormat;
 
     pub fn create_testdata_with_on_seed(content: Option<VecDataHolder>) -> CrawlResult {
         create_test_data(
@@ -135,7 +156,11 @@ pub(crate) mod test {
             ),
             Some(links),
             Some(encoding_rs::UTF_8),
-            PageType::HTML
+            AtraFileInformation::new(
+                AtraSupportedFileFormat::HTML,
+                MimeDescriptor::Single(TypedMime(MimeType::HTML, mime::TEXT_HTML_UTF_8)),
+                None
+            )
         )
     }
 
@@ -166,7 +191,11 @@ pub(crate) mod test {
             ),
             Some(links),
             None,
-            PageType::Unknown
+            AtraFileInformation::new(
+                AtraSupportedFileFormat::HTML,
+                MimeDescriptor::Single(TypedMime(MimeType::HTML, mime::TEXT_HTML_UTF_8)),
+                None
+            )
         )
     }
 }

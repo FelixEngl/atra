@@ -12,8 +12,6 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::error::Error;
-use config::{Format, Map, Value};
 use serde::{Deserialize, Serialize};
 
 /// The config of the session

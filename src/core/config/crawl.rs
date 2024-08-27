@@ -17,7 +17,6 @@
 use std::collections::HashMap;
 use std::num::{NonZeroU64};
 use case_insensitive_string::CaseInsensitiveString;
-use moka::ops::compute::Op;
 use time::Duration;
 use reqwest::header::HeaderMap;
 use crate::core::header_map_extensions::optional_header_map;

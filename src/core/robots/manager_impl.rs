@@ -386,9 +386,9 @@ struct BytesWithAge<'a> {
 #[cfg(test)]
 mod test {
     use std::sync::Arc;
+    use std::time::Instant;
     use rocksdb::Options;
     use scopeguard::defer;
-    use time::Instant;
     use crate::client::ClientBuilder;
     use crate::core::system::DEFAULT_CACHE_SIZE_ROBOTS;
     use crate::core::robots::{RobotsManager, OffMemoryRobotsManager};
@@ -423,14 +423,14 @@ mod test {
         let now = Instant::now();
 
         let robots = manager.get_or_retrieve(&client, USER_AGENT, &target_url, None).await.unwrap();
-        println!("without_cache: {}", Instant::now() - now);
+        println!("without_cache: {:?}", Instant::now() - now);
         println!("{:?}", robots);
         println!("{}", robots.retrieved_at());
 
         let now = Instant::now();
 
         let robots = manager.get_or_retrieve(&client, USER_AGENT, &target_url, None).await.unwrap();
-        println!("with_cache: {}", Instant::now() - now);
+        println!("with_cache: {:?}", Instant::now() - now);
         println!("{:?}", robots);
 
     }
@@ -454,14 +454,14 @@ mod test {
         let now = Instant::now();
 
         let robots = manager.get_or_retrieve(&client, USER_AGENT, &target_url, None).await.unwrap();
-        println!("without_cache: {}", Instant::now() - now);
+        println!("without_cache: {:?}", Instant::now() - now);
         println!("{:?}", robots);
         println!("{}", robots.retrieved_at());
 
         let now = Instant::now();
 
         let robots = manager.get_or_retrieve(&client, USER_AGENT, &target_url, None).await.unwrap();
-        println!("with_cache: {}", Instant::now() - now);
+        println!("with_cache: {:?}", Instant::now() - now);
         println!("{:?}", robots);
 
     }
