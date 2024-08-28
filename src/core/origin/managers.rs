@@ -12,14 +12,6 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::time::SystemTime;
-use serde::{Deserialize, Serialize};
-use crate::core::depth::DepthDescriptor;
+pub(crate) mod in_memory;
 
-/// The entry for a domain
-#[derive(Debug, Serialize, Deserialize, Copy, Clone)]
-pub struct DomainEntry {
-    pub is_in_use: bool,
-    pub last_modification: Option<SystemTime>,
-    pub depth: DepthDescriptor
-}
+pub use in_memory::InMemoryOriginManager;

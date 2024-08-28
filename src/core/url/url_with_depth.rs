@@ -12,6 +12,7 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+use std::borrow::Cow;
 use std::cmp::{Ordering};
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
@@ -22,6 +23,7 @@ use itertools::{EitherOrBoth, Itertools, Position};
 use reqwest::IntoUrl;
 use serde::{Deserialize, Serialize};
 use crate::core::depth::DepthDescriptor;
+use crate::core::origin::{AtraUrlOrigin, AtraOriginProvider};
 use crate::core::url::cleaner::SingleUrlCleaner;
 use crate::core::url::atra_uri::{AtraUri, ParseError, HostComparisonError};
 
@@ -122,18 +124,20 @@ impl UrlWithDepth {
         Self::create_new_calculate_depth_with_base(base, url)
     }
 
-
-    /// Returns the string representation of the `parsed_url`
-    pub fn as_str(&self) -> &str {
-        return self.url.as_str()
-    }
-
     /// Checks
     pub fn is_exactly_same_as(&self, other: &Self) -> bool {
         std::ptr::eq(self, other) || (
             self.depth == other.depth
                 && self.url == other.url
         )
+    }
+
+    pub fn as_str(&self) -> Cow<str> {
+        if let Some(s) = self.url.try_as_str() {
+            Cow::Borrowed(s)
+        } else {
+            Cow::Owned(self.url.to_string())
+        }
     }
 
     /// Extracts the domain of the `parsed_url`.
@@ -155,6 +159,12 @@ impl UrlWithDepth {
     }
 }
 
+impl AtraOriginProvider for UrlWithDepth {
+    fn atra_origin(&self) -> Option<AtraUrlOrigin> {
+        self.url.atra_origin()
+    }
+}
+
 impl FromStr for UrlWithDepth {
     type Err = ParseError;
 
@@ -165,7 +175,7 @@ impl FromStr for UrlWithDepth {
 
 impl Display for UrlWithDepth {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({}, \"{}\")", self.depth, self.url.as_str())
+        write!(f, "({}, \"{}\")", self.depth, self.url)
     }
 }
 
@@ -189,7 +199,7 @@ impl Ord for UrlWithDepth {
                 other => other
             }
         } else {
-            for (position, value) in self.url.as_str().as_bytes().iter().zip_longest(other.url.as_str().as_bytes().iter()).with_position() {
+            for (position, value) in self.url.as_bytes().iter().zip_longest(other.url.as_bytes().iter()).with_position() {
                 match position {
                     Position::First | Position::Middle => {
                         match value {
@@ -264,7 +274,7 @@ impl AsRef<AtraUri> for UrlWithDepth {
 
 impl AsRef<[u8]> for UrlWithDepth {
     fn as_ref(&self) -> &[u8] {
-        self.as_str().as_ref()
+        self.url.as_bytes()
     }
 }
 
@@ -272,15 +282,16 @@ impl AsRef<[u8]> for UrlWithDepth {
 #[cfg(test)]
 mod test {
     use crate::core::depth::DepthDescriptor;
+    use crate::core::origin::AtraOriginProvider;
     use crate::core::UrlWithDepth;
 
     #[test]
     fn base_only_changes_if_not_given(){
         let base = UrlWithDepth::from_seed("https://www.example.com/").unwrap();
         let created = UrlWithDepth::with_base(&base, "https://www.siemens.com/lookup?v=20").unwrap();
-        assert_eq!(Some("www.siemens.com"), created.url.host_str());
+        assert_eq!(Some("www.siemens.com".into()), created.url.atra_origin());
         let created = UrlWithDepth::with_base(&base, "lookup?v=20").unwrap();
-        assert_eq!(Some("www.example.com"), created.url.host_str());
+        assert_eq!(Some("www.example.com".into()), created.url.atra_origin());
         assert_eq!(Some("/lookup"), created.url.path());
     }
 
@@ -288,7 +299,7 @@ mod test {
     fn depth_on_website_goes_up_if_on_same_domain(){
         let base = UrlWithDepth::from_seed("https://www.example.com/").unwrap();
         let created1 = UrlWithDepth::with_base(&base, "https://www.example.com/lookup?v=20").unwrap();
-        assert_eq!(Some("www.example.com"), created1.url.host_str());
+        assert_eq!(Some("www.example.com".into()), created1.url.atra_origin());
         assert_eq!(base.depth + (1, 0, 1), created1.depth);
         let created2 = UrlWithDepth::with_base(&created1, "https://www.example.com/test?v=20").unwrap();
         assert_eq!(created1.depth + (1, 0, 1), created2.depth);
@@ -298,7 +309,7 @@ mod test {
     fn distance_to_seed_goes_up_if_not_same_domain(){
         let base = UrlWithDepth::from_seed("https://www.example.com/").unwrap();
         let created1 = UrlWithDepth::with_base(&base, "https://www.siemens.com/lookup?v=20").unwrap();
-        assert_eq!(Some("www.siemens.com"), created1.url.host_str());
+        assert_eq!(Some("www.siemens.com".into()), created1.url.atra_origin());
         assert_eq!(DepthDescriptor::ZERO + (0,1,1), created1.depth);
         let created2 = UrlWithDepth::with_base(&created1, "https://www.siemens.com/test?v=20").unwrap();
         assert_eq!(created1.depth + (1, 0, 1), created2.depth);

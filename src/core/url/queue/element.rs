@@ -26,7 +26,7 @@ pub struct UrlQueueElementBase<T> {
     /// The distance between this url and the origin.
     pub is_seed: bool,
     pub age: u32,
-    pub domain_was_in_use: bool,
+    pub host_was_in_use: bool,
     pub target: T
 }
 
@@ -38,11 +38,11 @@ impl<T> AgingQueueElement for UrlQueueElementBase<T> {
 
 
 impl<T> UrlQueueElementBase<T> {
-    pub fn new(is_seed: bool, age: u32, domain_was_in_use: bool, target: T) -> Self {
+    pub fn new(is_seed: bool, age: u32, host_was_in_use: bool, target: T) -> Self {
         Self {
             is_seed,
             age,
-            domain_was_in_use,
+            host_was_in_use,
             target
         }
     }
@@ -51,7 +51,7 @@ impl<T> UrlQueueElementBase<T> {
         UrlQueueElementBase::new(
             self.is_seed,
             self.age,
-            self.domain_was_in_use,
+            self.host_was_in_use,
             mapping(self.target)
         )
     }
@@ -61,7 +61,7 @@ impl<T> UrlQueueElementBase<T> {
             UrlQueueElementBase::new(
                 self.is_seed,
                 self.age,
-                self.domain_was_in_use,
+                self.host_was_in_use,
                 mapping(self.target)?
             )
         )
@@ -72,7 +72,7 @@ impl<T> UrlQueueElementBase<T> {
             UrlQueueElementBase::new(
                 self.is_seed,
                 self.age,
-                self.domain_was_in_use,
+                self.host_was_in_use,
                 mapping(self.target)?
             )
         )
@@ -86,7 +86,7 @@ impl<T: Clone> Clone for UrlQueueElementBase<T> {
         Self {
             is_seed: self.is_seed,
             age: self.age,
-            domain_was_in_use: self.domain_was_in_use,
+            host_was_in_use: self.host_was_in_use,
             target: self.target.clone()
         }
     }
@@ -97,7 +97,7 @@ impl<T: Debug> Debug for UrlQueueElementBase<T> {
         let mut deb = f.debug_struct(type_name::<UrlQueueElementBase<T>>());
         deb.field("is_seed", &self.is_seed);
         deb.field("age", &self.age);
-        deb.field("domain_was_in_use", &self.domain_was_in_use);
+        deb.field("host_was_in_use", &self.host_was_in_use);
         deb.field("target", &self.target);
         deb.finish()
     }
@@ -115,10 +115,10 @@ impl<T: Hash> Hash for UrlQueueElementBase<T> {
 impl<T: Display> Display for UrlQueueElementBase<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f,
-               "CrawlElement(is_seed: {}, age: {}, domain_was_in_use: {}, target: {})",
+               "CrawlElement(is_seed: {}, age: {}, host_was_in_use: {}, target: {})",
                self.is_seed,
                self.age,
-               self.domain_was_in_use,
+               self.host_was_in_use,
                self.target
         )
     }
@@ -127,7 +127,7 @@ impl<T: Display> Display for UrlQueueElementBase<T> {
 
 impl<T> From<UrlQueueElementBase<T>> for (bool, u32, bool, T) {
     fn from(value: UrlQueueElementBase<T>) -> Self {
-        (value.is_seed, value.age, value.domain_was_in_use, value.target)
+        (value.is_seed, value.age, value.host_was_in_use, value.target)
     }
 }
 
@@ -155,7 +155,7 @@ impl<T: Serialize> Serialize for UrlQueueElementBase<T> {
         let mut tup = serializer.serialize_tuple(4)?;
         tup.serialize_element(&self.is_seed)?;
         tup.serialize_element(&self.age)?;
-        tup.serialize_element(&self.domain_was_in_use)?;
+        tup.serialize_element(&self.host_was_in_use)?;
         tup.serialize_element(&self.target)?;
         tup.end()
     }
@@ -187,7 +187,7 @@ impl<'de, T: Deserialize<'de>> Visitor<'de> for CrawlMetaContainerVisitor<T> {
             UrlQueueElementBase {
                 is_seed,
                 age,
-                domain_was_in_use,
+                host_was_in_use: domain_was_in_use,
                 target
             }
         )

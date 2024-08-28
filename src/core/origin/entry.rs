@@ -12,14 +12,14 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-pub mod manager;
-pub mod guard;
-pub mod errors;
-pub mod entry;
-pub mod managers;
+use std::time::SystemTime;
+use serde::{Deserialize, Serialize};
+use crate::core::depth::DepthDescriptor;
 
-
-pub use guard::DomainGuard;
-pub use errors::*;
-pub use entry::DomainEntry;
-pub use manager::DomainManager;
+/// The entry for an origin
+#[derive(Debug, Serialize, Deserialize, Copy, Clone)]
+pub struct OriginEntry {
+    pub is_in_use: bool,
+    pub last_modification: Option<SystemTime>,
+    pub depth: DepthDescriptor
+}

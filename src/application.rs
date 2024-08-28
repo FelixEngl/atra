@@ -14,7 +14,6 @@
 
 use std::num::NonZeroUsize;
 use std::sync::{Arc};
-use log::info;
 use time::OffsetDateTime;
 use tokio::task::JoinSet;
 use crate::core::config::Configs;
@@ -292,7 +291,7 @@ mod test {
             recrawl_interval: None,
             request_timeout: None
         };
-        config.delay = Some(Duration::milliseconds(300));
+        config.delay = Some(Duration::milliseconds(1000));
         config.user_agent = UserAgent::Custom("TestCrawl/Atra/v0.1.0".to_string());
 
         let configs = Configs::new(

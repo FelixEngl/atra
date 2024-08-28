@@ -27,11 +27,12 @@ use crate::core::crawl::db::{CrawlDB};
 use crate::core::crawl::seed::CrawlSeed;
 use crate::core::crawl::slim::{SlimCrawlResult};
 use crate::core::database_error::DatabaseError;
-use crate::core::domain::managers::InMemoryDomainManager;
+use crate::core::origin::managers::InMemoryOriginManager;
 use crate::core::extraction::ExtractedLink;
 use crate::core::robots::{OffMemoryRobotsManager, ShareableRobotsManager};
 use crate::core::rocksdb_ext::{open_db};
 use crate::core::io::fs::FileSystemAccess;
+use crate::core::origin::AtraOriginProvider;
 use crate::core::web_graph::{WebGraphEntry, QueuingWebGraphManager, WebGraphManager};
 use crate::core::queue::file::RawAgingQueueFile;
 use crate::core::shutdown::UnsafeShutdownGuard;
@@ -51,7 +52,7 @@ pub struct LocalContext {
     blacklist: BlacklistManager,
     robots: ShareableRobotsManager,
     crawled_data: CrawlDB,
-    domain_manager: InMemoryDomainManager,
+    host_manager: InMemoryOriginManager,
     configs: Configs,
     links_net_manager: Arc<QueuingWebGraphManager>,
     // Internal states
@@ -106,7 +107,7 @@ impl LocalContext {
                 crawled_data,
                 robots,
                 configs,
-                domain_manager: InMemoryDomainManager::default(),
+                host_manager: InMemoryOriginManager::default(),
                 started_at: OffsetDateTime::now_utc(),
                 last_scan_over_link_states: RwLock::new(None),
                 ct_discovered_websites: AtomicUsize::new(0),
@@ -128,7 +129,7 @@ impl LocalContext {
 impl super::Context for LocalContext {
     type RobotsManager = ShareableRobotsManager;
     type UrlQueue = UrlQueueWrapper<RawAgingQueueFile>;
-    type DomainManager = InMemoryDomainManager;
+    type HostManager = InMemoryOriginManager;
     type WebGraphManager = QueuingWebGraphManager;
 
     async fn can_poll(&self) -> bool {
@@ -171,8 +172,8 @@ impl super::Context for LocalContext {
         self.robots.clone()
     }
 
-    fn get_domain_manager(&self) -> &Self::DomainManager {
-        &self.domain_manager
+    fn get_host_manager(&self) -> &Self::HostManager {
+        &self.host_manager
     }
 
     async fn retrieve_slim_crawled_website(&self, url: &UrlWithDepth) -> Result<Option<SlimCrawlResult>, DatabaseError> {
@@ -200,8 +201,8 @@ impl super::Context for LocalContext {
                     self.links_net_manager.add(WebGraphEntry::create_link(from, url)).await?;
                     if self.get_link_state(url).await?.is_none() {
                         self.update_link_state(url, LinkStateType::Discovered).await?;
-                        if let Some(ref domain) = url.domain() {
-                            if self.configs.crawl().budget.get_budget_for(domain).is_in_budget(url) {
+                        if let Some(origin) = url.atra_origin() {
+                            if self.configs.crawl().budget.get_budget_for(&origin).is_in_budget(url) {
                                 for_queue.push(UrlQueueElement::new(false, 0, false, url.clone()));
                             }
                         }

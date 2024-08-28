@@ -13,6 +13,7 @@
 //limitations under the License.
 
 use std::ffi::OsString;
+use std::fmt::Write as FmtWrite;
 use std::fs::File as StdFile;
 use tokio::fs::File;
 use tokio::io::{AsyncWriteExt, BufWriter};
@@ -20,63 +21,103 @@ use std::io;
 use std::io::{BufRead, Write, BufReader as StdBufReader, ErrorKind};
 use std::num::NonZeroUsize;
 use std::path::Path;
-use case_insensitive_string::CaseInsensitiveString;
+use data_encoding::{BASE32_NOPAD};
+use itertools::Itertools;
 use thiserror::Error;
 use tokio::sync::mpsc::{Sender};
 use tokio::sync::mpsc::error::{SendError};
 use ubyte::ByteUnit;
 use crate::core::crawl::seed::CrawlSeed;
+use crate::core::origin::{AtraOriginProvider, AtraUrlOrigin};
 use crate::core::runtime::AtraHandleOption;
+use crate::core::url::atra_uri::AtraUri;
 use crate::core::UrlWithDepth;
 use crate::util::RuntimeContext;
 
 #[derive(Debug)]
 pub enum WebGraphEntry {
     Seed {
-        domain: CaseInsensitiveString,
-        seed: String
+        origin: AtraUrlOrigin,
+        seed: AtraUri
     },
     Link {
-        from: String,
-        to: String
+        from: AtraUri,
+        to: AtraUri
     }
 }
 
 impl WebGraphEntry {
     pub fn create_link(from: &UrlWithDepth, to: &UrlWithDepth) -> Self {
         Self::Link {
-            from: from.url().to_string(),
-            to: to.url().to_string()
+            from: from.url.clone(),
+            to: to.url.clone()
         }
     }
 
     pub fn create_seed(seed: &impl CrawlSeed) -> Self {
         Self::Seed {
-            seed: seed.url().url().to_string(),
-            domain: seed.domain().clone()
+            origin: seed.origin().to_owned(),
+            seed: seed.url().url().clone(),
         }
     }
 
-    fn as_internal_notation3(&self) -> String {
+
+    fn to_turtle_entry(self) -> String {
+        let mut s = String::new();
+        self.collect(&mut s);
+        return s
+    }
+
+
+
+    fn collect(&self, out: &mut impl EntryLineConsumer) {
+        fn recognize_atra_uri(uri: &AtraUri, out: &mut impl EntryLineConsumer) -> String {
+            let result = match uri.try_as_str() {
+                None => {
+                    let mut label = String::new();
+                    label.write_str("ol:").unwrap();
+                    BASE32_NOPAD.encode_append(uri.as_bytes(), &mut label);
+                    out.push(format!("{label} rdfs:label \"{}\" .\n", uri.as_str()));
+                    label
+                }
+                Some(value) => {
+                    format!("<{value}>")
+                }
+            };
+            if let Some(origin) = uri.atra_origin() {
+                out.push(format!("{result} :has_origin o:{} .\n", origin));
+            }
+            result
+        }
+
         match self {
-            WebGraphEntry::Seed { domain, seed } => {
-                format!("\"{}\" :has_seed <{seed}> .", domain.as_ref())
+            WebGraphEntry::Seed { seed, origin } => {
+                let seed = recognize_atra_uri(seed, out);
+                out.push(format!("o:{origin} :has_seed {seed} .\n"))
             }
             WebGraphEntry::Link { from, to } => {
-                format!("<{from}> :links_to <{to}> .")
+                let from = recognize_atra_uri(from, out);
+                let to = recognize_atra_uri(to, out);
+                out.push(format!("{} :links_to {} .\n", from.as_str(), to.as_str()))
             }
         }
     }
+}
 
-    fn to_internal_notation3(self) -> String {
-        match self {
-            WebGraphEntry::Seed { domain, seed } => {
-                format!("\"{}\" :has_seed <{seed}> .", domain.as_ref())
-            }
-            WebGraphEntry::Link { from, to } => {
-                format!("<{from}> :links_to <{to}> .")
-            }
-        }
+
+trait EntryLineConsumer {
+    fn push(&mut self, value: String);
+}
+
+impl EntryLineConsumer for String {
+    fn push(&mut self, value: String) {
+        self.write_str(&value).unwrap();
+    }
+}
+
+impl EntryLineConsumer for Vec<String> {
+    fn push(&mut self, value: String) {
+        Vec::push(self, value)
     }
 }
 
@@ -132,50 +173,64 @@ impl QueuingWebGraphManager {
             return Err(LinkNetError::IOError(io::Error::from(ErrorKind::Unsupported)))
         }
 
-        let needs_header = meta.len() == 0;
 
-        if !needs_header {
-            if !StdBufReader::new(&file).lines()
-                .any(|value|
-                    match value {
-                        Ok(value) => {
-                            value.starts_with("@prefix") && value.contains("http://atra.de/")
-                        }
-                        Err(_) => {false}
+        if meta.len() != 0 {
+            let mut graph_prefix = false;
+            let mut domain_prefix = false;
+            let mut domain_label_prefix = false;
+            let mut rnfs_prefix = false;
+            for value in StdBufReader::new(&file).lines() {
+                if let Ok(value) = value {
+                    if value.starts_with("@prefix") {
+                        graph_prefix = value.contains(" : ") && value.contains("http://atra.de/graph#");
+                        domain_prefix = value.contains(" o: ") && value.contains("http://atra.de/graph/origin#");
+                        domain_label_prefix = value.contains(" ol: ") && value.contains("http://atra.de/graph/origin-label#");
+                        rnfs_prefix = value.contains(" rdfs: ") && value.contains("http://www.w3.org/2000/01/rdf-schema#");
                     }
-                )
-            {
+                }
+            }
+            if !graph_prefix || !domain_prefix || !domain_label_prefix || !rnfs_prefix {
                 return Err(LinkNetError::InvalidFile(path.as_ref().as_os_str().to_os_string()))
             }
-        } else  {
-            writeln!(&mut file, "@prefix : <http://atra.de/>").unwrap();
+        } else {
+            writeln!(&mut file, "@prefix : <http://atra.de/graph#> .").unwrap();
+            writeln!(&mut file, "@prefix o: <http://atra.de/graph/origin#> .").unwrap();
+            writeln!(&mut file, "@prefix ol: <http://atra.de/graph/origin-label#> .").unwrap();
+            writeln!(&mut file, "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .").unwrap();
         }
-
 
         let mut writer = BufWriter::with_capacity(ByteUnit::Kilobyte(32).as_u64() as usize, File::from_std(file));
         let (queue_in, mut queue_out) = tokio::sync::mpsc::channel::<WebGraphEntry>(capacity.get());
         let guard = shutdown_and_handle.shutdown_guard().clone();
 
+        async fn write_buffer(entry: &mut Vec<String>, writer: &mut BufWriter<File>) {
+            for value in entry.drain(..).unique() {
+                if let Err(err) = writer.write_all(value.as_bytes()).await {
+                    log::error!("WebGraphWriter: encountered a problem:{err}")
+                }
+            }
+        }
+
         // todo: may need scaling
         shutdown_and_handle.handle().io_or_main_or_current().spawn(
             async move {
-                log::debug!("WebGraphWriter: Start writer thread");
                 let _guard = guard;
-                while let Some(value) = queue_out.recv().await {
-                    log::trace!("WebGraphWriter:Write {:?}", value);
-                    match writer.write_all(value.to_internal_notation3().as_bytes()).await {
-                        Ok(_) => {}
-                        Err(err) => {
-                            log::error!("WebGraphWriter: encountered a problem:{err}")
-                        }
+                log::debug!("WebGraphWriter: Start writer thread");
+
+                let mut buffer = Vec::with_capacity(32);
+                let mut entry_buffer = Vec::new();
+
+                while queue_out.recv_many(&mut buffer, 32).await > 0 {
+                    log::trace!("WebGraphWriter:Write {} entries", buffer.len());
+                    for value in &buffer {
+                        value.collect(&mut entry_buffer);
                     }
-                    match writer.write_u8(b'\n').await {
-                        Ok(_) => {}
-                        Err(err) => {
-                            log::error!("WebGraphWriter: encountered a problem:{err}")
-                        }
-                    }
+                    buffer.clear();
+                    write_buffer(&mut entry_buffer, &mut writer).await;
                 }
+
+                assert!(buffer.is_empty());
+                assert!(entry_buffer.is_empty());
 
                 match writer.flush().await {
                     Ok(_) => {}
@@ -204,12 +259,13 @@ impl WebGraphManager for QueuingWebGraphManager {
         match self.queue_in.send(link_net_entry).await {
             Ok(_) => {return Ok(())}
             Err(SendError(value)) => {
-                log::error!("Failed to write {} to the external file", value.as_internal_notation3());
+                log::error!("Failed to write {:?} to the external file", value);
                 return Err(LinkNetError::SendError(value))
             }
         }
     }
 }
+
 
 #[cfg(test)]
 mod test {
@@ -225,12 +281,13 @@ mod test {
     use tokio::task::{JoinSet};
     use crate::core::runtime::OptionalAtraHandle;
     use crate::core::shutdown::{graceful_shutdown, UnsafeShutdownGuard};
+    use crate::core::url::atra_uri::AtraUri;
     use crate::util::RuntimeContext;
 
     #[tokio::test]
     async fn can_write_propery(){
         scopeguard::defer! {
-            let _ = std::fs::remove_file(Path::new("./atra_data/example.n3"));
+            let _ = std::fs::remove_file(Path::new("./atra_data/example.ttl"));
         }
 
         let (_, b, mut guard) = graceful_shutdown();
@@ -249,7 +306,7 @@ mod test {
 
         let writer = Arc::new(QueuingWebGraphManager::new(
             10.try_into().unwrap(),
-            "./atra_data/example.n3",
+            "./atra_data/example.ttl",
             &RuntimeContext::new(
                 UnsafeShutdownGuard::Guarded(b.into_inner().1),
                 OptionalAtraHandle::None
@@ -261,8 +318,8 @@ mod test {
             let c = barrier.clone();
             let w = writer.clone();
             let entry = WebGraphEntry::Link {
-                from: format!("http://www.test.de/{i}"),
-                to: format!("http://www.test.de/{}", i+1),
+                from: (format!("http://www.test.de/{i}").parse::<AtraUri>().unwrap()),
+                to: (format!("http://www.test.de/{}", i+1).parse::<AtraUri>().unwrap()),
             };
             handles.spawn(
                 async move {
@@ -285,7 +342,7 @@ mod test {
         drop(writer);
         log::info!("Waiting!");
         guard.wait().await;
-        let read = std::fs::read_to_string(Path::new("./atra_data/example.n3")).unwrap();
-        println!("N3-File:\n\n{read}")
+        let read = std::fs::read_to_string(Path::new("./atra_data/example.ttl")).unwrap();
+        println!("Turtle-File:\n\n{read}")
     }
 }

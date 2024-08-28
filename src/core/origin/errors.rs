@@ -13,30 +13,29 @@
 //limitations under the License.
 
 use std::time::SystemTime;
-use case_insensitive_string::CaseInsensitiveString;
-use compact_str::CompactString;
 use thiserror::Error;
+use crate::core::origin::AtraUrlOrigin;
 use crate::core::UrlWithDepth;
 
 /// Errors of the domain manager
 #[derive(Debug, Error)]
-pub enum DomainManagerError {
-    #[error("There was no domain in the url")]
-    NoDomainError(UrlWithDepth),
-    #[error("The domain is already in use {0:?}")]
-    AlreadyOccupied(CaseInsensitiveString)
+pub enum OriginManagerError {
+    #[error("There was no host in the url")]
+    NoOriginError(UrlWithDepth),
+    #[error("The host is already in use {0:?}")]
+    AlreadyOccupied(AtraUrlOrigin)
 }
 
 
 /// Returns the poison state of the guard at this specific moment.
 #[derive(Debug, Error, Clone)]
 pub enum GuardPoisonedError {
-    #[error("The domain {0} is not registered but guarded!")]
-    DomainMissing(CompactString),
-    #[error("The guard flag of the domain {0} is not set!")]
-    InUseNotSet(CompactString),
-    #[error("The guard timestamp of the domain {0} is not set!")]
-    NoTimestampSet(CompactString),
-    #[error("The guard timestamp of the domain {0} is set to {2:?} but should be {1:?}!")]
-    WrongTimestampSet(CompactString, SystemTime, SystemTime)
+    #[error("The origin {0} is not registered but guarded!")]
+    OriginMissing(AtraUrlOrigin),
+    #[error("The guard flag of the origin {0} is not set!")]
+    InUseNotSet(AtraUrlOrigin),
+    #[error("The guard timestamp of the origin {0} is not set!")]
+    NoTimestampSet(AtraUrlOrigin),
+    #[error("The guard timestamp of the origin {0} is set to {2:?} but should be {1:?}!")]
+    WrongTimestampSet(AtraUrlOrigin, SystemTime, SystemTime)
 }

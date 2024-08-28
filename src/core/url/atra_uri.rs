@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use case_insensitive_string::CaseInsensitiveString;
@@ -5,8 +6,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use url::Url;
 use crate::core::url::cleaner::AtraUrlCleaner;
-
-
+use crate::core::origin::{AtraUrlOrigin, AtraOriginProvider};
 
 /// A separated type for URL to prepare for supporting different kind of URLs
 #[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
@@ -35,6 +35,7 @@ pub enum ParseError {
     UrlParseError(#[from] url::ParseError)
 }
 
+
 impl AtraUri {
     pub fn with_base<U: AsRef<str>>(base: &Self, target: U) -> Result<Self, ParseError> {
         let target = target.as_ref();
@@ -53,14 +54,6 @@ impl AtraUri {
     #[inline(always)]
     pub fn clean<C: AtraUrlCleaner>(&mut self, cleaner: C) {
         cleaner.clean(self)
-    }
-
-    pub fn host_str(&self) -> Option<&str> {
-        match self { AtraUri::Url(value) => {value.host_str()} }
-    }
-
-    pub fn domain(&self) -> Option<&str> {
-        match self { AtraUri::Url(value) => {value.domain()} }
     }
 
     pub fn path(&self) -> Option<&str> {
@@ -87,6 +80,16 @@ impl AtraUri {
         }
     }
 
+
+
+    pub fn domain(&self) -> Option<String> {
+        match self { AtraUri::Url(value) => {value.domain().map(|value| value.to_lowercase())} }
+    }
+
+    pub fn host(&self) -> Option<String> {
+        match self { AtraUri::Url(value) => {value.host_str().map(|value| value.to_lowercase())} }
+    }
+
     /// Returns the name of the domain without any suffix.
     /// Cleanup depends on the public suffix list.
     pub fn domain_name(&self) -> Option<CaseInsensitiveString> {
@@ -104,10 +107,10 @@ impl AtraUri {
     }
 
     /// Returns it as string
-    pub fn as_str(&self) -> &str {
+    pub fn as_bytes(&self) -> &[u8] {
         match self {
             AtraUri::Url(value) => {
-                value.as_str()
+                value.as_str().as_bytes()
             }
         }
     }
@@ -156,12 +159,42 @@ impl AtraUri {
         match self { AtraUri::Url(value) => {Some(value)} }
     }
 
+    pub fn try_as_str(&self) -> Option<&str> {
+        match self {
+            AtraUri::Url(value) => {
+                Some(value.as_str())
+            }
+        }
+    }
+
+    pub fn as_str(&self) -> Cow<str> {
+        match self.try_as_str() {
+            None => {
+                Cow::Owned(self.to_string())
+            }
+            Some(value) => {
+                Cow::Borrowed(value)
+            }
+        }
+    }
+
     pub fn file_extension(&self) -> Option<&str> {
         match self { AtraUri::Url(value) => {
             let path = value.path();
             let found = path.rfind('.')?;
             Some(&path[found..])
         } }
+    }
+}
+
+
+impl AtraOriginProvider for AtraUri {
+    fn atra_origin(&self) -> Option<AtraUrlOrigin> {
+        match self {
+            AtraUri::Url(value) => {
+                value.atra_origin()
+            }
+        }
     }
 }
 
@@ -195,8 +228,12 @@ mod test {
     fn spaces_do_not_matter() {
         let a: AtraUri = "https://www.example.com/".parse().expect("Expected a sucessfull parse!");
         let b: AtraUri = "  https://www.example.com/  ".parse().expect("Expected a sucessfull parse!");
+        let c: AtraUri = "  https://www.konto.example.com/  ".parse().expect("Expected a sucessfull parse!");
+        println!("{:?}", a.domain_name());
+        println!("{:?}", c.domain_name());
         assert_eq!(a, b);
-        assert_eq!(a.as_str(), b.as_str());
+        assert_eq!(a.domain_name(), b.domain_name());
+        assert_eq!(a.to_string(), b.to_string());
     }
 
 

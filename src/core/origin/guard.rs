@@ -15,41 +15,41 @@
 use std::fmt;
 use std::marker::PhantomData;
 use std::time::SystemTime;
-use case_insensitive_string::CaseInsensitiveString;
 use crate::core::depth::DepthDescriptor;
-use crate::core::domain::{DomainEntry, DomainManager, GuardPoisonedError};
+use crate::core::origin::{OriginEntry, OriginManager, GuardPoisonedError, AtraOriginProvider};
+use crate::core::origin::AtraUrlOrigin;
 use crate::core::UrlWithDepth;
 
 /// A guard that works basically like a Mutex or RwLock guard.
 /// Allows to block a domain until the guard is dropped.
 #[clippy::has_significant_drop]
-pub struct DomainGuard<'a, T: DomainManager> {
+pub struct OriginGuard<'a, T: OriginManager> {
     pub(crate) reserved_at: SystemTime,
-    pub(crate) domain: CaseInsensitiveString,
-    pub(crate) domain_manager: *const T,
-    pub(crate) domain_entry: DomainEntry,
+    pub(crate) origin: AtraUrlOrigin,
+    pub(crate) origin_manager: *const T,
+    pub(crate) entry: OriginEntry,
     pub(crate) _marker: PhantomData<&'a T>
 }
 
-unsafe impl<'a, T: DomainManager> Sync for DomainGuard<'a, T>{}
-unsafe impl<'a, T: DomainManager> Send for DomainGuard<'a, T>{}
+unsafe impl<'a, T: OriginManager> Sync for OriginGuard<'a, T>{}
+unsafe impl<'a, T: OriginManager> Send for OriginGuard<'a, T>{}
 
-impl<'a, T: DomainManager> fmt::Debug for DomainGuard<'a, T> {
+impl<'a, T: OriginManager> fmt::Debug for OriginGuard<'a, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("DomainGuard")
+        f.debug_struct("HostGuard")
             .field("reserved_at", &self.reserved_at)
-            .field("domain", &self.domain)
-            .field("domain_entry", &self.domain_entry)
+            .field("origin", &self.origin)
+            .field("entry", &self.entry)
             .finish_non_exhaustive()
     }
 }
 
 #[allow(dead_code)]
-impl<'a, T: DomainManager> DomainGuard<'a, T> {
+impl<'a, T: OriginManager> OriginGuard<'a, T> {
 
     /// Checks the guard is poisoned.
     pub async fn check_for_poison(&self) -> Result<(), GuardPoisonedError> {
-        unsafe{&*self.domain_manager}.check_if_poisoned(self).await
+        unsafe{&*self.origin_manager }.check_if_poisoned(self).await
     }
 
     /// When was the guard reserved?
@@ -57,35 +57,35 @@ impl<'a, T: DomainManager> DomainGuard<'a, T> {
         self.reserved_at
     }
 
-    /// What is the associated domain?
-    pub fn domain(&self) -> &CaseInsensitiveString {
-        &self.domain
+    /// What is the associated origin?
+    pub fn origin(&self) -> &AtraUrlOrigin {
+        &self.origin
     }
 
     /// Returns true iff the domain of [url] is protected.
     /// If there is no url it returns none.
-    pub fn url_has_protected_domain(&self, url: &UrlWithDepth) -> Option<bool> {
-        url.domain().map(|value| value == self.domain)
+    pub fn url_has_protected_origin(&self, url: &UrlWithDepth) -> Option<bool> {
+        url.atra_origin().map(|value| value == self.origin)
     }
 
     /// Returns the domain entry
-    pub fn domain_entry(&self) -> &DomainEntry {
-        &self.domain_entry
+    pub fn entry(&self) -> &OriginEntry {
+        &self.entry
     }
 
     /// Returns the depth associated to the domain guard.
     pub fn depth(&self) -> DepthDescriptor {
-        self.domain_entry.depth
+        self.entry.depth
     }
 
     /// Returns true if the url has some kind of potential to add additional value to the crawl.
     pub fn has_additional_value(&self, url: &UrlWithDepth) -> bool {
-        url.depth() < &self.domain_entry.depth
+        url.depth() < &self.entry.depth
     }
 }
 
-impl<'a, T: DomainManager> Drop for DomainGuard<'a, T> {
+impl<'a, T: OriginManager> Drop for OriginGuard<'a, T> {
     fn drop(&mut self) {
-        unsafe{&*self.domain_manager}.release_domain(self.domain.clone());
+        unsafe{&*self.origin_manager }.release(self.origin.clone());
     }
 }

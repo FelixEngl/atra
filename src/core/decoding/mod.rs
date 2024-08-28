@@ -170,8 +170,10 @@ pub async fn decode<'a>(context: &impl Context, page: &'a ResponseData, identifi
         };
 
         if result {
+            let domain = page.get_url_parsed().domain();
+            let domain = domain.as_ref().map(|value| psl::domain(value.as_bytes())).flatten();
             let (selected_encoding, is_probably_right) =
-                if let Some(domain) = page.get_url_parsed().domain().map(|value| psl::domain(value.as_bytes())).flatten(){
+                if let Some(domain) = domain {
                     enc.guess_assess(Some(domain.suffix().as_bytes()), false)
                 } else {
                     enc.guess_assess(None, false)

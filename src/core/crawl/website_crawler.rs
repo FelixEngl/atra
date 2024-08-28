@@ -50,16 +50,7 @@ use crate::core::shutdown::ShutdownReceiver;
 use crate::core::database_error::DatabaseError;
 use crate::core::format::AtraFileInformation;
 use crate::core::sitemaps::parse::retrieve_and_parse;
-
-
-/// The errors encountered during setup.
-#[derive(Debug, Error)]
-pub enum WebsiteCrawlerBuilderError {
-    #[error("The parsing of the initial url failed")]
-    URLParser(#[from] url::ParseError),
-    #[error("The domain to utf 8 conversion failed.")]
-    DomainNotUTF8(#[from] std::str::Utf8Error),
-}
+use crate::core::origin::{AtraOriginProvider, AtraUrlOrigin};
 
 /// Get the domain name from the [url] as [CaseInsensitiveString].
 /// Returns None if there is no domain
@@ -70,7 +61,7 @@ fn domain_name(url: &Url) -> Option<CaseInsensitiveString> {
 
 /// Get the raw domain name from [url]
 /// Returns None if there is no domain
-fn domain_name_raw(url: &Url) -> Option<Domain> {
+pub fn domain_name_raw(url: &Url) -> Option<Domain> {
     psl::domain(url.host_str()?.as_bytes())
 }
 
@@ -93,7 +84,7 @@ pub struct WebsiteCrawlerBuilder<'a> {
     /// Additional headers
     additional_headers: Option<HeaderMap>,
     /// The urls to the sitemaps
-    sitemaps: Option<HashMap<CaseInsensitiveString, Vec<String>>>
+    sitemaps: Option<HashMap<AtraUrlOrigin, Vec<String>>>
 }
 
 
@@ -149,17 +140,17 @@ impl<'a> WebsiteCrawlerBuilder<'a> {
     /// Ignores urls that can not provide a domain
     pub fn add_sitemap(mut self, url_with_depth: &UrlWithDepth, value: String) -> Self {
         if let Some(ref mut sitemaps) = self.sitemaps {
-            if let Some(domain) = url_with_depth.domain() {
-                if let Some(found) = sitemaps.get_mut(&domain) {
+            if let Some(host) = url_with_depth.atra_origin() {
+                if let Some(found) = sitemaps.get_mut(&host) {
                     found.push(value);
                 } else {
-                    sitemaps.insert(domain, vec![value]);
+                    sitemaps.insert(host, vec![value]);
                 }
             }
         } else {
             let mut hash_map = HashMap::new();
-            if let Some(domain) = url_with_depth.domain() {
-                hash_map.insert(domain, vec![value]);
+            if let Some(host) = url_with_depth.atra_origin() {
+                hash_map.insert(host, vec![value]);
             }
             self.sitemaps = Some(hash_map);
         }
@@ -168,16 +159,16 @@ impl<'a> WebsiteCrawlerBuilder<'a> {
 
     pub fn add_sitemaps<I: IntoIterator<Item=String>>(mut self, url_with_depth: &UrlWithDepth, values: Vec<String>) -> Self {
         if let Some(ref mut sitemaps) = self.sitemaps {
-            if let Some(domain) = url_with_depth.domain() {
-                if let Some(found) = sitemaps.get_mut(&domain) {
+            if let Some(hosts) = url_with_depth.atra_origin() {
+                if let Some(found) = sitemaps.get_mut(&hosts) {
                     found.extend(values);
                 } else {
-                    sitemaps.insert(domain, values);
+                    sitemaps.insert(hosts, values);
                 }
             }
         } else {
             let mut hash_map = HashMap::new();
-            if let Some(domain) = url_with_depth.domain() {
+            if let Some(domain) = url_with_depth.atra_origin() {
                 hash_map.insert(domain, values);
             }
             self.sitemaps = Some(hash_map);
@@ -192,7 +183,7 @@ impl<'a> WebsiteCrawlerBuilder<'a> {
                 reqwest::redirect::Policy::limited(self.configuration.redirect_limit)
             }
             RedirectPolicy::Strict => {
-                let host_s = url.domain().unwrap_or_default();
+                let host_s = url.atra_origin().unwrap_or_default();
                 let default_policy = reqwest::redirect::Policy::default();
                 let initial_redirect = Arc::new(AtomicU8::new(0));
                 let initial_redirect_limit = if self.configuration.respect_robots_txt {
@@ -275,12 +266,12 @@ impl<'a> WebsiteCrawlerBuilder<'a> {
         let url = seed.url();
 
         client = client.redirect(self.setup_redirect_policy(url));
-        if let Some(timeout) = self.configuration.budget.get_budget_for(seed.domain()).get_request_timeout() {
+        if let Some(timeout) = self.configuration.budget.get_budget_for(&seed.origin()).get_request_timeout() {
             log::trace!("Timeout Set: {}", timeout);
             client = client.timeout(timeout.unsigned_abs());
         }
         client = if let Some(cookies) = &self.configuration.cookies {
-            if let Some(cookie) = cookies.get_cookies_for(seed.domain()) {
+            if let Some(cookie) = cookies.get_cookies_for(&seed.origin()) {
                 let cookie_store = reqwest::cookie::Jar::default();
                 if let Some(url) = url.clean_url().as_url() {
                     cookie_store.add_cookie_str(cookie.as_str(), url);
@@ -316,7 +307,7 @@ impl<'a> WebsiteCrawlerBuilder<'a> {
         client
     }
 
-    pub async fn build<T: CrawlSeed>(self, seed: T) -> Result<WebsiteCrawler<T>, WebsiteCrawlerBuilderError> {
+    pub async fn build<T: CrawlSeed>(self, seed: T) -> WebsiteCrawler<T> {
         let build_crawl_task_at = OffsetDateTime::now_utc();
 
         let user_agent = self.user_agent.clone().unwrap_or_else(|| self.configuration.user_agent.get_user_agent().to_string());
@@ -338,15 +329,13 @@ impl<'a> WebsiteCrawlerBuilder<'a> {
             }
         );
 
-        Ok(
-            WebsiteCrawler::new(
-                seed,
-                build_crawl_task_at,
-                crawl_id,
-                user_agent,
-                client,
-                self.sitemaps
-            )
+        WebsiteCrawler::new(
+            seed,
+            build_crawl_task_at,
+            crawl_id,
+            user_agent,
+            client,
+            self.sitemaps
         )
     }
 }
@@ -372,7 +361,7 @@ pub struct WebsiteCrawler<S> {
     pub crawl_id: String,
 
     /// External sitemaps set by the builder
-    #[allow(dead_code)] external_sitemaps: Option<HashMap<CaseInsensitiveString, Vec<String>>>,
+    #[allow(dead_code)] external_sitemaps: Option<HashMap<AtraUrlOrigin, Vec<String>>>,
 }
 
 
@@ -386,7 +375,7 @@ impl<S: CrawlSeed> WebsiteCrawler<S> {
         crawl_id: String,
         user_agent: String,
         client: Client,
-        external_sitemaps: Option<HashMap<CaseInsensitiveString, Vec<String>>>
+        external_sitemaps: Option<HashMap<AtraUrlOrigin, Vec<String>>>
     ) -> Self {
         Self {
             seed,
@@ -410,8 +399,6 @@ impl<'a> WebsiteCrawler<WebsiteCrawlerBuilder<'a>> {
 /// Errors specifically when crawling a single website
 #[derive(Debug, Error)]
 pub enum FastCrawlError {
-    #[error("Had an error with the builder: {0}")]
-    Builder(#[from] WebsiteCrawlerBuilderError),
     #[error(transparent)]
     SeedInvalid(#[from] SeedCreationError),
 }
@@ -485,7 +472,7 @@ impl<S: CrawlSeed> WebsiteCrawler<S> {
 
 
 
-        let budget = configuration.budget.get_budget_for(self.seed.domain()).clone();
+        let budget = configuration.budget.get_budget_for(&self.seed.origin()).clone();
 
         let blacklist = context.get_blacklist().await;
 
@@ -565,7 +552,7 @@ impl<S: CrawlSeed> WebsiteCrawler<S> {
             match context.retrieve_slim_crawled_website(&target).await {
                 Ok(value) => {
                     if let Some(already_crawled) = value {
-                        if let Some(recrawl) = configuration.budget.get_budget_for(self.seed.domain()).get_recrawl_interval() {
+                        if let Some(recrawl) = configuration.budget.get_budget_for(&self.seed.origin()).get_recrawl_interval() {
                             if OffsetDateTime::now_utc() - already_crawled.meta.created_at >= recrawl {
                                 log::debug!("The url was already crawled.");
                                 if !Self::update_linkstate(&mut errors, context, &target, LinkStateType::ProcessedAndStored).await {
@@ -617,7 +604,8 @@ impl<S: CrawlSeed> WebsiteCrawler<S> {
             if log::max_level() == LevelFilter::Trace {
                 log::trace!("Interval End: {}", OffsetDateTime::now_utc());
             }
-            match crate::core::fetching::fetch_request(context, &self.client, target.as_str()).await {
+            let url_str = target.as_str().into_owned();
+            match crate::core::fetching::fetch_request(context, &self.client, &url_str).await {
                 Ok(page) => {
                     if !Self::update_linkstate(&mut errors,context,&target,LinkStateType::Discovered).await {
                         log::info!("Failed to set link state of {target}.");
@@ -770,7 +758,7 @@ impl<'a, R: RobotsInformation> UrlChecker<'a, R> {
     /// - is not forbidden in robot.txt file (if parameter is defined)
     async fn check_if_allowed<T: CrawlSeed>(&self, task: &WebsiteCrawler<T>, url: &UrlWithDepth) -> bool {
         let result = !task.links_visited.contains(url)
-            && !self.blacklist.has_match_for(url.as_str())
+            && !self.blacklist.has_match_for(&url.as_str())
             && self.configured_robots.check_if_allowed(&task.client, url).await
             && self.budget.is_in_budget(url);
 
@@ -781,7 +769,7 @@ impl<'a, R: RobotsInformation> UrlChecker<'a, R> {
                     if task.links_visited.contains(url) {
                         reasons.push(NotAllowedReasoning::IsAlreadyVisited);
                     }
-                    if self.blacklist.has_match_for(url.as_str()) {
+                    if self.blacklist.has_match_for(&url.as_str()) {
                         reasons.push(NotAllowedReasoning::BlacklistHasMatch);
                     }
                     if !self.configured_robots.check_if_allowed(&task.client, &url).await {
@@ -812,7 +800,6 @@ impl<'a, R: RobotsInformation> UrlChecker<'a, R> {
 mod test {
     use std::fmt::Debug;
     use std::sync::Arc;
-    use case_insensitive_string::CaseInsensitiveString;
     use itertools::Itertools;
     use log::LevelFilter;
     use log4rs::append::file::FileAppender;
@@ -864,8 +851,7 @@ mod test {
         let seed = "https://choosealicense.com/".parse::<UrlWithDepth>().unwrap().try_into().unwrap();
         let crawl_task: WebsiteCrawler<UnguardedSeed> = WebsiteCrawler::builder(&CrawlConfig::default())
             .build(seed)
-            .await
-            .unwrap();
+            .await;
         let in_memory = InMemoryRobotsManager::new();
         println!("{:?}", crawl_task.client);
         let retrieved = in_memory.get_or_retrieve(
@@ -932,9 +918,9 @@ mod test {
         let mut crawl = WebsiteCrawler::builder(&config).build(
             UnguardedSeed::new(
                 "https://choosealicense.com/".parse::<UrlWithDepth>().unwrap(),
-                CaseInsensitiveString::new("choosealicense.com")
+                "choosealicense.com".into()
             ).unwrap()
-        ).await.unwrap();
+        ).await;
 
         let context = InMemoryContext::new(
             Configs::new(
@@ -982,9 +968,9 @@ mod test {
         let mut crawl = WebsiteCrawler::builder(&config).build(
             UnguardedSeed::new(
                 "https://choosealicense.com/".parse::<UrlWithDepth>().unwrap(),
-                CaseInsensitiveString::new("choosealicense.com")
+                "choosealicense.com".into()
             ).unwrap()
-        ).await.unwrap();
+        ).await;
 
         let context = InMemoryContext::with_blacklist(
             Configs::new(
@@ -1051,7 +1037,7 @@ mod test {
                 }
             };
             log::trace!("Build Task");
-            let mut crawl_task: WebsiteCrawler<_> = WebsiteCrawlerBuilder::new(&config).build(guard_with_seed.get_guarded_seed()).await.unwrap();
+            let mut crawl_task: WebsiteCrawler<_> = WebsiteCrawlerBuilder::new(&config).build(guard_with_seed.get_guarded_seed()).await;
             log::trace!("Crawl Task");
             crawl_task.crawl(&context, ShutdownPhantom).await.unwrap();
             log::trace!("Continue");

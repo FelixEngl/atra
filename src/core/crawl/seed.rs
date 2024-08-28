@@ -12,10 +12,10 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use case_insensitive_string::CaseInsensitiveString;
 use crate::core::crawl::errors::SeedCreationError;
 use crate::core::crawl::errors::SeedCreationError::*;
-use crate::core::domain::{DomainGuard, DomainManager};
+use crate::core::origin::{AtraOriginProvider, OriginGuard, OriginManager};
+use crate::core::origin::AtraUrlOrigin;
 use crate::core::UrlWithDepth;
 
 
@@ -24,115 +24,115 @@ pub trait CrawlSeed {
     /// A reference to the url
     fn url(&self) -> &UrlWithDepth;
 
-    /// A reference to the domain
-    fn domain(&self) -> &CaseInsensitiveString;
+    /// A reference to the host
+    fn origin(&self) -> &AtraUrlOrigin;
 }
 
 
 
-/// A guarded version, it is keeping the guard for the domain information.
+/// A guarded version, it is keeping the guard for the host information.
 /// The lifetime depends on
-pub struct GuardedSeed<'a, 'guard: 'a, T: DomainManager> {
-    domain_guard: &'a DomainGuard<'guard, T>,
+pub struct GuardedSeed<'a, 'guard: 'a, T: OriginManager> {
+    host_guard: &'a OriginGuard<'guard, T>,
     url: &'a UrlWithDepth
 }
 
-impl<'a, 'guard: 'a, T: DomainManager> GuardedSeed<'a, 'guard, T> {
+impl<'a, 'guard: 'a, T: OriginManager> GuardedSeed<'a, 'guard, T> {
 
     /// Creates a guarded seed from a guard and a url
-    #[allow(dead_code)] pub fn new(domain_guard: &'a DomainGuard<'guard, T>, url: &'a UrlWithDepth) -> Result<Self, SeedCreationError> {
-        if let Some(domain) = url.domain() {
-            if domain.eq(domain_guard.domain()) {
-                Ok(unsafe{Self::new_unchecked(domain_guard, url)})
+    #[allow(dead_code)] pub fn new(host_guard: &'a OriginGuard<'guard, T>, url: &'a UrlWithDepth) -> Result<Self, SeedCreationError> {
+        if let Some(host) = url.atra_origin() {
+            if host.eq(host_guard.origin()) {
+                Ok(unsafe{Self::new_unchecked(host_guard, url)})
             } else {
-                Err(GuardAndUrlDifferInDomain {
-                    domain_from_url: domain.inner().clone(),
-                    domain_from_guard: domain_guard.domain().inner().clone()
+                Err(GuardAndUrlDifferInOrigin {
+                    origin_from_url: host.clone(),
+                    origin_from_guard: host_guard.origin().to_owned()
                 })
             }
         } else {
-            Err(NoDomain)
+            Err(NoOrigin)
         }
     }
 
-    /// Creates the new url but does not do any domain to guard checks.
-    pub unsafe fn new_unchecked(domain_guard: &'a DomainGuard<'guard, T>, url: &'a UrlWithDepth) -> Self {
+    /// Creates the new url but does not do any host to guard checks.
+    pub unsafe fn new_unchecked(host_guard: &'a OriginGuard<'guard, T>, url: &'a UrlWithDepth) -> Self {
         Self {
-            domain_guard,
+            host_guard,
             url
         }
     }
 
     /// Removes the dependency from the guard.
     #[allow(dead_code)] pub fn unguard(self) -> UnguardedSeed {
-        let domain = self.domain().clone();
-        unsafe { UnguardedSeed::new_unchecked(self.url.clone(), domain) }
+        let origin = self.origin().to_owned();
+        unsafe { UnguardedSeed::new_unchecked(self.url.clone(), origin) }
     }
 }
 
-impl<'a, 'guard: 'a, T: DomainManager> CrawlSeed for GuardedSeed<'a, 'guard, T> {
+impl<'a, 'guard: 'a, T: OriginManager> CrawlSeed for GuardedSeed<'a, 'guard, T> {
     #[inline] fn url(&self) -> &UrlWithDepth {
         self.url
     }
 
-    #[inline] fn domain(&self) -> &CaseInsensitiveString {
-        &self.domain_guard.domain()
+    #[inline] fn origin(&self) -> &AtraUrlOrigin {
+        &self.host_guard.origin()
     }
 }
 
-impl<'a, 'guard: 'a, T: DomainManager> AsRef<UrlWithDepth> for GuardedSeed<'a, 'guard, T> {
+impl<'a, 'guard: 'a, T: OriginManager> AsRef<UrlWithDepth> for GuardedSeed<'a, 'guard, T> {
     #[inline] fn as_ref(&self) -> &UrlWithDepth {
         self.url()
     }
 }
 
-impl<'a, 'guard: 'a, T: DomainManager> AsRef<CaseInsensitiveString> for GuardedSeed<'a, 'guard, T> {
-    #[inline] fn as_ref(&self) -> &CaseInsensitiveString {
-        self.domain()
+impl<'a, 'guard: 'a, T: OriginManager> AsRef<AtraUrlOrigin> for GuardedSeed<'a, 'guard, T> {
+    #[inline] fn as_ref(&self) -> &AtraUrlOrigin {
+        self.origin()
     }
 }
 
 /// An unguarded version when no guarding is needed
 pub struct UnguardedSeed {
     url: UrlWithDepth,
-    domain: CaseInsensitiveString
+    origin: AtraUrlOrigin
 }
 
 
 impl UnguardedSeed {
 
-    /// Creates a new UnguardedSeed for a [url] and an associated [domain].
-    #[allow(dead_code)] pub fn new(url: UrlWithDepth, domain: CaseInsensitiveString) -> Result<UnguardedSeed, SeedCreationError> {
-        if let Some(domain_url) = url.domain() {
-            if domain.eq(&domain_url) {
-                Ok(unsafe {Self::new_unchecked(url, domain)})
+    /// Creates a new UnguardedSeed for a [url] and an associated [host].
+    pub fn new(url: UrlWithDepth, origin: AtraUrlOrigin) -> Result<UnguardedSeed, SeedCreationError> {
+        if let Some(url_origin) = url.atra_origin() {
+            if origin.eq(&url_origin) {
+                Ok(unsafe {Self::new_unchecked(url, origin)})
             } else {
                 Err(
-                    GuardAndUrlDifferInDomain {
-                        domain_from_url: domain_url.inner().clone(),
-                        domain_from_guard: domain.inner().clone()
+                    GuardAndUrlDifferInOrigin {
+                        origin_from_url: url_origin.clone(),
+                        origin_from_guard: origin.clone()
                     }
                 )
             }
         } else {
-            Err(NoDomain)
+            Err(NoOrigin)
         }
     }
 
-    /// Creates the seed but omits the domain checks.
+    /// Creates the seed but omits the host checks.
     /// You have to make sure yourself, that the contract is valid.
     pub unsafe fn new_unchecked(
         url: UrlWithDepth,
-        domain: CaseInsensitiveString
+        origin: AtraUrlOrigin
     ) -> Self {
         Self {
             url,
-            domain
+            origin
         }
     }
 
-    /// Provides a guarded version of the unguarded seed iff the domain is the same.
-    #[allow(dead_code)] pub fn guard<'a, 'guard: 'a, T: DomainManager>(&'a self, guard: &'a DomainGuard<'guard, T>) -> GuardedSeed<'a, 'guard, T> {
+    /// Provides a guarded version of the unguarded seed iff the host is the same.
+    #[allow(dead_code)] pub fn guard<'a, 'guard: 'a, T: OriginManager>(&'a self, guard: &'a OriginGuard<'guard, T>) -> GuardedSeed<'a, 'guard, T> {
         unsafe{GuardedSeed::new_unchecked(guard, &self.url)}
     }
 }
@@ -142,8 +142,8 @@ impl CrawlSeed for UnguardedSeed {
         &self.url
     }
 
-    fn domain(&self) -> &CaseInsensitiveString {
-        &self.domain
+    fn origin(&self) -> &AtraUrlOrigin {
+        &self.origin
     }
 }
 
@@ -152,8 +152,8 @@ impl TryFrom<UrlWithDepth> for UnguardedSeed {
     type Error = SeedCreationError;
 
     fn try_from(value: UrlWithDepth) -> Result<Self, Self::Error> {
-        let domain = value.domain().ok_or(NoDomain)?;
-        Ok(unsafe {Self::new_unchecked(value, domain)})
+        let host = value.atra_origin().ok_or(NoOrigin)?;
+        Ok(unsafe {Self::new_unchecked(value, host)})
     }
 }
 
@@ -163,8 +163,8 @@ impl AsRef<UrlWithDepth> for UnguardedSeed {
     }
 }
 
-impl AsRef<CaseInsensitiveString> for UnguardedSeed {
-    #[inline] fn as_ref(&self) -> &CaseInsensitiveString {
-        self.domain()
+impl AsRef<AtraUrlOrigin> for UnguardedSeed {
+    #[inline] fn as_ref(&self) -> &AtraUrlOrigin {
+        self.origin()
     }
 }

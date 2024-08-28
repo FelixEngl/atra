@@ -151,7 +151,7 @@ impl Default for Files {
 
 fn _default_queue_file() -> Utf8PathBuf { "./queue.tmp".parse::<Utf8PathBuf>().unwrap() }
 fn _default_blacklist_file() -> Utf8PathBuf { "./blacklist.txt".parse::<Utf8PathBuf>().unwrap() }
-fn _default_web_graph_file() -> Utf8PathBuf { "./web_graph.rdf".parse::<Utf8PathBuf>().unwrap() }
+fn _default_web_graph_file() -> Utf8PathBuf { "./web_graph.ttl".parse::<Utf8PathBuf>().unwrap() }
 
 
 #[cfg(test)]

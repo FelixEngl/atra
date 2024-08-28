@@ -22,7 +22,7 @@ use crate::core::crawl::result::CrawlResult;
 use crate::core::crawl::seed::CrawlSeed;
 use crate::core::crawl::slim::{SlimCrawlResult};
 use crate::core::database_error::DatabaseError;
-use crate::core::domain::DomainManager;
+use crate::core::origin::OriginManager;
 use crate::core::extraction::ExtractedLink;
 use crate::core::web_graph::{WebGraphManager};
 use crate::core::robots::RobotsManager;
@@ -53,7 +53,7 @@ pub trait Context: Debug +  Send + Sync + 'static {
     type UrlQueue: UrlQueue;
 
     /// The domain manager used by this
-    type DomainManager: DomainManager;
+    type HostManager: OriginManager;
 
     /// The manager for the link net
     type WebGraphManager: WebGraphManager;
@@ -89,7 +89,7 @@ pub trait Context: Debug +  Send + Sync + 'static {
     async fn get_robots_instance(&self) -> Self::RobotsManager;
 
     /// Returns a reference to a [GuardedDomainManager]
-    fn get_domain_manager(&self) -> &Self::DomainManager;
+    fn get_host_manager(&self) -> &Self::HostManager;
 
     /// Retrieve a single crawled website but without the body
     async fn retrieve_slim_crawled_website(&self, url: &UrlWithDepth) -> Result<Option<SlimCrawlResult>, DatabaseError>;

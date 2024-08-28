@@ -17,10 +17,9 @@ use strum::{Display, EnumString};
 use tokio::task::yield_now;
 use crate::core::contexts::{Context, SlimCrawlTaskContext};
 use crate::core::contexts::worker_context::WorkerContext;
-use crate::core::crawl::seed::CrawlSeed;
-use crate::core::crawl::website_crawler::{WebsiteCrawlerBuilderError, WebsiteCrawlerBuilder};
+use crate::core::crawl::website_crawler::{WebsiteCrawlerBuilder};
 use crate::core::database_error::DatabaseError;
-use crate::core::domain::DomainManagerError;
+use crate::core::origin::OriginManagerError;
 use crate::core::link_state::LinkStateDBError;
 use crate::core::seed_provider::{AbortCause, get_seed_from_context, QueueExtractionError, RetrieveProviderResult};
 use crate::core::shutdown::{ShutdownReceiver};
@@ -70,30 +69,15 @@ pub async fn work<C: SlimCrawlTaskContext, S: ShutdownReceiver>(
 
                 let guarded_seed = guard.get_seed();
 
-                let builder = WebsiteCrawlerBuilder::new(context.configs().crawl())
-                    .build(guarded_seed).await;
+                let mut crawler =
+                    WebsiteCrawlerBuilder::new(context.configs().crawl()).build(guarded_seed).await;
 
-                match builder {
-                    Ok(mut crawler) => {
-                        match crawler.crawl(&context, shutdown.clone()).await {
-                            Ok(_) => {}
-                            Err(errors) => {
-                                for error in errors {
-                                    log::error!("{}", error)
-                                }
-                            }
+                match crawler.crawl(&context, shutdown.clone()).await {
+                    Ok(_) => {}
+                    Err(errors) => {
+                        for error in errors {
+                            log::error!("{}", error)
                         }
-                    }
-                    Err(err) => {
-                        match err {
-                            WebsiteCrawlerBuilderError::URLParser(url_error) => {
-                                log::warn!("Was not able to parse the url: '{}'! {url_error}", guard.get_guarded_seed().url().as_str())
-                            }
-                            WebsiteCrawlerBuilderError::DomainNotUTF8(domain_error) => {
-                                log::warn!("The domain of '{}' if not uft8! {domain_error}", guard.get_guarded_seed().url().as_str())
-                            }
-                        }
-                        continue;
                     }
                 }
             }
@@ -114,7 +98,7 @@ pub async fn work<C: SlimCrawlTaskContext, S: ShutdownReceiver>(
                         AbortCause::QueueIsEmpty => {
                             patience -= 10;
                         }
-                        AbortCause::NoDomain(dropped) => {
+                        AbortCause::NoHost(dropped) => {
                             log::warn!("Drop {} from queue due to NoDomain error.", dropped.target)
                         }
                         AbortCause::Shutdown => {
@@ -128,18 +112,15 @@ pub async fn work<C: SlimCrawlTaskContext, S: ShutdownReceiver>(
             }
             RetrieveProviderResult::Err(err) => {
                 match err {
-                    QueueExtractionError::DomainManager(err) => {
+                    QueueExtractionError::HostManager(err) => {
                         match err {
-                            DomainManagerError::NoDomainError(url) => {
+                            OriginManagerError::NoOriginError(url) => {
                                 log::error!("The url {url} does not result in a domain.")
                             }
-                            DomainManagerError::AlreadyOccupied(info) => {
+                            OriginManagerError::AlreadyOccupied(info) => {
                                 log::info!("The domain {info:?} is already occupied.")
                             }
                         }
-                    }
-                    QueueExtractionError::TaskBuilderFailed(err) => {
-                        log::error!("Failed to parse the seed: {err}")
                     }
                     QueueExtractionError::LinkState(err) => {
                         match err {

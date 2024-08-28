@@ -17,8 +17,7 @@ use thiserror::Error;
 use crate::core::contexts::{Context};
 use crate::core::crawl::errors::SeedCreationError;
 use crate::core::crawl::seed::{GuardedSeed, UnguardedSeed};
-use crate::core::crawl::website_crawler::WebsiteCrawlerBuilderError;
-use crate::core::domain::{DomainGuard, DomainManager, DomainManagerError};
+use crate::core::origin::{AtraOriginProvider, OriginGuard, OriginManager, OriginManagerError};
 use crate::core::link_state::{LinkState, LinkStateDBError, LinkStateType};
 use crate::core::queue::QueueError;
 use crate::core::shutdown::{ShutdownReceiver};
@@ -27,32 +26,32 @@ use crate::core::UrlWithDepth;
 use crate::core::link_state::LinkStateType::Discovered;
 
 /// A guard with an associated seed url
-pub struct GuardedSeedUrlProvider<'a, T: DomainManager> {
-    guard: DomainGuard<'a, T>,
+pub struct GuardedSeedUrlProvider<'a, T: OriginManager> {
+    guard: OriginGuard<'a, T>,
     seed_url: UrlWithDepth
 }
 
-impl<'a, T: DomainManager> GuardedSeedUrlProvider<'a, T> {
+impl<'a, T: OriginManager> GuardedSeedUrlProvider<'a, T> {
 
     /// Creates a DomainGuardWithSeed but asserts that the seed creation can wor beforehand.
     #[allow(dead_code)]
-    pub fn new(guard: DomainGuard<'a, T>, seed_url: UrlWithDepth) -> Result<Self, SeedCreationError> {
-        if let Some(domain) = seed_url.domain() {
-            if guard.domain().eq(&domain) {
+    pub fn new(guard: OriginGuard<'a, T>, seed_url: UrlWithDepth) -> Result<Self, SeedCreationError> {
+        if let Some(host) = seed_url.atra_origin() {
+            if guard.origin().eq(&host) {
                 Ok(unsafe{Self::new_unchecked(guard, seed_url)})
             } else {
-                Err(SeedCreationError::GuardAndUrlDifferInDomain {
-                    domain_from_url: domain.inner().clone(),
-                    domain_from_guard: guard.domain().inner().clone()
+                Err(SeedCreationError::GuardAndUrlDifferInOrigin {
+                    origin_from_url: host.clone(),
+                    origin_from_guard: guard.origin().clone()
                 })
             }
         } else {
-            Err(SeedCreationError::NoDomain)
+            Err(SeedCreationError::NoOrigin)
         }
     }
 
     /// Creates a DomainGuardWithSeed without doing any domain checks.
-    pub unsafe fn new_unchecked(guard: DomainGuard<'a, T>, seed_url: UrlWithDepth) -> Self {
+    pub unsafe fn new_unchecked(guard: OriginGuard<'a, T>, seed_url: UrlWithDepth) -> Self {
         Self {
             guard,
             seed_url
@@ -60,7 +59,7 @@ impl<'a, T: DomainManager> GuardedSeedUrlProvider<'a, T> {
     }
 
     /// Returns the domain guard
-    #[allow(dead_code)] pub fn guard(&self) -> &DomainGuard<'a, T> {
+    #[allow(dead_code)] pub fn guard(&self) -> &OriginGuard<'a, T> {
         &self.guard
     }
 
@@ -75,7 +74,7 @@ impl<'a, T: DomainManager> GuardedSeedUrlProvider<'a, T> {
     }
 
     pub fn get_seed(&self) -> UnguardedSeed {
-        unsafe {UnguardedSeed::new_unchecked(self.seed_url.clone(), self.guard.domain.clone())}
+        unsafe {UnguardedSeed::new_unchecked(self.seed_url.clone(), self.guard.origin.clone())}
     }
 
     // /// Converts this to a tuple
@@ -103,8 +102,8 @@ pub enum AbortCause {
     OutOfPullRetries,
     #[error("The queue is empty.")]
     QueueIsEmpty,
-    #[error("The element does not have a domain.")]
-    NoDomain(UrlQueueElement),
+    #[error("The element does not have a host.")]
+    NoHost(UrlQueueElement),
     #[error("Shutdown")]
     Shutdown
 }
@@ -114,9 +113,7 @@ pub enum AbortCause {
 #[derive(Debug, Error)]
 pub enum QueueExtractionError {
     #[error(transparent)]
-    DomainManager(#[from] DomainManagerError),
-    #[error(transparent)]
-    TaskBuilderFailed(#[from] WebsiteCrawlerBuilderError),
+    HostManager(#[from] OriginManagerError),
     #[error(transparent)]
     LinkState(#[from] LinkStateDBError),
     #[error(transparent)]
@@ -125,21 +122,21 @@ pub enum QueueExtractionError {
 
 
 /// Creates with the given context and the max misses a guarded seed provider.
-pub async fn get_seed_from_context<'a, C: Context>(context_ref: &'a C, shutdown_handle: impl ShutdownReceiver, max_miss: Option<u64>) -> RetrieveProviderResult<GuardedSeedUrlProvider<'a, C::DomainManager>> {
+pub async fn get_seed_from_context<'a, C: Context>(context_ref: &'a C, shutdown_handle: impl ShutdownReceiver, max_miss: Option<u64>) -> RetrieveProviderResult<GuardedSeedUrlProvider<'a, C::HostManager>> {
     if context_ref.url_queue().is_empty().await {
         return RetrieveProviderResult::Abort(AbortCause::QueueIsEmpty);
     } else {
         const MISSED_KEEPER_CACHE: usize = 8;
 
         let max_age = context_ref.configs().crawl().max_queue_age;
-        let manager = context_ref.get_domain_manager();
-        let mut missed_domains = 0;
-        let mut missed_domains_cache = SmallVec::<[UrlQueueElement; MISSED_KEEPER_CACHE]>::new();
+        let manager = context_ref.get_host_manager();
+        let mut missed_hosts = 0;
+        let mut missed_host_cache = SmallVec::<[UrlQueueElement; MISSED_KEEPER_CACHE]>::new();
         let mut retries = context_ref.url_queue().len().await;
         return loop {
             if shutdown_handle.is_shutdown(){
-                if !missed_domains_cache.is_empty() {
-                    match context_ref.url_queue().enqueue_all(missed_domains_cache).await {
+                if !missed_host_cache.is_empty() {
+                    match context_ref.url_queue().enqueue_all(missed_host_cache).await {
                         Err(err) => break RetrieveProviderResult::Err(
                             QueueExtractionError::QueueError(err)
                         ),
@@ -159,22 +156,22 @@ pub async fn get_seed_from_context<'a, C: Context>(context_ref: &'a C, shutdown_
                         Ok(found) => {
                             if let Some(found) = found {
                                 if drop_from_queue(context_ref, &entry, &found).await {
-                                    missed_domains += 1;
+                                    missed_hosts += 1;
                                     log::debug!("Drop {:?} from queue.", entry);
                                     continue;
                                 }
                                 if found.typ != Discovered {
-                                    missed_domains_cache.push(entry);
-                                    missed_domains += 1;
+                                    missed_host_cache.push(entry);
+                                    missed_hosts += 1;
                                     match push_logic_1(
                                         context_ref,
-                                        missed_domains,
-                                        missed_domains_cache,
+                                        missed_hosts,
+                                        missed_host_cache,
                                         &max_miss,
                                         retries
                                     ).await {
                                         RetrieveProviderResult::Ok(cache) => {
-                                            missed_domains_cache = cache;
+                                            missed_host_cache = cache;
                                             continue;
                                         }
                                         RetrieveProviderResult::Abort(cause) => {
@@ -191,10 +188,10 @@ pub async fn get_seed_from_context<'a, C: Context>(context_ref: &'a C, shutdown_
                             break RetrieveProviderResult::Err(QueueExtractionError::LinkState(err));
                         }
                     }
-                    match manager.try_reserve_domain(&entry.target).await {
+                    match manager.try_reserve(&entry.target).await {
                         Ok(guard) => {
-                            if !missed_domains_cache.is_empty() {
-                                match context_ref.url_queue().enqueue_all(missed_domains_cache).await {
+                            if !missed_host_cache.is_empty() {
+                                match context_ref.url_queue().enqueue_all(missed_host_cache).await {
                                     Err(err) => break RetrieveProviderResult::Err(
                                         QueueExtractionError::QueueError(err)
                                     ),
@@ -205,25 +202,25 @@ pub async fn get_seed_from_context<'a, C: Context>(context_ref: &'a C, shutdown_
                                 unsafe{GuardedSeedUrlProvider::new_unchecked(guard, entry.target)}
                             );
                         }
-                        Err(DomainManagerError::NoDomainError(_)) => {
-                            break match context_ref.url_queue().enqueue_all(missed_domains_cache).await {
-                                Ok(_) => RetrieveProviderResult::Abort(AbortCause::NoDomain(entry)),
+                        Err(OriginManagerError::NoOriginError(_)) => {
+                            break match context_ref.url_queue().enqueue_all(missed_host_cache).await {
+                                Ok(_) => RetrieveProviderResult::Abort(AbortCause::NoHost(entry)),
                                 Err(err) => RetrieveProviderResult::Err(
                                     QueueExtractionError::QueueError(err)
                                 )
                             };
                         }
-                        Err(DomainManagerError::AlreadyOccupied(_)) => {
-                            missed_domains_cache.push(entry);
-                            missed_domains += 1;
+                        Err(OriginManagerError::AlreadyOccupied(_)) => {
+                            missed_host_cache.push(entry);
+                            missed_hosts += 1;
                             match push_logic_2(
                                 context_ref,
-                                missed_domains,
-                                missed_domains_cache,
+                                missed_hosts,
+                                missed_host_cache,
                                 &max_miss
                             ).await {
                                 RetrieveProviderResult::Ok(cache) => {
-                                    missed_domains_cache = cache;
+                                    missed_host_cache = cache;
                                     continue;
                                 }
                                 RetrieveProviderResult::Abort(cause) => {
@@ -254,8 +251,8 @@ async fn drop_from_queue<C: Context>(context: &C, entry: &UrlQueueElement, state
     match state.typ {
         LinkStateType::Discovered => {false}
         LinkStateType::ProcessedAndStored => {
-            let budget = if let Some(ref domain) = entry.target.domain() {
-                context.configs().crawl.budget.get_budget_for(domain)
+            let budget = if let Some(origin) = entry.target.atra_origin() {
+                context.configs().crawl.budget.get_budget_for(&origin)
             } else {
                 &context.configs().crawl.budget.default
             };
@@ -275,21 +272,21 @@ async fn drop_from_queue<C: Context>(context: &C, entry: &UrlQueueElement, state
 /// Some private push logic for the macro retrieve_seed, does also check if the retries fail.
 async fn push_logic_1<C: Context, T: PartialOrd, const N: usize>(
     context: &C,
-    missed_domains: T,
-    missed_domains_cache: SmallVec::<[UrlQueueElement; N]>,
+    missed_hosts: T,
+    missed_host_cache: SmallVec::<[UrlQueueElement; N]>,
     max_miss: &Option<T>,
     retries: usize,
 ) -> RetrieveProviderResult<SmallVec::<[UrlQueueElement; N]>> {
     if retries == 0 {
-        return match context.url_queue().enqueue_all(missed_domains_cache).await {
+        return match context.url_queue().enqueue_all(missed_host_cache).await {
             Ok(_) => RetrieveProviderResult::Abort(AbortCause::OutOfPullRetries),
             Err(err) => RetrieveProviderResult::Err(QueueExtractionError::QueueError(err))
         };
     }
     push_logic_2(
         context,
-        missed_domains,
-        missed_domains_cache,
+        missed_hosts,
+        missed_host_cache,
         max_miss
     ).await
 }
@@ -297,23 +294,23 @@ async fn push_logic_1<C: Context, T: PartialOrd, const N: usize>(
 /// Some private push logic for the macro retrieve_seed, but does not check for retries
 async fn push_logic_2<C: Context, T: PartialOrd, const N: usize>(
     context: &C,
-    missed_domains: T,
-    missed_domains_cache: SmallVec::<[UrlQueueElement; N]>,
+    missed_hosts: T,
+    missed_host_cache: SmallVec::<[UrlQueueElement; N]>,
     max_miss: &Option<T>,
 ) -> RetrieveProviderResult<SmallVec::<[UrlQueueElement; N]>> {
     if let Some(unpacked) = max_miss {
-        if missed_domains.gt(unpacked) {
-            return match context.url_queue().enqueue_all(missed_domains_cache).await {
+        if missed_hosts.gt(unpacked) {
+            return match context.url_queue().enqueue_all(missed_host_cache).await {
                 Ok(_) => RetrieveProviderResult::Abort(AbortCause::TooManyMisses),
                 Err(err) => RetrieveProviderResult::Err(QueueExtractionError::QueueError(err))
             };
         }
     }
-    if missed_domains_cache.len() == N {
-        return match context.url_queue().enqueue_all(missed_domains_cache).await {
+    if missed_host_cache.len() == N {
+        return match context.url_queue().enqueue_all(missed_host_cache).await {
             Err(err) => RetrieveProviderResult::Err(QueueExtractionError::QueueError(err)),
             _ => RetrieveProviderResult::Ok(SmallVec::new())
         }
     }
-    RetrieveProviderResult::Ok(missed_domains_cache)
+    RetrieveProviderResult::Ok(missed_host_cache)
 }

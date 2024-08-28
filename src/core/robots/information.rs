@@ -13,10 +13,10 @@
 //limitations under the License.
 
 use std::sync::Arc;
-use case_insensitive_string::CaseInsensitiveString;
 use time::Duration;
 use crate::client::Client;
 use crate::core::robots::{CachedRobots, RobotsError, RobotsManager};
+use crate::core::origin::{AtraOriginProvider, AtraUrlOrigin};
 use crate::core::UrlWithDepth;
 
 /// A trait for unifying different robots information providers
@@ -41,7 +41,7 @@ pub trait RobotsInformation {
 }
 
 pub enum AnyRobotsInformation<R: RobotsManager> {
-    Domain(DomainSpecificRobotsInformation<R>),
+    Origin(OriginSpecificRobotsInformation<R>),
     General(GeneralRobotsInformation<R>)
 }
 
@@ -51,7 +51,7 @@ impl<R: RobotsManager> RobotsInformation for AnyRobotsInformation<R> {
     #[inline]   
     async fn get(&self, url: &UrlWithDepth) -> Result<Option<Arc<CachedRobots>>, RobotsError> {  
         match self {
-            AnyRobotsInformation::Domain(a) => { a.get(url).await   }
+            AnyRobotsInformation::Origin(a) => { a.get(url).await   }
             AnyRobotsInformation::General(b) => { b.get(url).await   }
         }
     }
@@ -61,7 +61,7 @@ impl<R: RobotsManager> RobotsInformation for AnyRobotsInformation<R> {
     #[inline]
     async fn get_or_retrieve(&self, client: &Client, url: &UrlWithDepth) -> Result<Arc<CachedRobots>, RobotsError> {
         match self {
-            AnyRobotsInformation::Domain(a) => { a.get_or_retrieve(client, url).await   }
+            AnyRobotsInformation::Origin(a) => { a.get_or_retrieve(client, url).await   }
             AnyRobotsInformation::General(b) => { b.get_or_retrieve(client, url).await   }
         }
     }
@@ -69,7 +69,7 @@ impl<R: RobotsManager> RobotsInformation for AnyRobotsInformation<R> {
     #[inline]
     async fn get_or_retrieve_delay(&self, client: &Client, url: &UrlWithDepth) -> Option<Duration> {
         match self {
-            AnyRobotsInformation::Domain(a) => { a.get_or_retrieve_delay(client, url).await   }
+            AnyRobotsInformation::Origin(a) => { a.get_or_retrieve_delay(client, url).await   }
             AnyRobotsInformation::General(b) => { b.get_or_retrieve_delay(client, url).await   }
         }
     }
@@ -77,7 +77,7 @@ impl<R: RobotsManager> RobotsInformation for AnyRobotsInformation<R> {
     #[inline]
     async fn check_if_allowed_fast(&self, url: &UrlWithDepth) -> Option<bool> {
         match self {
-            AnyRobotsInformation::Domain(a) => { a.check_if_allowed_fast(url).await   }
+            AnyRobotsInformation::Origin(a) => { a.check_if_allowed_fast(url).await   }
             AnyRobotsInformation::General(b) => { b.check_if_allowed_fast(url).await   }
         }
     }
@@ -85,16 +85,16 @@ impl<R: RobotsManager> RobotsInformation for AnyRobotsInformation<R> {
     #[inline]
     async fn check_if_allowed(&self, client: &Client, url: &UrlWithDepth) -> bool {
         match self {
-            AnyRobotsInformation::Domain(a) => { a.check_if_allowed(client, url).await   }
+            AnyRobotsInformation::Origin(a) => { a.check_if_allowed(client, url).await   }
             AnyRobotsInformation::General(b) => { b.check_if_allowed(client, url).await   }
         }
     }
 }
 
 /// Same as [GeneralRobotsInformation] but is bound to a specific domain
-pub struct DomainSpecificRobotsInformation<R: RobotsManager> {
-    domain: CaseInsensitiveString,
-    domain_cached: Arc<CachedRobots>,
+pub struct OriginSpecificRobotsInformation<R: RobotsManager> {
+    origin: AtraUrlOrigin,
+    origin_cached: Arc<CachedRobots>,
     general: GeneralRobotsInformation<R>
 }
 
@@ -104,52 +104,52 @@ pub struct DomainSpecificRobotsInformation<R: RobotsManager> {
 //     }
 // }
 
-impl<R: RobotsManager> RobotsInformation for DomainSpecificRobotsInformation<R> {
+impl<R: RobotsManager> RobotsInformation for OriginSpecificRobotsInformation<R> {
     async fn get(&self, url: &UrlWithDepth) -> Result<Option<Arc<CachedRobots>>, RobotsError> {
-        if let Some(domain) = url.domain() {
-            if domain == self.domain {
+        if let Some(origin) = url.atra_origin() {
+            if origin == self.origin {
                 log::trace!("Robots: Fast");
-                return Ok(Some(self.domain_cached.clone()))
+                return Ok(Some(self.origin_cached.clone()))
             }
         }
         self.general.get(url).await
     }
 
     async fn get_or_retrieve(&self, client: &Client, url: &UrlWithDepth) -> Result<Arc<CachedRobots>, RobotsError> {
-        if let Some(domain) = url.domain() {
-            if domain == self.domain {
+        if let Some(origin) = url.atra_origin() {
+            if origin == self.origin {
                 log::trace!("Robots: Fast");
-                return Ok(self.domain_cached.clone())
+                return Ok(self.origin_cached.clone())
             }
         }
         self.general.get_or_retrieve(client, url).await
     }
 
     async fn get_or_retrieve_delay(&self, client: &Client, url: &UrlWithDepth) -> Option<Duration> {
-        if let Some(domain) = url.domain() {
-            if domain == self.domain {
+        if let Some(origin) = url.atra_origin() {
+            if origin == self.origin {
                 log::trace!("Robots: Fast");
-                return self.domain_cached.delay()
+                return self.origin_cached.delay()
             }
         }
         self.general.get_or_retrieve_delay(client, url).await
     }
 
     async fn check_if_allowed_fast(&self, url: &UrlWithDepth) -> Option<bool> {
-        if let Some(domain) = url.domain() {
-            if domain == self.domain {
+        if let Some(origin) = url.atra_origin() {
+            if origin == self.origin {
                 log::trace!("Robots: Fast");
-                return Some(self.domain_cached.allowed(url.as_str()))
+                return Some(self.origin_cached.allowed(&url.as_str()))
             }
         }
         self.general.check_if_allowed_fast(url).await
     }
 
     async fn check_if_allowed(&self, client: &Client, url: &UrlWithDepth) -> bool {
-        if let Some(domain) = url.domain() {
-            if domain == self.domain {
+        if let Some(origin) = url.atra_origin() {
+            if origin == self.origin {
                 log::trace!("Robots: Fast");
-                return self.domain_cached.allowed(url.as_str())
+                return self.origin_cached.allowed(&url.as_str())
             }
         }
         self.general.check_if_allowed(client, url).await
@@ -185,7 +185,7 @@ impl<R: RobotsManager> GeneralRobotsInformation<R> {
     // }
 
     pub async fn bind_to_domain(self, client: &Client, url: &UrlWithDepth) -> AnyRobotsInformation<R> {
-        let domain = match url.domain() {
+        let domain = match url.atra_origin() {
             None => {
                 log::debug!("No domain for for {url}");
                 return AnyRobotsInformation::General(self)
@@ -194,10 +194,10 @@ impl<R: RobotsManager> GeneralRobotsInformation<R> {
         };
         match self.get_or_retrieve(client, url).await {
             Ok(domain_cached) => {
-                AnyRobotsInformation::Domain(DomainSpecificRobotsInformation {
-                    domain_cached,
+                AnyRobotsInformation::Origin(OriginSpecificRobotsInformation {
+                    origin_cached: domain_cached,
                     general: self,
-                    domain
+                    origin: domain
                 })
             }
             Err(err) => {
@@ -248,12 +248,12 @@ impl<R: RobotsManager> RobotsInformation for GeneralRobotsInformation<R> {
     /// Tries to check in any of the cache-layers, if there is no cache entry or an error it returns None
     async fn check_if_allowed_fast(&self, url: &UrlWithDepth) -> Option<bool> {
         let found = self.get(url).await.ok().flatten();
-        found.map(|found| found.allowed(url.as_str()))
+        found.map(|found| found.allowed(&url.as_str()))
     }
 
     /// Tries to check in any of the cache-layers, if there is an error it returns false
     async fn check_if_allowed(&self, client: &Client, url: &UrlWithDepth) -> bool {
-        match self.get_or_retrieve(client, url).await.map(|found| found.allowed(url.as_str())) {
+        match self.get_or_retrieve(client, url).await.map(|found| found.allowed(&url.as_str())) {
             Ok(result) => {result}
             Err(err) => {
                 log::trace!("Failed robots check: {}", err);

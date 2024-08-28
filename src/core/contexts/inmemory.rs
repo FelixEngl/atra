@@ -29,7 +29,6 @@ use crate::core::crawl::slim::{SlimCrawlResult, StoredDataHint};
 use crate::core::extraction::ExtractedLink;
 use crate::core::link_state::{LinkState, LinkStateDBError, LinkStateType};
 use crate::core::database_error::DatabaseError;
-use crate::core::domain::managers::InMemoryDomainManager;
 use crate::core::io::fs::FileSystemAccess;
 use crate::core::web_graph::{WebGraphEntry, LinkNetError, WebGraphManager};
 use crate::core::queue::QueueError;
@@ -37,6 +36,8 @@ use crate::core::robots::{InMemoryRobotsManager, ShareableRobotsManager};
 use crate::core::url::queue::{EnqueueCalled, UrlQueue, UrlQueueElement, UrlQueueElementWeak};
 use crate::core::{UrlWithDepth, VecDataHolder};
 use crate::core::contexts::errors::{LinkHandlingError, RecoveryError};
+use crate::core::origin::AtraOriginProvider;
+use crate::core::origin::managers::InMemoryOriginManager;
 use crate::core::url::atra_uri::AtraUri;
 
 #[derive(Debug)]
@@ -49,7 +50,7 @@ pub struct InMemoryContext {
     state: tokio::sync::RwLock<HashMap<AtraUri, LinkState>>,
     data_urls: Mutex<Vec<(UrlWithDepth, UrlWithDepth)>>,
     configs: Configs,
-    domain_manager: InMemoryDomainManager,
+    host_manager: InMemoryOriginManager,
     started_at: OffsetDateTime,
     links_queue: InMemoryLinkQueue,
     link_net_manager: InMemoryLinkNetManager,
@@ -69,7 +70,7 @@ impl InMemoryContext {
             links_queue: InMemoryLinkQueue::default(),
             data_urls: Default::default(),
             configs,
-            domain_manager: Default::default(),
+            host_manager: Default::default(),
             started_at: OffsetDateTime::now_utc(),
             link_net_manager: InMemoryLinkNetManager::default()
         }
@@ -101,7 +102,7 @@ impl Default for InMemoryContext {
 impl super::Context for InMemoryContext {
     type RobotsManager = ShareableRobotsManager;
     type UrlQueue = InMemoryLinkQueue;
-    type DomainManager = InMemoryDomainManager;
+    type HostManager = InMemoryOriginManager;
     type WebGraphManager = InMemoryLinkNetManager;
 
     async fn can_poll(&self) -> bool {
@@ -145,8 +146,8 @@ impl super::Context for InMemoryContext {
         self.robots_manager.clone()
     }
 
-    fn get_domain_manager(&self) -> &InMemoryDomainManager {
-        &self.domain_manager
+    fn get_host_manager(&self) -> &InMemoryOriginManager {
+        &self.host_manager
     }
 
 
@@ -183,8 +184,8 @@ impl super::Context for InMemoryContext {
                     self.link_net_manager.add(WebGraphEntry::create_link(from, url)).await.unwrap();
                     if self.get_link_state(url).await?.is_none() {
                         self.update_link_state(url, LinkStateType::Discovered).await?;
-                        if let Some(ref domain) = url.domain() {
-                            if self.configs.crawl().budget.get_budget_for(domain).is_in_budget(url) {
+                        if let Some(origin) = url.atra_origin() {
+                            if self.configs.crawl().budget.get_budget_for(&origin).is_in_budget(url) {
                                 for_queue.push(UrlQueueElement::new(false, 0, false, url.clone()));
                             }
                         }
@@ -323,7 +324,7 @@ impl UrlQueue for InMemoryLinkQueue {
 
     async fn enqueue<'a>(&self, entry: UrlQueueElementWeak<'a>) -> Result<(), QueueError> {
         let mut lock = self.links_queue.lock().await;
-        lock.push_back(UrlQueueElement::new(entry.is_seed, entry.age + 1, entry.domain_was_in_use, entry.target.clone()));
+        lock.push_back(UrlQueueElement::new(entry.is_seed, entry.age + 1, entry.host_was_in_use, entry.target.clone()));
         Ok(())
     }
 

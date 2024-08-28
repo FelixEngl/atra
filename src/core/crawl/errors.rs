@@ -13,18 +13,18 @@
 //limitations under the License.
 
 use thiserror::Error;
-
+use crate::core::origin::AtraUrlOrigin;
 
 /// Errors when creating a url
 #[derive(Debug, Error)]
 pub enum SeedCreationError {
     /// This error is returned when the domain of a guard and an url is not the same.
-    #[error("The domain {domain_from_guard} (Guard) is not the same as {domain_from_url} (url)!")]
-    GuardAndUrlDifferInDomain {
-        domain_from_guard: String,
-        domain_from_url: String
+    #[error("The host {origin_from_guard} (Guard) is not the same as {origin_from_url} (url)!")]
+    GuardAndUrlDifferInOrigin {
+        origin_from_guard: AtraUrlOrigin,
+        origin_from_url: AtraUrlOrigin
     },
 
-    #[error("No domain found for the url!")]
-    NoDomain
+    #[error("No origin found for the url!")]
+    NoOrigin
 }

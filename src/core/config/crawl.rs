@@ -143,9 +143,9 @@ pub struct CookieSettings {
 
 impl CookieSettings {
     /// Checks if the domain has some kind of configured cookie
-    pub fn get_cookies_for(&self, domain: &CaseInsensitiveString) -> Option<&String> {
+    pub fn get_cookies_for(&self, domain: &impl AsRef<str>) -> Option<&String> {
         if let Some(ref per_domain) = self.per_domain {
-            per_domain.get(domain)
+            per_domain.get(&CaseInsensitiveString::from(domain.as_ref())).or_else(|| self.default.as_ref())
         } else {
             if let Some(ref default) = self.default {
                 Some(default)
@@ -214,13 +214,14 @@ pub struct CrawlBudget {
 }
 
 impl CrawlBudget {
-    pub fn get_budget_for(&self, host: &CaseInsensitiveString) -> &BudgetSettings {
+    pub fn get_budget_for(&self, host: &impl AsRef<str>) -> &BudgetSettings
+    {
         match self.per_host {
             None => {
                 &self.default
             }
             Some(ref found) => {
-                found.get(host).unwrap_or(&self.default)
+                found.get(&CaseInsensitiveString::from(host.as_ref())).unwrap_or(&self.default)
             }
         }
     }

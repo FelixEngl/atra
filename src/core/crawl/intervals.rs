@@ -14,19 +14,19 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use case_insensitive_string::CaseInsensitiveString;
 use time::Duration;
 use tokio::time::Interval;
 use crate::client::Client;
 use crate::core::config::CrawlConfig;
 use crate::core::robots::information::RobotsInformation;
+use crate::core::origin::{AtraOriginProvider, AtraUrlOrigin};
 use crate::core::UrlWithDepth;
 
 /// Manages the interval
 pub struct InvervalManager<'a, R: RobotsInformation> {
     client: &'a Client,
     configured_robots: Arc<R>,
-    registered_intervals: HashMap<CaseInsensitiveString, Interval>,
+    registered_intervals: HashMap<AtraUrlOrigin, Interval>,
     default_delay: Option<Duration>,
     no_domain_default: Interval
 }
@@ -45,16 +45,17 @@ impl<'a, R: RobotsInformation> InvervalManager<'a, R> {
             no_domain_default: if let Some(ref default) = config.delay {
                 tokio::time::interval(default.clone().unsigned_abs())
             } else {
-                tokio::time::interval(std::time::Duration::from_millis(15))
+                tokio::time::interval(std::time::Duration::from_millis(1000))
             }
         }
     }
 
     pub async fn wait(&mut self, url: &UrlWithDepth) {
-        if let Some(domain) = url.domain() {
-            if let Some(interval) = self.registered_intervals.get_mut(&domain) {
-                log::trace!("Tick registered!");
+        if let Some(origin) = url.atra_origin() {
+            if let Some(interval) = self.registered_intervals.get_mut(&origin) {
+                log::trace!("Wait {origin} for {}ms!", interval.period().as_millis());
                 interval.tick().await;
+                log::trace!("Finished waiting {origin} for {}!", interval.period().as_millis());
             } else {
                 let target_duration = if let Some(found) = self.configured_robots.get_or_retrieve_delay(&self.client, url).await {
                     log::trace!("Wait found {found}");
@@ -66,11 +67,11 @@ impl<'a, R: RobotsInformation> InvervalManager<'a, R> {
                     log::warn!("Fallback to 100ms");
                     std::time::Duration::from_millis(100)
                 };
-                self.registered_intervals.insert(domain.clone(), tokio::time::interval(target_duration));
-                self.registered_intervals.get_mut(&domain).unwrap().tick().await;
+                self.registered_intervals.insert(origin.clone(), tokio::time::interval(target_duration));
+                self.registered_intervals.get_mut(&origin).unwrap().tick().await;
             }
         } else {
-            log::trace!("No domain tick.");
+            log::trace!("No host tick.");
             self.no_domain_default.tick().await;
         }
     }

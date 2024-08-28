@@ -79,7 +79,7 @@ impl<T: SlimCrawlTaskContext> WorkerContext<T> {
 impl<T: SlimCrawlTaskContext> Context for WorkerContext<T> {
     type RobotsManager = T::RobotsManager;
     type UrlQueue = T::UrlQueue;
-    type DomainManager = T::DomainManager;
+    type HostManager = T::HostManager;
     type WebGraphManager = T::WebGraphManager;
 
     delegate::delegate! {
@@ -114,7 +114,7 @@ impl<T: SlimCrawlTaskContext> Context for WorkerContext<T> {
             async fn get_robots_instance(&self) -> Self::RobotsManager;
 
             /// Returns a reference to a [GuardedDomainManager]
-            fn get_domain_manager(&self) -> &Self::DomainManager;
+            fn get_host_manager(&self) -> &Self::HostManager;
 
             /// Retrieve a single crawled website but without the body
             async fn retrieve_slim_crawled_website(&self, url: &UrlWithDepth) -> Result<Option<SlimCrawlResult>, DatabaseError>;

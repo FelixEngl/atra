@@ -14,7 +14,7 @@
 
 use std::fmt::{Display, Formatter};
 use std::sync::atomic::{AtomicBool, Ordering};
-use log::{info, log};
+use log::{info};
 use thiserror::Error;
 use tokio::sync::{broadcast, mpsc};
 use tokio::sync::broadcast::error::{RecvError, SendError};

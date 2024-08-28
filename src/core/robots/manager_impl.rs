@@ -15,7 +15,6 @@
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use case_insensitive_string::CaseInsensitiveString;
 use rocksdb::{BoundColumnFamily, DB};
 use serde::{Deserialize, Serialize};
 use texting_robots::{get_robots_url, Robot};
@@ -27,6 +26,7 @@ use crate::core::UrlWithDepth;
 use crate::{db_health_check, declare_column_families};
 use crate::core::database_error::DBActionType::{Delete, Read, Write};
 use crate::core::database_error::RawDatabaseError;
+use crate::core::origin::{AtraOriginProvider, AtraUrlOrigin};
 
 /// Allows to share the threadsafe variants of  [RobotsManager] over threads
 #[derive(Debug, Clone)]
@@ -75,7 +75,7 @@ impl From<InMemoryRobotsManager> for ShareableRobotsManager {
 /// Ideal for smaller crawls
 #[derive(Debug, Default)]
 pub struct InMemoryRobotsManager {
-    cache: tokio::sync::RwLock<HashMap<CaseInsensitiveString, Arc<CachedRobots>>>
+    cache: tokio::sync::RwLock<HashMap<AtraUrlOrigin, Arc<CachedRobots>>>
 }
 
 impl InMemoryRobotsManager {
@@ -88,7 +88,7 @@ impl InMemoryRobotsManager {
 
 impl RobotsManager for InMemoryRobotsManager {
     async fn get(&self, _: &str, url: &UrlWithDepth, max_age: Option<&Duration>) -> Result<Option<Arc<CachedRobots>>, RobotsError> {
-        let domain = url.domain().ok_or(RobotsError::NoDomainForUrl)?;
+        let domain = url.atra_origin().ok_or(RobotsError::NoDomainForUrl)?;
         let cache = self.cache.read().await;
         let found = if let Some(found) = cache.get(&domain) {
             if let Some(max_age) = max_age {
@@ -114,8 +114,8 @@ impl RobotsManager for InMemoryRobotsManager {
             return Ok(found)
         }
         // Later used but cheaper than downloading and then recognizing invalidity for manager.
-        let domain = url.domain().ok_or(RobotsError::NoDomainForUrl)?;
-        let result = client.get(&get_robots_url(url.as_str())?).send().await?;
+        let origin = url.atra_origin().ok_or(RobotsError::NoDomainForUrl)?;
+        let result = client.get(&get_robots_url(&url.as_str())?).send().await?;
         let retrieved_at = OffsetDateTime::now_utc();
         let status_code = result.status();
         let result = result.bytes().await;
@@ -142,16 +142,16 @@ impl RobotsManager for InMemoryRobotsManager {
 
         let retrieved = Arc::new(retrieved);
         let mut cache = self.cache.write().await;
-        let retrieved = if let Some(found) = cache.remove(&domain) {
+        let retrieved = if let Some(found) = cache.remove(&origin) {
             if found.retrieved_at() < retrieved.retrieved_at() {
-                cache.insert(domain, retrieved.clone());
+                cache.insert(origin, retrieved.clone());
                 retrieved
             } else {
-                cache.insert(domain, found.clone());
+                cache.insert(origin, found.clone());
                 found
             }
         } else {
-            cache.insert(domain, retrieved.clone());
+            cache.insert(origin, retrieved.clone());
             retrieved
         };
         drop(cache);
@@ -165,7 +165,7 @@ impl RobotsManager for InMemoryRobotsManager {
 #[derive(Debug)]
 pub struct OffMemoryRobotsManager {
     db: Arc<DB>,
-    cache: moka::future::Cache<CaseInsensitiveString, Arc<CachedRobots>>
+    cache: moka::future::Cache<AtraUrlOrigin, Arc<CachedRobots>>
 }
 
 impl OffMemoryRobotsManager {
@@ -191,7 +191,7 @@ impl OffMemoryRobotsManager {
         )
     }
 
-    async fn _set_cache(&self, key: CaseInsensitiveString, retrieved: CachedRobots) -> Arc<CachedRobots> {
+    async fn _set_cache(&self, key: AtraUrlOrigin, retrieved: CachedRobots) -> Arc<CachedRobots> {
         if let Some(associated) = self.cache.get(&key).await {
             if retrieved.retrieved_at() < associated.retrieved_at() {
                 return associated
@@ -204,7 +204,7 @@ impl OffMemoryRobotsManager {
 
     async fn _get_cached(
         &self,
-        key: &CaseInsensitiveString,
+        key: &AtraUrlOrigin,
         now: OffsetDateTime,
         max_age: Option<&Duration>
     ) -> Option<Arc<CachedRobots>> {
@@ -225,7 +225,7 @@ impl OffMemoryRobotsManager {
     async fn _get_db(
         &self,
         agent: &str,
-        key: &CaseInsensitiveString,
+        key: &AtraUrlOrigin,
         now: OffsetDateTime,
         max_age: Option<&Duration>
     ) -> Result<Option<CachedRobots>, RobotsError> {
@@ -243,7 +243,7 @@ impl OffMemoryRobotsManager {
         &self,
         client: &Client,
         agent: &str,
-        key: &CaseInsensitiveString,
+        key: &AtraUrlOrigin,
         url: &UrlWithDepth,
         now: OffsetDateTime,
         max_age: Option<&Duration>
@@ -252,7 +252,7 @@ impl OffMemoryRobotsManager {
             return Ok(found)
         }
 
-        let result = client.get(&get_robots_url(url.as_str())?).send().await?;
+        let result = client.get(&get_robots_url(&url.as_str())?).send().await?;
         let retrieved_at = OffsetDateTime::now_utc();
         let status_code = result.status();
 
@@ -299,7 +299,7 @@ impl OffMemoryRobotsManager {
     fn _get_db0<'a>(
         &self,
         agent: &str,
-        key: &CaseInsensitiveString,
+        key: &AtraUrlOrigin,
         now: OffsetDateTime,
         max_age: Option<&Duration>,
         cf: &'a Arc<BoundColumnFamily<'a>>
@@ -347,7 +347,7 @@ impl RobotsManager for OffMemoryRobotsManager {
     /// Returns None if there is no robots.txt in any cache level.
     async fn get(&self, agent: &str, url: &UrlWithDepth, max_age: Option<&Duration>) -> Result<Option<Arc<CachedRobots>>, RobotsError> {
         let now = OffsetDateTime::now_utc();
-        let key = CaseInsensitiveString::new(url.url().domain().ok_or(RobotsError::NoDomainForUrl)?);
+        let key = url.url().atra_origin().ok_or(RobotsError::NoDomainForUrl)?;
         let found = self._get_cached(&key, now.clone(), max_age.clone()).await;
         if found.is_some() {
             return Ok(found)
@@ -364,7 +364,7 @@ impl RobotsManager for OffMemoryRobotsManager {
     /// If nothing is in any cache it downloads the robots.txt with the client.
     async fn get_or_retrieve(&self, client: &Client, agent: &str, url: &UrlWithDepth, max_age: Option<&Duration>) -> Result<Arc<CachedRobots>, RobotsError> {
         let now = OffsetDateTime::now_utc();
-        let key = CaseInsensitiveString::new(url.url().domain().ok_or(RobotsError::NoDomainForUrl)?);
+        let key = url.url().atra_origin().ok_or(RobotsError::NoDomainForUrl)?;
         match self._get_cached(&key, now.clone(), max_age).await {
             Some(found) => {
                 return Ok(found)
