@@ -12,6 +12,7 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+
 use clap::Parser;
 use log::info;
 use crate::application::{Atra, ApplicationMode};
@@ -101,6 +102,15 @@ mod test {
     use crate::core::config::{BudgetSettings, Configs, CrawlConfig};
     use crate::core::seeds::seed_definition::SeedDefinition;
     use crate::{exec, exec_args};
+
+    #[test]
+    pub fn can_generate_example_config(){
+        let args = AtraArgs {
+            mode: None,
+            generate_example_config: true
+        };
+        exec_args(args);
+    }
 
     #[test]
     pub fn can_call_single_crawl(){

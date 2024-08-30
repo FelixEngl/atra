@@ -229,8 +229,8 @@ impl QueuingWebGraphManager {
                     write_buffer(&mut entry_buffer, &mut writer).await;
                 }
 
-                assert!(buffer.is_empty());
-                assert!(entry_buffer.is_empty());
+                debug_assert!(buffer.is_empty());
+                debug_assert!(entry_buffer.is_empty());
 
                 match writer.flush().await {
                     Ok(_) => {}

@@ -240,7 +240,6 @@ dependencies = [
  "notify",
  "num_cpus",
  "num_enum",
- "once_cell",
  "paste",
  "psl",
  "queue-file",

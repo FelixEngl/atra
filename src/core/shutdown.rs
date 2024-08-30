@@ -31,6 +31,7 @@ impl Display for ShutdownPhantom {
     }
 }
 
+#[allow(refining_impl_trait)]
 impl ShutdownReceiver for ShutdownPhantom {
     #[inline]
     fn is_shutdown(&self) -> bool {
@@ -47,6 +48,7 @@ impl ShutdownReceiver for ShutdownPhantom {
 
 
 /// A simple trait for receiving a shutdown command
+#[allow(refining_impl_trait)]
 pub trait ShutdownReceiver: Clone {
 
     /// Returns `true` if the shutdown signal has been received.
@@ -213,6 +215,7 @@ impl GracefulShutdown {
     }
 }
 
+#[allow(refining_impl_trait)]
 impl ShutdownReceiver for GracefulShutdown {
     delegate::delegate! {
         to self.shutdown {
@@ -286,6 +289,7 @@ impl Shutdown {
     }
 }
 
+#[allow(refining_impl_trait)]
 impl ShutdownReceiver for Shutdown {
     /// Returns `true` if the shutdown signal has been received.
     fn is_shutdown(&self) -> bool {
@@ -334,6 +338,7 @@ impl<T: ShutdownReceiver> Clone for ShutdownHandle<'_, T> {
     }
 }
 
+#[allow(refining_impl_trait)]
 impl<T: ShutdownReceiver> ShutdownReceiver for ShutdownHandle<'_, T> {
     delegate::delegate! {
         to self.shutdown {

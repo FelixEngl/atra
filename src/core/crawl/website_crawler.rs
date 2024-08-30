@@ -13,7 +13,9 @@
 //limitations under the License.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::fs::File;
 use std::io;
+use std::io::Write;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use case_insensitive_string::CaseInsensitiveString;
@@ -43,12 +45,13 @@ use crate::core::crawl::errors::SeedCreationError;
 use crate::core::crawl::intervals::InvervalManager;
 use crate::core::crawl::result::CrawlResult;
 use crate::core::crawl::seed::{CrawlSeed};
-use crate::core::UrlWithDepth;
+use crate::core::{DataHolder, UrlWithDepth, VecDataHolder};
 use crate::core::link_state::{LinkStateDBError, LinkStateType};
 use crate::core::robots::{GeneralRobotsInformation, RobotsInformation};
 use crate::core::shutdown::ShutdownReceiver;
 use crate::core::database_error::DatabaseError;
 use crate::core::format::AtraFileInformation;
+use crate::core::format::supported::AtraSupportedFileFormat;
 use crate::core::sitemaps::parse::retrieve_and_parse;
 use crate::core::origin::{AtraOriginProvider, AtraUrlOrigin};
 
@@ -612,7 +615,7 @@ impl<S: CrawlSeed> WebsiteCrawler<S> {
                     }
 
                     log::trace!("Fetched: {}", target);
-                    let response_data = ResponseData::new(page, target.clone());
+                    let mut response_data = ResponseData::new(page, target.clone());
 
                     let file_information = AtraFileInformation::determine(context, &response_data);
 
@@ -628,6 +631,34 @@ impl<S: CrawlSeed> WebsiteCrawler<S> {
                     };
                     log::trace!("Finished analysis: {}", target);
 
+                    if context.configs().crawl.store_only_html_in_warc {
+                        if file_information.format != AtraSupportedFileFormat::HTML {
+                            response_data.content = match response_data.content {
+                                VecDataHolder::InMemory { data } => {
+                                    let path = context.fs().create_unique_path_for_dat_file(&url_str);
+                                    match File::options().create_new(true).write(true).open(&path) {
+                                        Ok(mut out) => {
+                                            match out.write_all(&data) {
+                                                Ok(_) => {
+                                                    DataHolder::from_external(path)
+                                                }
+                                                Err(err) => {
+                                                    log::error!("Failed to store {} as file {} with {err}. Keep in memory.", url_str, path);
+                                                    VecDataHolder::InMemory { data }
+                                                }
+                                            }
+
+                                        }
+                                        Err(err) => {
+                                            log::error!("Failed to store {} as file {} with {err}. Keep in memory.", url_str, path);
+                                            VecDataHolder::InMemory { data }
+                                        }
+                                    }
+                                }
+                                keep => keep
+                            }
+                        }
+                    }
 
                     if shutdown.is_shutdown() {
                         if !Self::update_linkstate(&mut errors,context,&target,LinkStateType::Discovered).await {

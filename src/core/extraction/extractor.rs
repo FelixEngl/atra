@@ -29,7 +29,7 @@ use crate::core::response::ResponseData;
     and extractor_sub_extractor_declaration.
 */
 
-/// A struct acting as an extractor
+/// Wrapps multiple extractor commands to an extractor.
 #[derive(Debug, Serialize, Deserialize, Clone, Eq)]
 #[repr(transparent)]
 pub struct Extractor(pub Vec<ExtractorCommand>);
@@ -94,6 +94,7 @@ impl Default for Extractor {
     }
 }
 
+/// A reference to all contents available to extract the data.
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct ProcessedData<'a>(
     pub &'a ResponseData,

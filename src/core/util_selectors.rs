@@ -15,7 +15,7 @@
 #[macro_export]
 macro_rules! static_selector {
     ($visibility: vis $name: ident = $selector: literal) => {
-        $visibility static $name: once_cell::sync::Lazy<scraper::selector::Selector> = once_cell::sync::Lazy::new(|| scraper::selector::Selector::parse($selector).unwrap());
+        $visibility static $name: std::sync::LazyLock<scraper::selector::Selector> = std::sync::LazyLock::new(|| scraper::selector::Selector::parse($selector).unwrap());
     };
 }
 

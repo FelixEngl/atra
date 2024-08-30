@@ -131,7 +131,7 @@ pub fn extract_links<'a>(
 
 
 mod selectors {
-    use once_cell::sync::Lazy;
+    use std::sync::LazyLock as Lazy;
     use regex::Regex;
     use crate::{static_selectors};
 

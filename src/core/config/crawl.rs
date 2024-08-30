@@ -46,6 +46,8 @@ pub struct CrawlConfig {
     pub crawl_javascript: bool,
     /// Try to extract links from tags with onclick attribute for the crawl-queue (default: false)
     pub crawl_onclick_by_heuristic: bool,
+    /// Only store html-files in the warc
+    pub store_only_html_in_warc: bool,
 
     /// The maximum size to download.
     pub max_file_size: Option<NonZeroU64>,
@@ -111,6 +113,7 @@ impl Default for CrawlConfig {
             crawl_embedded_data: false,
             crawl_javascript: true,
             crawl_onclick_by_heuristic: false,
+            store_only_html_in_warc: true,
             headers: None,
             delay: None,
             cache: false,

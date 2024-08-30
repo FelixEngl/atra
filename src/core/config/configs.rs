@@ -90,7 +90,9 @@ mod test {
 
         let mut s = String::new();
         BufReader::new(File::open("./atra_test.json").unwrap()).read_to_string(&mut s).unwrap();
-        std::env::set_var("ATRA.SYSTEM.LOG_TO_FILE", "true");
+        unsafe {
+            std::env::set_var("ATRA.SYSTEM.LOG_TO_FILE", "true");
+        }
 
         let cfg = Config::builder()
             .add_source(config::File::with_name("./atra_test"))

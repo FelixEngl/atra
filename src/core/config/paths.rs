@@ -22,8 +22,8 @@ pub struct PathsConfig {
     /// The root path where the application runs
     #[serde(default = "_default_root_folder")]
     pub root: Utf8PathBuf,
-    directories: Directories,
-    files: Files
+    pub directories: Directories,
+    pub files: Files
 }
 
 fn _default_root_folder() -> Utf8PathBuf { "./atra_data".parse::<Utf8PathBuf>().unwrap() }

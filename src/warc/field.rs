@@ -22,7 +22,6 @@ use std::str::{FromStr, ParseBoolError, Utf8Error};
 use encoding_rs::Encoding;
 use itertools::Either;
 use reqwest::IntoUrl;
-#[cfg(feature = "with_serde")]
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumString};
 use thiserror::Error;
@@ -40,10 +39,7 @@ use crate::warc::truncated_reason::TruncatedReason;
 ///
 /// All headers are camel-case versions of the standard names, with the hyphens removed.
 #[allow(missing_docs)]
-#[derive(Clone, Debug, Hash, Eq, PartialEq, EnumString, AsRefStr, Display)]
-#[cfg_attr(feature = "with_serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "with_serde", serde(into = "String"))]
-#[cfg_attr(feature = "with_serde", serde(from = "String"))]
+#[derive(Clone, Debug, Hash, Eq, PartialEq, EnumString, AsRefStr, Display, Serialize, Deserialize)]
 pub enum WarcFieldName {
     #[strum(to_string = "content-length")] ContentLength,
     #[strum(to_string = "content-type")] ContentType,

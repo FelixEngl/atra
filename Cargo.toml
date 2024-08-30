@@ -71,7 +71,7 @@ const_format = "0"
 deranged = { version = "0.3", features = ["serde"] }
 
 # Static stuff
-once_cell = "1.19"
+#once_cell = "1.19"
 
 # Memory stuff
 smallvec = { version = "1.13", features = ["serde", "const_new", "const_generics", "write", "union"] }

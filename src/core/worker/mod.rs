@@ -35,8 +35,6 @@ pub enum ExitState {
 
 
 
-//todo: andere returns mit protection austatten
-
 /// The core method for crawling data.
 pub async fn work<C: SlimCrawlTaskContext, S: ShutdownReceiver>(
     context: WorkerContext<C>,

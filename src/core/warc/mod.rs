@@ -457,8 +457,7 @@ mod test {
     use crate::core::response::ResponseData;
     use crate::core::{UrlWithDepth, VecDataHolder};
     use crate::core::format::AtraFileInformation;
-    use crate::core::format::mime::{MimeDescriptor, TypedMime};
-    use crate::core::format::mime_typing::MimeType;
+    use crate::core::format::mime::MimeType;
     use crate::core::format::supported::AtraSupportedFileFormat;
     use crate::core::warc::{MockSpecialWarcWriter, write_warc};
 
@@ -482,7 +481,7 @@ mod test {
             Some(encoding_rs::UTF_8),
             AtraFileInformation::new(
                 AtraSupportedFileFormat::HTML,
-                MimeDescriptor::Single(TypedMime(MimeType::HTML, mime::TEXT_HTML_UTF_8)),
+                Some(MimeType::new_single(mime::TEXT_HTML_UTF_8)),
                 None
             )
         );
@@ -548,7 +547,7 @@ mod test {
             Some(encoding_rs::UTF_8),
             AtraFileInformation::new(
                 AtraSupportedFileFormat::Unknown,
-                MimeDescriptor::Empty,
+                None,
                 None
             )
         );

@@ -110,8 +110,6 @@ pub(crate) mod test {
     use crate::core::extraction::ExtractorMethod;
     use crate::core::extraction::marker::{ExtractorMethodHint};
     use crate::core::format::AtraFileInformation;
-    use crate::core::format::mime::{MimeDescriptor, TypedMime};
-    use crate::core::format::mime_typing::MimeType;
     use crate::core::format::supported::AtraSupportedFileFormat;
 
     pub fn create_testdata_with_on_seed(content: Option<VecDataHolder>) -> CrawlResult {
@@ -158,7 +156,7 @@ pub(crate) mod test {
             Some(encoding_rs::UTF_8),
             AtraFileInformation::new(
                 AtraSupportedFileFormat::HTML,
-                MimeDescriptor::Single(TypedMime(MimeType::HTML, mime::TEXT_HTML_UTF_8)),
+                None,
                 None
             )
         )
@@ -193,7 +191,7 @@ pub(crate) mod test {
             None,
             AtraFileInformation::new(
                 AtraSupportedFileFormat::HTML,
-                MimeDescriptor::Single(TypedMime(MimeType::HTML, mime::TEXT_HTML_UTF_8)),
+                None,
                 None
             )
         )

@@ -12,10 +12,10 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+use std::sync::LazyLock;
 use data_encoding::BASE32;
-use once_cell::sync::Lazy;
 
-static EMPTY_HASH: Lazy<Vec<u8>> = Lazy::new(|| {
+static EMPTY_HASH: LazyLock<Vec<u8>> = LazyLock::new(|| {
     labeled_xxh128_digest_impl(b"")
 });
 

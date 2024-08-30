@@ -23,7 +23,6 @@ use chardetng::EncodingDetector;
 use encoding_rs::{DecoderResult, Encoding, UTF_8};
 use itertools::Itertools;
 use scraper::Html;
-use smallvec::SmallVec;
 use thiserror::Error;
 use tokio::task::yield_now;
 pub use data_holder::DecodedData;
@@ -60,9 +59,7 @@ pub enum DecodingError {
 /// _Note:_ It is wrong to use this when the input buffer represents only
 /// a segment of the input instead of the whole input. Use `new_decoder()`
 /// when decoding segmented input.
-
 pub async fn decode<'a>(context: &impl Context, page: &'a ResponseData, identified_type: &AtraFileInformation) -> Result<DecodedData<Cow<'a, str>, Utf8PathBuf>, DecodingError> {
-
     match page.content() {
         VecDataHolder::None => {return Ok(DecodedData::None)}
         VecDataHolder::ExternalFile { .. } => {
@@ -78,16 +75,17 @@ pub async fn decode<'a>(context: &impl Context, page: &'a ResponseData, identifi
         _ => {}
     }
 
+    let mut decodings = get_decoders_by_mime(identified_type).unwrap_or_default();
 
     // use probably defective encodings from header and body somewhere?
-    let _ = if identified_type.format == AtraSupportedFileFormat::HTML {
+    if identified_type.format == AtraSupportedFileFormat::HTML {
         static_selectors! {
             [
                 META_CHARSET = "meta[charset]"
             ]
         }
 
-        let decoding: SmallVec<[&'static Encoding; 8]> = if let Some(content) = page.content.as_in_memory() {
+        if let Some(content) = page.content.as_in_memory() {
             let lossy_parsed = Html::parse_document(String::from_utf8_lossy(content.as_slice()).as_ref());
             let found_in_html:Option<Vec<&'static Encoding>> =
                 lossy_parsed
@@ -95,54 +93,65 @@ pub async fn decode<'a>(context: &impl Context, page: &'a ResponseData, identifi
                     .filter_map(|value| value.attr("charset").map(|value| Encoding::for_label_no_replacement(value.as_bytes())))
                     .collect();
 
+
+
+
             if let Some(found) = found_in_html {
-                found.into_iter().chain(identified_type.determine_decoding_by_mime()).unique().collect()
-            } else {
-                identified_type.determine_decoding_by_mime()
+                decodings.extend(found);
             }
-        } else {
-            identified_type.determine_decoding_by_mime()
-        };
+        }
+    }
 
 
-        for enc in decoding.iter() {
-            let succ = do_decode(page, *enc).await?;
-            match &succ {
-                DecodedData::InMemory { encoding, had_errors, .. } => {
-                    if *had_errors {
-                        log::debug!("Failed to decode {} with {}.", page.url, encoding.name());
-                        continue;
-                    }
-                }
-                DecodedData::OffMemory { result, encoding, had_errors } => {
-                    if *had_errors {
-                        log::debug!("Failed to decode {} with {}.", page.url, encoding.name());
-                        context.fs().cleanup_data_file(result.as_str())?;
-                        continue;
-                    }
-                }
-                DecodedData::None => {
+    for enc in decodings.iter() {
+        let succ = do_decode(page, *enc)?;
+        match &succ {
+            DecodedData::InMemory { encoding, had_errors, .. } => {
+                if *had_errors {
+                    log::debug!("Failed to decode {} with {}.", page.url, encoding.name());
                     continue;
                 }
             }
-            return Ok(succ)
+            DecodedData::OffMemory { result, encoding, had_errors } => {
+                if *had_errors {
+                    log::debug!("Failed to decode {} with {}.", page.url, encoding.name());
+                    context.fs().cleanup_data_file(result.as_str())?;
+                    continue;
+                }
+            }
+            DecodedData::None => {
+                continue;
+            }
         }
+        return Ok(succ)
+    }
 
-        if decoding.is_empty() {
+
+    yield_now().await;
+    decode_by_bom(context, page)
+
+}
+
+
+fn get_decoders_by_mime<'a>(identified_type: &AtraFileInformation) -> Option<Vec<&'static Encoding>> {
+    let mime = identified_type.mime.as_ref()?;
+    if let Some(param) = mime.get_param_values(mime::CHARSET) {
+        if param.is_empty() {
             None
         } else {
-            Some(decoding)
+            Some(param.iter().filter_map(|value| Encoding::for_label(value.as_str().as_bytes())).collect_vec())
         }
     } else {
         None
-    };
+    }
+}
 
-    yield_now().await;
-
+/// Decodes by BOM only.
+fn decode_by_bom<'a>(context: &impl Context, page: &'a ResponseData) -> Result<DecodedData<Cow<'a, str>, Utf8PathBuf>, DecodingError> {
     let bom_buf = page.content().peek_bom(context)?;
 
     if let Some((encoder, _)) = Encoding::for_bom(&bom_buf) {
-        do_decode(page, encoder).await
+        do_decode(page, encoder)
     } else {
         let mut enc = EncodingDetector::new();
 
@@ -179,9 +188,9 @@ pub async fn decode<'a>(context: &impl Context, page: &'a ResponseData, identifi
                     enc.guess_assess(None, false)
                 };
             if is_probably_right {
-                let result = do_decode(page, selected_encoding).await?;
+                let result = do_decode(page, selected_encoding)?;
                 if result.had_errors() {
-                    let try_utf8 = do_decode(page, UTF_8).await?;
+                    let try_utf8 = do_decode(page, UTF_8)?;
                     if try_utf8.had_errors() {
                         Ok(result)
                     } else {
@@ -191,16 +200,16 @@ pub async fn decode<'a>(context: &impl Context, page: &'a ResponseData, identifi
                     Ok(result)
                 }
             } else {
-                do_decode(page, UTF_8).await
+                do_decode(page, UTF_8)
             }
         } else {
-            do_decode(page, UTF_8).await
+            do_decode(page, UTF_8)
         }
     }
 }
 
 /// Decodes the content of [page] with [encoding]
-pub async fn do_decode<'a>(page: &'a ResponseData, encoding: &'static Encoding) -> Result<DecodedData<Cow<'a, str>, Utf8PathBuf>, DecodingError> {
+pub fn do_decode<'a>(page: &'a ResponseData, encoding: &'static Encoding) -> Result<DecodedData<Cow<'a, str>, Utf8PathBuf>, DecodingError> {
     match &page.content {
         DataHolder::InMemory { data } => {
             let decoded = encoding.decode(data.as_slice());
@@ -270,8 +279,6 @@ pub async fn do_decode<'a>(page: &'a ResponseData, encoding: &'static Encoding) 
         DataHolder::None => unreachable!()
     }
 }
-
-
 
 #[cfg(test)]
 mod test {

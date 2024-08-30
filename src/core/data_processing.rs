@@ -13,17 +13,16 @@
 //limitations under the License.
 
 use camino::Utf8PathBuf;
-use encoding_rs::{UTF_8};
+use file_format::Kind;
 use crate::core::contexts::Context;
-use crate::core::decoding::{decode, DecodedData, DecodingError, do_decode};
+use crate::core::decoding::{decode, DecodedData, DecodingError};
 use crate::core::format::AtraFileInformation;
-use crate::core::format::mime_typing::MimeType;
+use crate::core::format::file_format_detection::DetectedFileFormat;
 use crate::core::response::{ResponseData};
-use crate::core::format::supported::{AtraSupportedFileFormat};
 use crate::core::VecDataHolder;
 
 
-/// Process the page to extract the mime type and the decoded data.
+/// Decode the data
 pub async fn process<'a>(context: &impl Context, page: &'a ResponseData, identified_type: &AtraFileInformation) -> Result<DecodedData<String, Utf8PathBuf>, DecodingError> {
     match &page.content {
         VecDataHolder::None => {
@@ -31,10 +30,29 @@ pub async fn process<'a>(context: &impl Context, page: &'a ResponseData, identif
         }
         _ => {}
     };
-    let decoded = match identified_type.format {
-        AtraSupportedFileFormat::HTML | AtraSupportedFileFormat::JavaScript | AtraSupportedFileFormat::PlainText | AtraSupportedFileFormat::Decodeable => decode(context, &page, &identified_type).await?.map_in_memory(|value| value.to_string()),
-        _ if identified_type.check_has_document_type(MimeType::IS_UTF8) => do_decode(&page, UTF_8).await?.map_in_memory(|value| value.to_string()),
-        _ => DecodedData::None
-    };
-    Ok(decoded)
+
+    if let Some(ref detected) = identified_type.detected {
+        match detected {
+            DetectedFileFormat::Unambiguous(value) | DetectedFileFormat::Ambiguous(value, _, _) => {
+                if value.kind() == Kind::Document {
+
+                } else {
+
+                }
+            }
+        }
+    }
+
+    if identified_type.format.supports_decoding() {
+        Ok(decode(context, &page, &identified_type).await?.map_in_memory(|value| value.to_string()))
+    } else {
+        log::debug!("Decoding for {} not supported!", page.url.url);
+        Ok(DecodedData::None)
+    }
+
+    // let decoded = match identified_type.format {
+    //      =>
+    //     _ if identified_type.check_has_document_type(MimeType::IS_UTF8) => do_decode(&page, UTF_8)?.map_in_memory(|value| value.to_string()),
+    //     _ => DecodedData::None
+    // };
 }
