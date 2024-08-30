@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use std::num::{NonZeroU64};
 use case_insensitive_string::CaseInsensitiveString;
 use time::Duration;
-use reqwest::header::HeaderMap;
+use reqwest::header::{HeaderMap, HOST};
 use crate::core::header_map_extensions::optional_header_map;
 use serde;
 use serde::{Deserialize, Serialize};
@@ -91,9 +91,9 @@ pub struct CrawlConfig {
     pub accept_invalid_certs: bool,
 
     /// A custom configuration of extractors
-    pub extractors: Extractor,
+    pub link_extractors: Extractor,
 
-    /// If this value is set atra tries to decode and process files that are only downloaded as
+    /// If this value is set Atra tries to decode and process files that are only downloaded as
     /// blob but do not overstep this provided size. (in Bytes) (default: None/Off)
     pub decode_big_files_up_to: Option<u64>,
 
@@ -129,7 +129,7 @@ impl Default for CrawlConfig {
             cookies: None,
             max_file_size: None,
             max_queue_age: 20,
-            extractors: Extractor::default(),
+            link_extractors: Extractor::default(),
             decode_big_files_up_to: None,
             #[cfg(feature = "chrome")]
             chrome_settings: Default::default()
@@ -141,13 +141,13 @@ impl Default for CrawlConfig {
 #[derive(Debug, Default, Clone, Deserialize, Serialize, Eq, PartialEq)]
 pub struct CookieSettings {
     pub default: Option<String>,
-    pub per_domain: Option<HashMap<CaseInsensitiveString, String>>
+    pub per_host: Option<HashMap<CaseInsensitiveString, String>>
 }
 
 impl CookieSettings {
     /// Checks if the domain has some kind of configured cookie
     pub fn get_cookies_for(&self, domain: &impl AsRef<str>) -> Option<&String> {
-        if let Some(ref per_domain) = self.per_domain {
+        if let Some(ref per_domain) = self.per_host {
             per_domain.get(&CaseInsensitiveString::from(domain.as_ref())).or_else(|| self.default.as_ref())
         } else {
             if let Some(ref default) = self.default {
@@ -212,12 +212,12 @@ impl AsRef<str> for UserAgent {
 /// The budget for each host.
 #[derive(Debug, Default, Clone, Deserialize, Serialize, Eq, PartialEq)]
 pub struct CrawlBudget {
-    pub default: BudgetSettings,
-    pub per_host: Option<HashMap<CaseInsensitiveString, BudgetSettings>>
+    pub default: BudgetSetting,
+    pub per_host: Option<HashMap<CaseInsensitiveString, BudgetSetting>>
 }
 
 impl CrawlBudget {
-    pub fn get_budget_for(&self, host: &impl AsRef<str>) -> &BudgetSettings
+    pub fn get_budget_for(&self, host: &impl AsRef<str>) -> &BudgetSetting
     {
         match self.per_host {
             None => {
@@ -233,7 +233,7 @@ impl CrawlBudget {
 
 /// The budget for the crawled website
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
-pub enum BudgetSettings {
+pub enum BudgetSetting {
     /// Only crawls the seed domains
     SeedOnly {
         /// The max depth to crawl on a website. (0 indicates to crawl everything)
@@ -265,7 +265,7 @@ pub enum BudgetSettings {
     }
 }
 
-impl BudgetSettings {
+impl BudgetSetting {
     // pub fn is_finite(&self) -> bool {
     //     match self {
     //         BudgetSettings::SeedOnly { .. } => {true}
@@ -276,13 +276,13 @@ impl BudgetSettings {
 
     pub fn get_request_timeout(&self) -> Option<Duration> {
         match self {
-            BudgetSettings::SeedOnly { request_timeout, .. } => {
+            BudgetSetting::SeedOnly { request_timeout, .. } => {
                 request_timeout
             }
-            BudgetSettings::Normal { request_timeout, .. } => {
+            BudgetSetting::Normal { request_timeout, .. } => {
                 request_timeout
             }
-            BudgetSettings::Absolute { request_timeout, .. } => {
+            BudgetSetting::Absolute { request_timeout, .. } => {
                 request_timeout
             }
         }.clone()
@@ -290,13 +290,13 @@ impl BudgetSettings {
 
     pub fn get_recrawl_interval(&self) -> Option<Duration> {
         match self {
-            BudgetSettings::SeedOnly { recrawl_interval, .. } => {
+            BudgetSetting::SeedOnly { recrawl_interval, .. } => {
                 recrawl_interval
             }
-            BudgetSettings::Normal { recrawl_interval, .. } => {
+            BudgetSetting::Normal { recrawl_interval, .. } => {
                 recrawl_interval
             }
-            BudgetSettings::Absolute { recrawl_interval, .. } => {
+            BudgetSetting::Absolute { recrawl_interval, .. } => {
                 recrawl_interval
             }
         }.clone()
@@ -309,14 +309,14 @@ impl BudgetSettings {
     ) -> bool {
         let url_depth = url.depth();
         match self {
-            BudgetSettings::SeedOnly { depth_on_website: depth, .. } => {
+            BudgetSetting::SeedOnly { depth_on_website: depth, .. } => {
                 url_depth.distance_to_seed == 0 && (0.eq(depth)  || url_depth.depth_on_website.le(depth))
             }
-            BudgetSettings::Normal { depth_on_website: depth, depth: depth_distance, .. } => {
+            BudgetSetting::Normal { depth_on_website: depth, depth: depth_distance, .. } => {
                 (0.eq(depth)  || url_depth.depth_on_website.le(depth))
                     && url_depth.distance_to_seed.le(depth_distance)
             }
-            BudgetSettings::Absolute { depth, .. } => {
+            BudgetSetting::Absolute { depth, .. } => {
                 0.eq(depth) || url_depth.total_distance_to_seed.le(depth)
             }
         }
@@ -324,7 +324,7 @@ impl BudgetSettings {
 }
 
 
-impl Default for BudgetSettings {
+impl Default for BudgetSetting {
     fn default() -> Self {
         Self::Normal {
             depth_on_website: 20,

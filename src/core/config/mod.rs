@@ -26,4 +26,4 @@ pub use session::SessionConfig;
 #[allow(unused_imports)]
 pub use paths::PathsConfig;
 pub use configs::Configs;
-pub use crawl::BudgetSettings;
+pub use crawl::BudgetSetting;

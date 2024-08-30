@@ -44,3 +44,195 @@ agriculture (aphids), but they are also aerial spiders that can
 travel long distances by ballooning, also known as kiting. 
 
 More fun spider facts can be found on [Wikipedia](https://en.wikipedia.org/wiki/Erigone_atra).
+
+## Config
+Atra is configured by using json-configs and environment variables. 
+The following table shows the configs written as qualified paths for a json.
+
+| Path                             | format                                                                                         | Explanation                                                                                                                                                                             |
+|----------------------------------|------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| system                           | JSON                                                                                           | Contains all configs regarding the system. Usually caches.                                                                                                                              |
+| system.robots_cache_size         | uInt /wo 0; Element Count                                                                      | The cache size of the robots manager. (default: 32)                                                                                                                                     |
+| system.web_graph_cache_size      | uInt /wo 0; Element Count                                                                      | The cache size of the webgraph manager (default: 20.000)                                                                                                                                |
+| system.max_file_size_in_memory   | uInt; in Byte                                                                                  | Max size of the files stored in memory. (default: 100MB). <br/> If set to 0 nothing will be stored in memory.                                                                           |
+| system.log_level                 | String; Enum (see [Log Level](#Log-Level))                                                     | The log level of the crawler. (default: Info)                                                                                                                                           |
+| system.log_to_file               | boolean                                                                                        | Log to a file and not to console. (default: false)                                                                                                                                      |
+| paths                            | JSON                                                                                           | Contains all configs regarding the paths.                                                                                                                                               |
+| paths.root                       | String; Path                                                                                   | The root path where the application runs. (default: "./atra_data")                                                                                                                      |
+| paths.directories                | JSON                                                                                           |                                                                                                                                                                                         |
+| paths.directories.database       | String; Path                                                                                   | Path to the database directory. (default: _root_/rocksdb)                                                                                                                               |
+| paths.directories.big_files      | String; Path                                                                                   | Path to the big files directory. (default: _root_/big_files)                                                                                                                            |
+| paths.files                      | JSON                                                                                           |                                                                                                                                                                                         |
+| paths.files.queue                | String; Path                                                                                   | Path to the queue file (if one is needed) (default: _root_/queue.tmp)                                                                                                                   |
+| paths.files.blacklist            | String; Path                                                                                   | Path to the blacklist (default: _root_/blacklist.txt)                                                                                                                                   |
+| paths.files.web_graph            | String; Path                                                                                   | Path to the web graph generated by atra (default: _root_/web_graph.ttl)                                                                                                                 |
+| session                          | JSON                                                                                           | The config of the session                                                                                                                                                               |
+| session.service                  | String                                                                                         | The name of the service (default: "atra")                                                                                                                                               |
+| session.collection               | String                                                                                         | The name of the collection created (default: "unnamed")                                                                                                                                 |
+| session.crawl_job_id             | uInt                                                                                           | The crawl job id. To differentiate for the same service and collection.                                                                                                                 |
+| session.warc_compression_level   | uInt                                                                                           | - unused -                                                                                                                                                                              |
+| crawl                            | JSON                                                                                           |                                                                                                                                                                                         |
+| crawl.user_agent                 | String; Enum (see [User Agents](#User-Agents))                                                 | The user agent used by the crawler.  (default: Default)                                                                                                                                 |
+| crawl.respect_robots_txt         | boolean                                                                                        | Respect robots.txt file and not scrape not allowed files. This may slow down crawls if<br/>robots.txt file has a delay included. (default: true)                                        |
+| crawl.respect_nofollow           | boolean                                                                                        | Respect the nofollow attribute during the link extraction (default: true)                                                                                                               |
+| crawl.crawl_embedded_data        | boolean                                                                                        | Extract links to embedded data like audio/video files for the crawl-queue (default: false)                                                                                              |
+| crawl.crawl_javascript           | boolean                                                                                        | Extract links to/from javascript files for the crawl-queue (default: true)                                                                                                              |
+| crawl.crawl_onclick_by_heuristic | boolean                                                                                        | Try to extract links from tags with onclick attribute for the crawl-queue (default: false)                                                                                              |
+| crawl.store_only_html_in_warc    | boolean                                                                                        | Only store html-files in the warc                                                                                                                                                       |
+| crawl.max_file_size              | uInt/null; in Byte                                                                             | The maximum size to download. If null there is no limit. (default: null)                                                                                                                |
+| crawl.max_robots_age             | String/null; "`[whole_seconds].[whole_nanoseconds]`"                                           | The maximum age of a cached robots.txt. If null, it never gets too old.                                                                                                                 |
+| crawl.ignore_sitemap             | boolean                                                                                        | Prevent including the sitemap links with the crawl. (default: false)                                                                                                                    |
+| crawl.subdomains                 | boolean                                                                                        | Allow sub-domains. (default: false)                                                                                                                                                     |
+| crawl.cache                      | boolean                                                                                        | Cache the page following HTTP caching rules. (default: false)                                                                                                                           |
+| crawl.use_cookies                | boolean                                                                                        | Use cookies (default: false)                                                                                                                                                            |
+| crawl.cookies                    | JSON/null; (see [Cookie Settings](#Cookie-Settings))                                           | Domain bound cookie config. (default: null)                                                                                                                                             |
+| crawl.headers                    | JSON/null; ``{"- header_name -": "- header_value -"}``                                         | Headers to include with requests. (default: null)                                                                                                                                       |
+| crawl.proxies                    | List<String>; ``["- proxy -", "- proxy -"]``                                                   | Use proxy list for performing network request. (default: null)                                                                                                                          |
+| crawl.tld                        | boolean                                                                                        | Allow all tlds for domain. (default: false)                                                                                                                                             |
+| crawl.delay                      | String; "`[whole_seconds].[whole_nanoseconds]`"                                                | Polite crawling delay (default: 1 second)                                                                                                                                               |
+| crawl.budget                     | JSON/null; (see [Crawl Budget](#Crawl-Budget))                                                 | The budget settings for this crawl.                                                                                                                                                     |
+| crawl.max_queue_age              | uInt                                                                                           | How often can we fail to crawl an entry in the queue until it is dropped? (0 means never drop) (default: 20)                                                                            |
+| crawl.redirect_limit             | uInt                                                                                           | The max redirections allowed for request. (default: 5 like Google-Bot)                                                                                                                  |
+| crawl.redirect_policy            | String; Enum (see [Redirection Policy](#Redirection-Policy))                                   | The redirect policy type to use. (default: Loose)                                                                                                                                       |
+| crawl.accept_invalid_certs       | boolean                                                                                        | Dangerously accept invalid certficates (default: false)                                                                                                                                 |
+| crawl.link_extractors            | JSON; ``[- Command -, - Command -]`` (see [Link Extractor Settings](#Link-Extractor-Settings)) | A custom configuration of extractors. (default: see [Extractor Settings](#Extractor-Settings))                                                                                          |
+| crawl.decode_big_files_up_to     | uInt/null; in Byte                                                                             | If this value is set Atra tries to decode and process files that are only downloaded as<br/>blob but do not overstep this provided size (in Bytes).<br/>Null means off. (default: null) |
+| crawl.chrome_settings            | - unused -                                                                                     | - unused -                                                                                                                                                                              |
+
+### Log Level
+| Level | Explanation                                        |
+|-------|----------------------------------------------------|
+| Off   | Logging off                                        |
+| Error | Log only errors                                    |
+| Warn  | Log errors and warnings                            |
+| Info  | Log errors, warnings and infos                     |
+| Debug | Log errors, warnings, infos and debug informations |
+| Trace | Log everything.                                    |
+
+### User Agents
+| Name    | Value                         | Explanation                                    |
+|---------|-------------------------------|------------------------------------------------|
+| Spoof   | "Spoof"                       | Uses a static agent that looks like a browser. |
+| Default | "Default"                     | Uses "Crawler/Atra/-version-"                  |
+| Custom  | ``{ "Custom": "-content-" }`` | Uses a custom user agent                       |
+
+### Cookie Settings
+| Sub-Path   | Value                                              | Explanation                                                                               |
+|------------|----------------------------------------------------|-------------------------------------------------------------------------------------------|
+| default    | String                                             | Cookie string to use for network requests e.g.: "foo=bar; Domain=blog.spider"             |
+| per_domain | JSON/null; ``{"- domain -": "- cookie string -"}`` | A map between domains and cookie string.<br/>A domain is e.g.: "ebay.de" or an IP address |
+
+Exemplary entry in a JSON:
+````json
+{
+   "cookies": {
+      "default": "foo=bar; Domain=blog.spider",
+      "per_host": {
+         "ebay.de": "foo=cat; Domain=blog.spider2"
+      }
+   }
+}
+````
+
+### Crawl Budget
+| Sub-Path   | Value                                                                                        | Explanation                                                                                 |
+|------------|----------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------|
+| default    | BudgetSetting; ``{"- Budget Name -": {- Settings -}}`` see [Budget Setting](#Budget-Setting) | The default budget setting for a crawl.                                                     |
+| per_domain | JSON/null; ``{"- domain -": - BudgetSetting - }``                                            | A map between domains and budget settings.<br/>A domain is e.g.: "ebay.de" or an IP address |
+
+Budget settings exists in 3 different forms:
+
+| Name     | Value | Explanation                                                                                              |
+|----------|-------|----------------------------------------------------------------------------------------------------------|
+| SeedOnly | JSON; | Only crawls the seed domains                                                                             |
+| Normal   | JSON; | Crawls the seed and follows external links                                                               |
+| Absolute | JSON; | Crawls the seed and follows external links, but only follows until a specific amout of jumps is reached. |
+
+The sub paths are:
+
+| Sub-Path         | used in                    | Value                                                | Explanation                                                                   |
+|------------------|----------------------------|------------------------------------------------------|-------------------------------------------------------------------------------|
+| depth_on_website | SeedOnly, Normal           | uInt                                                 | The max depth to crawl on a website.                                          |
+| depth            | Normal, Absolute           | uInt                                                 | The maximum depth of websites, outgoing from the seed.                        |
+| recrawl_interval | SeedOnly, Normal, Absolute | String/null; "`[whole_seconds].[whole_nanoseconds]`" | Crawl interval (if set to null crawl only once)   (default: null)             |
+| request_timeout  | SeedOnly, Normal, Absolute | String/null; "`[whole_seconds].[whole_nanoseconds]`" | Request max timeout per page. Set to null to disable. (default: 15.000000000) |
+
+Exemplary entry in a JSON:
+````json
+{
+   "budget": {
+      "Normal": {
+         "depth_on_website": 2,
+         "depth": 1,
+         "recrawl_interval": null,
+         "request_timeout": null
+      },
+      "per_host": {
+         "ebay.de": {
+            "Absolute": {
+               "depth": 3,
+               "recrawl_interval": "360.000000000",
+               "request_timeout": null
+            }
+         }
+      }
+   }
+}
+````
+
+### Redirection Policy
+| Name   | Value     | Explanation                                                                   |
+|--------|-----------|-------------------------------------------------------------------------------|
+| Loose  | "Spoof"   | A loose policy that allows all request up to the redirect limit.              |
+| Strict | "Default" | A strict policy only allowing request that match the domain set for crawling. |
+
+### Link Extractor Settings
+The extractor settings are a list of commands.
+
+| Sub-Path         | Value                                        | Explanation                                            |
+|------------------|----------------------------------------------|--------------------------------------------------------|
+| extractor_method | String; Enum (see [Apply When](#Apply-When)) | The method used to extract something.                  |
+| apply_when       | String; Enum (see [Apply When](#Apply-When)) | The maximum depth of websites, outgoing from the seed. |
+
+Example:
+````json
+{
+   "link_extractor": [
+      {
+         "extractor_method": "HtmlV1",
+         "apply_when": "IfSuitable"
+      },
+      {
+         "extractor_method": "JSV1",
+         "apply_when": "IfSuitable"
+      },
+      {
+         "extractor_method": "PlainText",
+         "apply_when": "IfSuitable"
+      },
+      {
+         "extractor_method": "RawV1",
+         "apply_when": "IfSuitable"
+      }
+   ]
+}
+````
+
+#### Link Extractor Method
+
+| Name      | Value                                         | Explanation                                                                                                                    |
+|-----------|-----------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------|
+| HtmlV1    | "HtmlV1"/"HTML_v1"                            | Extracts links from an HTML. Can respect NO_FOLLOW and is capable of resolving must of the common references of HTML.          |
+| JSV1      | "JSV1"/"js_v1"/"JavaScript_v1"/"JS_v1"        | Extracts links from JavaScript by searching for href identifiers.                                                              |
+| PlainText | "PlainText"/"PlainText_v1"/"PT_v1"/"Plain_v1" | Extracts links from a plaintext by using linkify. [link](https://crates.io/crates/linkify)                                     |
+| RawV1     | "RawV1"/"RAW_v1"                              | Tries to extract links from raw bytes by searching for http:// and https:// and then recovering following texts heuristically. |
+
+
+#### Apply When
+Decides when to apply a link-extractor on some kind of data.
+
+| Name       | Value        | Explanation                                                  |
+|------------|--------------|--------------------------------------------------------------|
+| Always     | "Always"     | Always applies this extractor.                               |
+| IfSuitable | "IfSuitable" | Only applies the extractor iff the file is of a fitting type |
+| Fallback   | "Fallback"   | If everything fails, try this extractor.                     |

@@ -18,7 +18,7 @@ use crate::core::web_graph::DEFAULT_CACHE_SIZE_WEB_GRAPH;
 use crate::core::system::{DEFAULT_CACHE_SIZE_ROBOTS, DEFAULT_MAX_SIZE_IN_MEMORY_DOWNLOAD};
 
 
-/// Config of the system, basically paths etc.
+/// Config of the system, basically caches etc.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename(serialize = "System"))]
 pub struct SystemConfig {

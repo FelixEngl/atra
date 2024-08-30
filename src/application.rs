@@ -254,7 +254,7 @@ mod test {
     use log::LevelFilter;
     use time::Duration;
     use crate::application::{Atra, ApplicationMode};
-    use crate::core::config::{BudgetSettings, Configs, CrawlConfig};
+    use crate::core::config::{BudgetSetting, Configs, CrawlConfig};
     use crate::core::config::crawl::UserAgent;
     use crate::core::runtime::OptionalAtraHandle;
     use crate::core::seeds::seed_definition::SeedDefinition;
@@ -286,7 +286,7 @@ mod test {
         );
 
         let mut config: CrawlConfig = CrawlConfig::default();
-        config.budget.default = BudgetSettings::Absolute {
+        config.budget.default = BudgetSetting::Absolute {
             depth: 2,
             recrawl_interval: None,
             request_timeout: None

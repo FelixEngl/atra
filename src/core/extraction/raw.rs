@@ -1,5 +1,6 @@
 use memchr::memmem::Prefilter;
 
+/// Extracts links from raw bytes.
 pub fn extract_possible_urls(value: &[u8]) -> Vec<&[u8]> {
     let mut links = Vec::new();
 

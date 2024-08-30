@@ -38,7 +38,7 @@ use crate::client::{Client, ClientBuilder};
 use crate::core::blacklist::lists::BlackList;
 use crate::core::blacklist::PolyBlackList;
 use crate::core::config::crawl::RedirectPolicy;
-use crate::core::config::{BudgetSettings, CrawlConfig};
+use crate::core::config::{BudgetSetting, CrawlConfig};
 use crate::core::contexts::{Context, CrawlTaskContext};
 use crate::core::contexts::errors::{LinkHandlingError, RecoveryError};
 use crate::core::crawl::errors::SeedCreationError;
@@ -621,7 +621,7 @@ impl<S: CrawlSeed> WebsiteCrawler<S> {
 
                     let (analyzed, links) = match crate::core::data_processing::process(context, &response_data, &file_information).await {
                         Ok(analyzed) => {
-                            let result = context.configs().crawl().extractors.extract(context, &response_data, &file_information, &analyzed).await;
+                            let result = context.configs().crawl().link_extractors.extract(context, &response_data, &file_information, &analyzed).await;
                             (analyzed, result)
                         }
                         Err(err) => {
@@ -775,7 +775,7 @@ enum NotAllowedReasoning {
 
 
 struct UrlChecker<'a, R: RobotsInformation> {
-    budget: &'a BudgetSettings,
+    budget: &'a BudgetSetting,
     configured_robots: &'a R,
     blacklist: &'a PolyBlackList
 }
@@ -842,7 +842,7 @@ mod test {
     use serde::de::DeserializeOwned;
     use time::Duration;
     use crate::core::blacklist::lists::RegexBlackList;
-    use crate::core::config::{BudgetSettings, Configs, CrawlConfig};
+    use crate::core::config::{BudgetSetting, Configs, CrawlConfig};
     use crate::core::config::crawl::UserAgent;
     use crate::core::contexts::{Context, LocalContext};
     use crate::core::contexts::inmemory::InMemoryContext;
@@ -937,7 +937,7 @@ mod test {
         init();
 
         let mut config: CrawlConfig = CrawlConfig::default();
-        config.budget.default = BudgetSettings::SeedOnly {
+        config.budget.default = BudgetSetting::SeedOnly {
             depth_on_website: 3,
             recrawl_interval: None,
             request_timeout: None
@@ -990,7 +990,7 @@ mod test {
     async fn crawl_a_single_site_filtered(){
         // init();
         let mut config: CrawlConfig = CrawlConfig::default();
-        config.budget.default = BudgetSettings::SeedOnly {
+        config.budget.default = BudgetSetting::SeedOnly {
             depth_on_website: 2,
             recrawl_interval: None,
             request_timeout: None
@@ -1023,7 +1023,7 @@ mod test {
     async fn crawl_a_single_site_with_depth(){
         init();
         let mut config: CrawlConfig = CrawlConfig::default();
-        config.budget.default = BudgetSettings::Absolute {
+        config.budget.default = BudgetSetting::Absolute {
             depth: 2,
             recrawl_interval: None,
             request_timeout: None

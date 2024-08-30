@@ -23,7 +23,7 @@ use time::Duration;
 use ubyte::ToByteUnit;
 
 use crate::application::ApplicationMode;
-use crate::core::config::{BudgetSettings, Configs};
+use crate::core::config::{BudgetSetting, Configs};
 use crate::core::config::crawl::{CookieSettings, RedirectPolicy, UserAgent};
 use crate::core::extraction::extractor::Extractor;
 use crate::core::seeds::seed_definition::SeedDefinition;
@@ -126,13 +126,13 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
                 }
 
                 configs.crawl.budget.default = if absolute {
-                    BudgetSettings::Absolute {
+                    BudgetSetting::Absolute {
                         depth,
                         recrawl_interval: None,
                         request_timeout: timeout.map(|value| Duration::saturating_seconds_f64(value))
                     }
                 } else {
-                    BudgetSettings::SeedOnly {
+                    BudgetSetting::SeedOnly {
                         depth_on_website: depth,
                         recrawl_interval: None,
                         request_timeout: timeout.map(|value| Duration::saturating_seconds_f64(value))
@@ -209,7 +209,7 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
             let mut cookie_hash = HashMap::new();
             cookie_hash.insert(CaseInsensitiveString::new(b"example.com"), "Cookie String".to_string());
             cookie_hash.insert(CaseInsensitiveString::new(b"example.de"), "Cookie String".to_string());
-            cookies.per_domain = Some(cookie_hash);
+            cookies.per_host = Some(cookie_hash);
             cfg.crawl.cookies = Some(cookies);
 
             let mut header_map = HeaderMap::new();
@@ -221,7 +221,7 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
             cfg.crawl.tld = true;
 
             cfg.crawl.delay = Some(Duration::milliseconds(100));
-            cfg.crawl.budget.default = BudgetSettings::Normal {
+            cfg.crawl.budget.default = BudgetSetting::Normal {
                 depth: 3,
                 depth_on_website: 5,
                 recrawl_interval: Some(Duration::days(7)),
@@ -229,20 +229,20 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
             };
 
             let mut hash = HashMap::new();
-            hash.insert(CaseInsensitiveString::new(b"example.com"), BudgetSettings::Normal {
+            hash.insert(CaseInsensitiveString::new(b"example.com"), BudgetSetting::Normal {
                 depth: 3,
                 depth_on_website: 5,
                 recrawl_interval: Some(Duration::days(7)),
                 request_timeout: Some(Duration::seconds(10)),
             });
 
-            hash.insert(CaseInsensitiveString::new(b"example.de"), BudgetSettings::Absolute {
+            hash.insert(CaseInsensitiveString::new(b"example.de"), BudgetSetting::Absolute {
                 depth: 3,
                 recrawl_interval: Some(Duration::days(7)),
                 request_timeout: Some(Duration::seconds(10)),
             });
 
-            hash.insert(CaseInsensitiveString::new(b"example.org"), BudgetSettings::SeedOnly {
+            hash.insert(CaseInsensitiveString::new(b"example.org"), BudgetSetting::SeedOnly {
                 depth_on_website: 5,
                 recrawl_interval: Some(Duration::days(7)),
                 request_timeout: Some(Duration::seconds(10)),
@@ -257,7 +257,7 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
             cfg.crawl.redirect_policy = RedirectPolicy::Strict;
 
             cfg.crawl.accept_invalid_certs = true;
-            cfg.crawl.extractors = Extractor::default();
+            cfg.crawl.link_extractors = Extractor::default();
 
             cfg.crawl.decode_big_files_up_to = Some(200.megabytes().as_u64());
 

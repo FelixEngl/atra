@@ -27,8 +27,8 @@ use crate::core::config::SystemConfig;
 pub struct Configs {
     pub system: SystemConfig,
     pub paths: PathsConfig,
-    pub crawl: CrawlConfig,
     pub session: SessionConfig,
+    pub crawl: CrawlConfig,
 }
 
 impl Configs {

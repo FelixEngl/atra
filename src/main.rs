@@ -99,7 +99,7 @@ mod test {
     use crate::application::{ApplicationMode};
     use crate::args::{AtraArgs, RunMode};
     use crate::core::config::crawl::UserAgent;
-    use crate::core::config::{BudgetSettings, Configs, CrawlConfig};
+    use crate::core::config::{BudgetSetting, Configs, CrawlConfig};
     use crate::core::seeds::seed_definition::SeedDefinition;
     use crate::{exec, exec_args};
 
@@ -136,7 +136,7 @@ mod test {
     #[test]
     pub fn can_call_multi_crawl(){
         let mut config: CrawlConfig = CrawlConfig::default();
-        config.budget.default = BudgetSettings::Absolute {
+        config.budget.default = BudgetSetting::Absolute {
             depth: 2,
             recrawl_interval: None,
             request_timeout: None
