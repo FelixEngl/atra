@@ -12,5 +12,21 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-mod text_preprocessor;
-mod tf_idf;
+use crate::features::text_processing::corpus::CorpusStatisticsCollector;
+use crate::features::text_processing::text_preprocessor::Tokenizer;
+use crate::features::text_processing::tf_idf::{IdfAlgorithm, TfAlgorithm, TfIdf};
+
+pub mod text_preprocessor;
+pub mod tf_idf;
+pub mod corpus;
+pub mod vectorizer;
+pub mod traits;
+
+pub fn create_vectorizer<I: Iterator<Item=T>, T: AsRef<str>, Tf: TfAlgorithm, Idf: IdfAlgorithm>(mut train_data: I, tokenizer: &Tokenizer, tf_idf: TfIdf<Tf, Idf>) -> Result<vectorizer::DocumentVectorizer<String, Tf,Idf>, Idf::Error> {
+    let mut corpus_statistics = CorpusStatisticsCollector::default();
+    for document in train_data {
+        let tokens = tokenizer.tokenize(document.as_ref());
+        corpus_statistics.add(tokens);
+    }
+    Ok(corpus_statistics.provide_vectorizer(tf_idf)?)
+}

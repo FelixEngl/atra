@@ -35,7 +35,7 @@ pub enum AtraSupportedFileFormat {
     Unknown // todo: Add identifier for binary
 }
 
-fn check_file_ending<const N: usize>(respone: &ResponseData, endings: [&'static str; N]) -> bool {
+fn check_file_ending(respone: &ResponseData, endings: &[&'static str]) -> bool {
     if let Some(scheme) = respone.url.url().path() {
         let scheme = scheme.to_lowercase();
         endings.into_iter().any(|it| scheme.ends_with(it))
@@ -100,7 +100,7 @@ macro_rules! supports_method {
         fn extension_2_supported_file_format(respone: &ResponseData) -> Option<AtraSupportedFileFormat>{
             $(
                 $(
-                    if check_file_ending(respone, $endings) {
+                    if check_file_ending(respone, &$endings) {
                         return Some(AtraSupportedFileFormat::$typ)
                     }
                 )?

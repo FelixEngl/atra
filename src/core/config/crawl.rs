@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use std::num::{NonZeroU64};
 use case_insensitive_string::CaseInsensitiveString;
 use time::Duration;
-use reqwest::header::{HeaderMap, HOST};
+use reqwest::header::{HeaderMap};
 use crate::core::header_map_extensions::optional_header_map;
 use serde;
 use serde::{Deserialize, Serialize};

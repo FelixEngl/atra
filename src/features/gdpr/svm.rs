@@ -13,32 +13,25 @@
 //limitations under the License.
 
 use liblinear;
-use liblinear::SolverType;
-use liblinear::util::{TrainingInput, TrainingInputError};
-use thiserror::Error;
-use failure::Error;
+use liblinear::parameter::traits::SetRegressionLossSensitivity;
+use liblinear::{Model, Parameters};
+use liblinear::model::traits::TrainableModel;
+use liblinear::solver::{L2R_L2LOSS_SVR};
+use liblinear::util::{TrainingInput};
+use crate::features::gdpr::error::LibLinearError;
 
-#[derive(Debug, Error)]
-pub enum SVMError {
-    Training(#[from] TrainingInputError),
-    Build(#[from] Error)
-}
+pub fn train(labels: Vec<f64>, features: Vec<Vec<(u32, f64)>>) -> Result<Model<L2R_L2LOSS_SVR>, LibLinearError> {
+    let data = TrainingInput::from_sparse_features(
+        labels,
+        features
+    )?;
 
-pub fn train(labels: Vec<f64>, features: Vec<Vec<(u32, f64)>>) -> Result<impl liblinear::LibLinearModel, anyhow::Error> {
-    let mut builder = liblinear::Builder::new();
-    builder.problem()
-        .input_data(
-            TrainingInput::from_sparse_features(
-                labels,
-                features
-            )?
-        );
-
-    builder.parameters()
-        .solver_type(SolverType::L2R_L2LOSS_SVC)
+    let mut params = Parameters::<L2R_L2LOSS_SVR>::default();
+    params
         .regression_loss_sensitivity(0.1)
-        .stopping_criterion(0.0003)
+        .stopping_tolerance(0.0003)
         .constraints_violation_cost(10.0);
 
-    Ok(builder.build_model()?)
+
+    Ok(Model::train(&data, &params)?)
 }

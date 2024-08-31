@@ -1,0 +1,3 @@
+[submodule "external/liblinear"]
+	path = external/liblinear
+	url = https://github.com/FelixEngl/liblinear-rs.git

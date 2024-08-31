@@ -38,7 +38,7 @@ camino = { version = "1.1", features = ["serde1"] }
 camino-tempfile = "1.1"
 
 # Serialisation
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 serde_bytes = "0.11"
 serde_yaml = "0.9"
@@ -69,6 +69,8 @@ itertools = "0.13"
 url = { version = "2.5", features = ["serde"] }
 const_format = "0"
 deranged = { version = "0.3", features = ["serde"] }
+float-cmp = "0.9.0"
+#aho-corasick = "1"
 
 # Static stuff
 #once_cell = "1.19"
@@ -148,11 +150,14 @@ unicode-segmentation = { version = "1.11", optional = true }
 rust-stemmers = { version = "1", optional = true }
 isolang = { version = "2.4", optional = true }
 
+# File formats
+csv = { version = "1.3", optional = true }
+
 # GDPR
 ## SVM
-liblinear = { version = "1.0", optional = true }
+liblinear = { path= "external/liblinear/crates/liblinear", optional = true }
 ## Errors of SVM...
-failure = { version = "0.1", optional = true }
+#failure = { version = "0.1", optional = true }
 
 #suffix = { version = "1.3", optional = true }
 
@@ -182,4 +187,4 @@ flate2 = "1.0"
 [features]
 text_processing = ["dep:unicode-normalization", "dep:unicode-segmentation", "dep:rust-stemmers", "dep:isolang"]
 chrome = ["dep:chromiumoxide"]
-gdpr = ["dep:liblinear", "dep:failure", "text_processing"]
+gdpr = ["dep:liblinear", "text_processing", "dep:csv"]

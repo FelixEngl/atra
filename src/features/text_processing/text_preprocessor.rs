@@ -25,6 +25,7 @@ use camino::{Utf8Path, Utf8PathBuf};
 use compact_str::{CompactString, ToCompactString};
 use isolang::Language;
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 use unicode_segmentation::{UnicodeSegmentation};
 use unicode_normalization::{UnicodeNormalization};
 
@@ -152,7 +153,7 @@ impl StopWordListRegistry {
 }
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StopWordList {
     raw: HashSet<CompactString>,
     normalized: HashSet<CompactString>
@@ -239,6 +240,7 @@ impl<Q> Extend<Q> for StopWordList where Q: ToCompactString {
 }
 
 
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Tokenizer {
     normalize: bool,
     stop_words: Option<Arc<StopWordList>>,
