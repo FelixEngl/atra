@@ -12,6 +12,7 @@ use liblinear::solver::traits::IsTrainableSolver;
 use serde::de::DeserializeOwned;
 use liblinear::Model;
 use liblinear::solver::GenericSolver;
+use crate::features::tokenizing::tokenizer::Tokenizer;
 
 #[derive(Serialize, Deserialize)]
 #[serde(bound(
@@ -64,7 +65,7 @@ mod model_serializer {
 }
 
 impl<Tf, Idf, SOLVER> DocumentClassifier<Tf, Idf, SOLVER> {
-    pub fn new(svm: liblinear::Model<SOLVER>, vectorizer: DocumentVectorizer<String, Tf, Idf>, tokenizer: Tokenizer) -> Self {
+    pub fn new(svm: Model<SOLVER>, vectorizer: DocumentVectorizer<String, Tf, Idf>, tokenizer: Tokenizer) -> Self {
         Self { svm, vectorizer, tokenizer }
     }
 }

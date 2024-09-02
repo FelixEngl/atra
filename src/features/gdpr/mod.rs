@@ -22,10 +22,10 @@ use serde::{Deserialize};
 use thiserror::Error;
 use crate::features::gdpr::classifier::{DocumentClassifier, train};
 use crate::features::gdpr::error::LibLinearError;
-use crate::features::gdpr::traits::Context;
+use crate::features::gdpr::traits::GdbrContext;
 use crate::features::text_processing::text_preprocessor::Tokenizer;
 use crate::features::text_processing::tf_idf::{Idf, IdfAlgorithm, Tf, TfIdf};
-use crate::features::gdpr::traits::Config;
+use crate::features::gdpr::traits::GdbrConfig;
 use crate::features::text_processing::traits::Config as Cfg2;
 
 pub mod svm;
@@ -65,11 +65,11 @@ pub enum GdprError {
 }
 
 pub async fn gdpr(
-    context: &impl Context
+    context: &impl GdbrContext
 ) -> Result<DocumentClassifier<Tf, Idf, L2R_L2LOSS_SVR>, GdprError> {
     let cfg = context.gdpr_config();
     async fn train_gdpr(
-        context: &impl Context,
+        context: &impl GdbrContext,
         path: impl AsRef<Utf8Path>
     ) -> Result<DocumentClassifier<Tf, Idf, L2R_L2LOSS_SVR>, GdprError>{
         let path = path.as_ref();
@@ -86,7 +86,7 @@ pub async fn gdpr(
         let cfg = context.gdpr_config();
 
         let tokenizer = if let Some(lang) = cfg.target_language() {
-            context.stop_registry().get_or_load(lang).await
+            context.stopword_registry().get_or_load(lang).await
         } else {
             None
         };

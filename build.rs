@@ -13,9 +13,11 @@
 //limitations under the License.
 
 use std::collections::{HashMap};
+use std::env;
 use std::path::Path;
 use std::fs::File;
 use std::io::{BufWriter, Read, Write};
+use isolang::Language;
 use tinyjson::JsonValue;
 
 fn main() {
@@ -33,9 +35,11 @@ fn generate_stop_word_lists() {
     build_stop_word_library(object);
 }
 
-
-
 fn build_stop_word_library(object: &HashMap<String, JsonValue>) {
+
+
+    let mut containers: HashMap<Language, Vec<String>> = HashMap::new();
+
     let base = Path::new("./data/stopwords/iso");
     if !base.exists() {
         std::fs::create_dir_all(base).unwrap();
@@ -45,8 +49,43 @@ fn build_stop_word_library(object: &HashMap<String, JsonValue>) {
         let lang = isolang::Language::from_639_1(k.as_str()).expect(format!("Why is {k} not an iso language?").as_str());
         let values: Vec<_> = v.get::<Vec<_>>().unwrap().iter().map(|value| value.get::<String>().unwrap().to_string()).collect();
         let mut file = BufWriter::new(File::options().write(true).truncate(true).create(true).open(base.join(format!("{}.txt", lang.to_639_1().unwrap()))).unwrap());
-        for v in values {
+        for v in &values {
             writeln!(&mut file, "{v}").unwrap();
         }
+        containers.insert(lang, values.into_iter().map(|value| value.replace("\"", "\\\"")).collect());
     }
+
+    let mut new = phf_codegen::Map::new();
+    // new.phf_path("phf");
+    for (k, v) in containers {
+        new.entry(format!("{}", k.to_639_3()), format!("&[\"{}\"]", v.join("\", \"")).as_str());
+    }
+
+
+    let path = Path::new(&env::var("OUT_DIR").unwrap()).join("default_stopwords.rs");
+    let mut file = BufWriter::new(File::create(&path).unwrap());
+    writeln!(
+        &mut file,
+        "static DEFAULT_STOPWORDS: {} = \n{};\n",
+        "phf::Map<&'static str, &'static [&'static str]>",
+        new.build()
+    ).unwrap();
+
+
+
+//     writeln!(&mut file, "
+//
+// /// Retrieves the default stopwords for a provided [lang] in iso3 format.
+// #[cfg(feature = \"tokenizing\")]
+// pub fn get_default_stopwords_for(lang: &str) -> Option<&'static [&'static str]>{{
+//     DEFAULT_STOPWORDS.get(&lang.to_lowercase())
+// }}").unwrap();
+//     writeln!(&mut file, "
+//
+// /// Retrieves the default stopwords for a provided [lang].
+// #[cfg(feature = \"tokenizing\")]
+// pub fn get_default_stopwords_for_lang(lang: &isolang::Language) -> Option<&'static [&'static str]>{{
+//     get_default_stopwords_for(lang.to_639_3())
+// }}").unwrap();
+
 }

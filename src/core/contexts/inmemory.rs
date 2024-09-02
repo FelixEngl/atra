@@ -12,6 +12,7 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+use std::cell::LazyCell;
 use std::cmp::min;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
@@ -39,6 +40,7 @@ use crate::core::contexts::errors::{LinkHandlingError, RecoveryError};
 use crate::core::origin::AtraOriginProvider;
 use crate::core::origin::managers::InMemoryOriginManager;
 use crate::core::url::atra_uri::AtraUri;
+use crate::features::tokenizing::stopwords::StopWordListRegistry;
 
 #[derive(Debug)]
 pub struct InMemoryContext {
@@ -54,6 +56,7 @@ pub struct InMemoryContext {
     started_at: OffsetDateTime,
     links_queue: InMemoryLinkQueue,
     link_net_manager: InMemoryLinkNetManager,
+    stop_word_list_registry: StopWordListRegistry
 }
 
 
@@ -69,10 +72,11 @@ impl InMemoryContext {
             state: tokio::sync::RwLock::new(HashMap::new()),
             links_queue: InMemoryLinkQueue::default(),
             data_urls: Default::default(),
+            stop_word_list_registry: StopWordListRegistry::new(configs.use_default_stopwords()),
             configs,
             host_manager: Default::default(),
             started_at: OffsetDateTime::now_utc(),
-            link_net_manager: InMemoryLinkNetManager::default()
+            link_net_manager: InMemoryLinkNetManager::default(),
         }
     }
 
@@ -242,6 +246,12 @@ impl super::Context for InMemoryContext {
 
 }
 
+impl crate::features::tokenizing::StopwordContext for InMemoryContext {
+    fn stopword_registry(&self) -> &StopWordListRegistry {
+        &self.stop_word_list_registry
+    }
+}
+
 impl super::SlimCrawlTaskContext for InMemoryContext {
     async fn store_slim_crawled_website(&self, result: SlimCrawlResult) -> Result<(), DatabaseError> {
         self.ct_crawled_websites.fetch_add(1, Ordering::Relaxed);
@@ -359,3 +369,6 @@ impl UrlQueue for InMemoryLinkQueue {
         self.broadcast.subscribe()
     }
 }
+
+
+

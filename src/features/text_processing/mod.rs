@@ -13,14 +13,12 @@
 //limitations under the License.
 
 use crate::features::text_processing::corpus::CorpusStatisticsCollector;
-use crate::features::text_processing::text_preprocessor::Tokenizer;
 use crate::features::text_processing::tf_idf::{IdfAlgorithm, TfAlgorithm, TfIdf};
+use crate::features::tokenizing::tokenizer::Tokenizer;
 
-pub mod text_preprocessor;
 pub mod tf_idf;
 pub mod corpus;
 pub mod vectorizer;
-pub mod traits;
 
 pub fn create_vectorizer<I: Iterator<Item=T>, T: AsRef<str>, Tf: TfAlgorithm, Idf: IdfAlgorithm>(mut train_data: I, tokenizer: &Tokenizer, tf_idf: TfIdf<Tf, Idf>) -> Result<vectorizer::DocumentVectorizer<String, Tf,Idf>, Idf::Error> {
     let mut corpus_statistics = CorpusStatisticsCollector::default();

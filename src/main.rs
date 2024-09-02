@@ -34,6 +34,7 @@ mod logging;
 pub mod util;
 mod config;
 
+
 pub const ATRA_TEXT: &'static str = r#"
         |
 |       |       |

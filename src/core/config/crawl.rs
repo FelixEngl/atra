@@ -24,6 +24,7 @@ use serde;
 use serde::{Deserialize, Serialize};
 use strum::{Display};
 use strum::EnumString;
+use thiserror::Error;
 use crate::core::extraction::extractor::{Extractor};
 use crate::core::UrlWithDepth;
 
@@ -97,6 +98,10 @@ pub struct CrawlConfig {
     /// blob but do not overstep this provided size. (in Bytes) (default: None/Off)
     pub decode_big_files_up_to: Option<u64>,
 
+
+    /// If this is set all stopwords inclide the default stopwords known to atra (drfault: true)
+    pub use_default_stopwords: bool,
+
     #[cfg(feature = "chrome")]
     /// The settings for a chrome instance
     pub chrome_settings: Option<ChromeSettings>,
@@ -131,6 +136,7 @@ impl Default for CrawlConfig {
             max_queue_age: 20,
             link_extractors: Extractor::default(),
             decode_big_files_up_to: None,
+            use_default_stopwords: true,
             #[cfg(feature = "chrome")]
             chrome_settings: Default::default()
         }
@@ -231,8 +237,98 @@ impl CrawlBudget {
 }
 
 
+#[derive(Serialize, Deserialize, Clone)]
+struct BudgetSettingsDef {
+    /// The max depth to crawl on a website.
+    depth_on_website: Option<u64>,
+    /// The maximum depth of websites, outgoing from the seed.
+    depth: Option<u64>,
+    /// Crawl interval (if none crawl only once)
+    recrawl_interval: Option<Duration>,
+    /// Request max timeout per page. By default the request times out in 15s. Set to None to disable.
+    request_timeout: Option<Duration>,
+}
+
+
+impl From<BudgetSetting> for BudgetSettingsDef {
+    fn from(value: BudgetSetting) -> Self {
+        match value {
+            BudgetSetting::SeedOnly { depth_on_website, request_timeout, recrawl_interval } => {
+                Self {
+                    depth_on_website: Some(depth_on_website),
+                    depth: None,
+                    recrawl_interval,
+                    request_timeout
+                }
+            }
+            BudgetSetting::Normal { depth_on_website, depth, request_timeout, recrawl_interval } => {
+                Self {
+                    depth_on_website: Some(depth_on_website),
+                    depth: Some(depth),
+                    recrawl_interval,
+                    request_timeout
+                }
+            }
+            BudgetSetting::Absolute { depth, request_timeout, recrawl_interval } => {
+                Self {
+                    depth_on_website: None,
+                    depth: Some(depth),
+                    recrawl_interval,
+                    request_timeout
+                }
+            }
+        }
+    }
+}
+
+
+#[derive(Debug, Error)]
+#[error("The budget is missing any depth field. It needs at least one!")]
+struct BudgetSettingsDeserializationError;
+
+impl TryFrom<BudgetSettingsDef> for BudgetSetting {
+    type Error = BudgetSettingsDeserializationError;
+
+    fn try_from(value: BudgetSettingsDef) -> Result<Self, Self::Error> {
+        match value {
+            BudgetSettingsDef { depth:Some(depth), depth_on_website: Some(depth_on_website), request_timeout, recrawl_interval } => {
+                Ok(
+                    BudgetSetting::Normal {
+                        depth,
+                        depth_on_website,
+                        request_timeout,
+                        recrawl_interval
+                    }
+                )
+            }
+            BudgetSettingsDef { depth_on_website: Some(depth_on_website), request_timeout, recrawl_interval, .. } => {
+                Ok(
+                    BudgetSetting::SeedOnly {
+                        depth_on_website,
+                        request_timeout,
+                        recrawl_interval
+                    }
+                )
+            }
+            BudgetSettingsDef { depth:Some(depth), request_timeout, recrawl_interval, .. } => {
+                Ok(
+                    BudgetSetting::Absolute {
+                        depth,
+                        request_timeout,
+                        recrawl_interval
+                    }
+                )
+            }
+            _ => Err(BudgetSettingsDeserializationError)
+        }
+    }
+}
+
+
+
 /// The budget for the crawled website
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(try_from = "FromType", into = "IntoType")]
 pub enum BudgetSetting {
     /// Only crawls the seed domains
     SeedOnly {
@@ -334,6 +430,8 @@ impl Default for BudgetSetting {
         }
     }
 }
+
+
 
 /// Chrome specific settings
 #[cfg(feature = "chrome")]

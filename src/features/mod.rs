@@ -12,8 +12,6 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-#[cfg(feature = "gdpr")]
 pub mod gdpr;
-
-#[cfg(feature = "text_processing")]
 pub mod text_processing;
+pub mod tokenizing;

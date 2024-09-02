@@ -97,6 +97,7 @@ The following table shows the configs written as qualified paths for a json.
 | crawl.accept_invalid_certs       | boolean                                                                                        | Dangerously accept invalid certficates (default: false)                                                                                                                                 |
 | crawl.link_extractors            | JSON; ``[- Command -, - Command -]`` (see [Link Extractor Settings](#Link-Extractor-Settings)) | A custom configuration of extractors. (default: see [Extractor Settings](#Extractor-Settings))                                                                                          |
 | crawl.decode_big_files_up_to     | uInt/null; in Byte                                                                             | If this value is set Atra tries to decode and process files that are only downloaded as<br/>blob but do not overstep this provided size (in Bytes).<br/>Null means off. (default: null) |
+| crawl.use_default_stopwords      | boolean                                                                                        | If this is set all stopwords inclide the default stopwords known to atra (drfault: true)                                                                                                |
 | crawl.chrome_settings            | - unused -                                                                                     | - unused -                                                                                                                                                                              |
 
 ### Log Level
@@ -135,20 +136,39 @@ Exemplary entry in a JSON:
 ````
 
 ### Crawl Budget
-| Sub-Path   | Value                                                                                        | Explanation                                                                                 |
-|------------|----------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------|
-| default    | BudgetSetting; ``{"- Budget Name -": {- Settings -}}`` see [Budget Setting](#Budget-Setting) | The default budget setting for a crawl.                                                     |
-| per_domain | JSON/null; ``{"- domain -": - BudgetSetting - }``                                            | A map between domains and budget settings.<br/>A domain is e.g.: "ebay.de" or an IP address |
+| Sub-Path | Value                                                     | Explanation                                                                                 |
+|----------|-----------------------------------------------------------|---------------------------------------------------------------------------------------------|
+| default  | JSON;BudgetSetting; see [Budget Setting](#Budget-Setting) | The default budget setting for a crawl.                                                     |
+| per_host | JSON/null; ``{"- domain/host -": - BudgetSetting - }``    | A map between domains and budget settings.<br/>A domain is e.g.: "ebay.de" or an IP address |
 
-Budget settings exists in 3 different forms:
+Exemplary entry in a JSON:
+````json
+{
+   "budget": {
+      "default": {
+         "depth_on_website": 2,
+         "depth": 1,
+         "recrawl_interval": null,
+         "request_timeout": null
+      },
+      "per_host": {
+         "ebay.de": {
+            "depth": 3,
+            "recrawl_interval": "360.000000000",
+            "request_timeout": null
+         }
+      }
+   }
+}
+````
 
-| Name     | Value | Explanation                                                                                              |
-|----------|-------|----------------------------------------------------------------------------------------------------------|
-| SeedOnly | JSON; | Only crawls the seed domains                                                                             |
-| Normal   | JSON; | Crawls the seed and follows external links                                                               |
-| Absolute | JSON; | Crawls the seed and follows external links, but only follows until a specific amout of jumps is reached. |
+### Budget Setting
+Budget settings exists in 3 different kinds:
+- SeedOnly: Only crawls the seed domains
+- Normal: Crawls the seed and follows external links
+- Absolute: Crawls the seed and follows external links, but only follows until a specific amout of jumps is reached.
 
-The sub paths are:
+The kind is decided by the presence of the fields. As described in the following table.
 
 | Sub-Path         | used in                    | Value                                                | Explanation                                                                   |
 |------------------|----------------------------|------------------------------------------------------|-------------------------------------------------------------------------------|
@@ -157,28 +177,6 @@ The sub paths are:
 | recrawl_interval | SeedOnly, Normal, Absolute | String/null; "`[whole_seconds].[whole_nanoseconds]`" | Crawl interval (if set to null crawl only once)   (default: null)             |
 | request_timeout  | SeedOnly, Normal, Absolute | String/null; "`[whole_seconds].[whole_nanoseconds]`" | Request max timeout per page. Set to null to disable. (default: 15.000000000) |
 
-Exemplary entry in a JSON:
-````json
-{
-   "budget": {
-      "Normal": {
-         "depth_on_website": 2,
-         "depth": 1,
-         "recrawl_interval": null,
-         "request_timeout": null
-      },
-      "per_host": {
-         "ebay.de": {
-            "Absolute": {
-               "depth": 3,
-               "recrawl_interval": "360.000000000",
-               "request_timeout": null
-            }
-         }
-      }
-   }
-}
-````
 
 ### Redirection Policy
 | Name   | Value     | Explanation                                                                   |

@@ -83,6 +83,15 @@ impl PathsConfig {
         )
     }
 
+    pub fn dirs_stopwords(&self) -> Option<Vec<Utf8PathBuf>> {
+        Some(
+            self.directories.stopword_dirs?.iter().map(
+                |value|
+                self.root.join(value)
+            ).collect()
+        )
+    }
+
 }
 
 
@@ -95,13 +104,16 @@ pub struct Directories {
     /// Path to the big files directory
     #[serde(default = "_default_big_files_dir")]
     pub big_files: Utf8PathBuf,
+    /// Path to the dirs with stopword lists.
+    pub stopword_dirs: Option<Vec<Utf8PathBuf>>
 }
 
 impl Directories {
     pub fn new(database: impl AsRef<Utf8Path>, big_files: impl AsRef<Utf8Path>) -> Self {
         Self {
             database: database.as_ref().to_path_buf(),
-            big_files: big_files.as_ref().to_path_buf()
+            big_files: big_files.as_ref().to_path_buf(),
+            stopword_dirs: None
         }
     }
 }
@@ -110,7 +122,8 @@ impl Default for Directories {
     fn default() -> Self {
         Self {
             database: _default_database_dir(),
-            big_files: _default_big_files_dir()
+            big_files: _default_big_files_dir(),
+            stopword_dirs: None
         }
     }
 }

@@ -1,23 +1,9 @@
-//Copyright 2024 Felix Engl
-//
-//Licensed under the Apache License, Version 2.0 (the "License");
-//you may not use this file except in compliance with the License.
-//You may obtain a copy of the License at
-//
-//    http://www.apache.org/licenses/LICENSE-2.0
-//
-//Unless required by applicable law or agreed to in writing, software
-//distributed under the License is distributed on an "AS IS" BASIS,
-//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//See the License for the specific language governing permissions and
-//limitations under the License.
-
-use std::borrow::{Borrow, Cow};
-use std::collections::{HashMap, HashSet};
+use std::borrow::Borrow;
 use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::fs::File;
-use std::hash::{Hash};
+use std::hash::Hash;
 use std::io;
 use std::io::{BufRead, BufReader};
 use std::sync::Arc;
@@ -26,10 +12,9 @@ use compact_str::{CompactString, ToCompactString};
 use isolang::Language;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use unicode_segmentation::{UnicodeSegmentation};
-use unicode_normalization::{UnicodeNormalization};
-
-
+use unicode_normalization::UnicodeNormalization;
+use crate::core::config::Configs;
+use crate::features::tokenizing::StopwordConfig;
 
 /// Provides stop word lists for a specific language
 pub trait StopWordListRepository: Debug {
@@ -66,6 +51,7 @@ impl StopWordListRepository for DirStopWordListRepository {
     }
 }
 
+
 /// A registry for stopwords.
 /// May have multiple repositories.
 /// If multiple repositories are provided the used stopword list is
@@ -73,20 +59,33 @@ impl StopWordListRepository for DirStopWordListRepository {
 ///     - a combination of all provided stopword lists from all registered repositories if fast is not net.
 #[derive(Debug, Default)]
 pub struct StopWordListRegistry {
-    fast: bool,
+    use_default: bool,
     cached_stop_words: tokio::sync::RwLock<HashMap<Language, Arc<StopWordList>>>,
     repositories: Vec<Box<dyn StopWordListRepository>>
 }
 
+unsafe impl Send for StopWordListRegistry{}
+unsafe impl Sync for StopWordListRegistry{}
+
 impl StopWordListRegistry {
-    pub fn new(fast: bool) -> Self {
+    pub fn initialize(cfg: &Configs) -> Result<Self, io::Error>  {
+        let mut new = Self::new(cfg.crawl.use_default_stopwords);
+        if let Some(p) = cfg.paths.dirs_stopwords() {
+            for v in p {
+                new.register(DirStopWordListRepository::new(v)?)
+            }
+        }
+        Ok(new)
+    }
+
+    pub fn new(use_default: bool) -> Self {
         Self {
-            fast,
-            ..StopWordListRegistry::default()
+            use_default,
+            ..Self::default()
         }
     }
 
-    pub fn register<R: StopWordListRepository + 'static>(&mut self, repository: R) {
+    pub fn register<R: StopWordListRepository>(&mut self, repository: R) {
         self.register_boxed(Box::new(repository))
     }
 
@@ -95,25 +94,13 @@ impl StopWordListRegistry {
     }
 
     fn load_stop_words(&self, language: Language) -> Option<Vec<String>> {
-        if self.fast || self.repositories.len() == 1 {
-            for repo in &self.repositories {
-                if let Some(found) = repo.load_raw_stop_words(language) {
-                    return Some(found);
-                }
-            }
-        } else {
-            let mut collection = Vec::new();
-            for repo in &self.repositories {
-                if let Some(found) = repo.load_raw_stop_words(language) {
-                    collection.extend(found)
-                }
-            }
-            if !collection.is_empty() {
-                return Some(collection)
+        let mut collection = Vec::new();
+        for repo in &self.repositories {
+            if let Some(found) = repo.load_raw_stop_words(language) {
+                collection.extend(found)
             }
         }
-
-        return None;
+        return (!collection.is_empty()).then_some(collection);
     }
 
     #[cfg(test)]
@@ -141,12 +128,14 @@ impl StopWordListRegistry {
                 Some(value.get().clone())
             }
             Entry::Vacant(value) => {
-                Some(value.insert(Arc::new(StopWordList::from(
-                    self.load_stop_words(language)?
-                        .into_iter()
-                        .map(CompactString::from_string_buffer)
-                        .collect()
-                ))).clone())
+                let mut raw = self.load_stop_words(language)?
+                    .into_iter()
+                    .map(CompactString::from_string_buffer)
+                    .collect();
+                if self.use_default {
+                    raw.extend(get_default_stopwords_for_lang(&language).into_iter().map(CompactString::from));
+                }
+                Some(value.insert(Arc::new(StopWordList::from_raw(raw))).clone())
             }
         }
     }
@@ -174,7 +163,7 @@ impl StopWordList {
         Self { raw, normalized }
     }
 
-    pub fn from(raw: HashSet<CompactString>) -> Self {
+    pub fn from_raw(raw: HashSet<CompactString>) -> Self {
         let normalized = raw
             .iter()
             .map(|value| value.nfc().collect::<CompactString>())
@@ -191,9 +180,9 @@ impl StopWordList {
 
     #[inline]
     pub fn contains<Q: ?Sized>(&self, kind: ContainsKind, value: &Q) -> bool
-        where
-            CompactString: Borrow<Q>,
-            Q: Hash + Eq, {
+    where
+        CompactString: Borrow<Q>,
+        Q: Hash + Eq, {
         match kind {
             ContainsKind::Raw => {self.contains_raw(value)}
             ContainsKind::Normalized => {self.contains_normalized(value)}
@@ -203,25 +192,25 @@ impl StopWordList {
 
     #[inline]
     pub fn contains_both<Q: ?Sized>(&self, value: &Q) -> bool
-        where
-            CompactString: Borrow<Q>,
-            Q: Hash + Eq, {
+    where
+        CompactString: Borrow<Q>,
+        Q: Hash + Eq, {
         self.contains_raw(value) || self.contains_normalized(value)
     }
 
     #[inline]
     pub fn contains_raw<Q: ?Sized>(&self, value: &Q) -> bool
-        where
-            CompactString: Borrow<Q>,
-            Q: Hash + Eq, {
+    where
+        CompactString: Borrow<Q>,
+        Q: Hash + Eq, {
         self.raw.contains(value)
     }
 
     #[inline]
     pub fn contains_normalized<Q: ?Sized>(&self, value: &Q) -> bool
-        where
-            CompactString: Borrow<Q>,
-            Q: Hash + Eq, {
+    where
+        CompactString: Borrow<Q>,
+        Q: Hash + Eq, {
         self.normalized.contains(value)
     }
 }
@@ -240,74 +229,16 @@ impl<Q> Extend<Q> for StopWordList where Q: ToCompactString {
 }
 
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Tokenizer {
-    normalize: bool,
-    stop_words: Option<Arc<StopWordList>>,
-    stemmer: Option<rust_stemmers::Algorithm>,
+
+include!(concat!(env!("OUT_DIR"), "/default_stopwords.rs"));
+
+/// Retrieves the default stopwords for a provided [lang] in iso3 format.
+pub fn get_default_stopwords_for(lang: &str) -> Option<&'static [&'static str]>{
+    DEFAULT_STOPWORDS.get(&lang.to_lowercase())
 }
 
-impl Tokenizer {
 
-    pub fn new(
-        normalize: bool,
-        stop_words: Option<Arc<StopWordList>>,
-        stemmer: Option<rust_stemmers::Algorithm>
-    ) -> Self {
-        Self {
-            normalize,
-            stop_words,
-            stemmer
-        }
-    }
-
-    /// Preprocesses a text
-    pub fn tokenize(&self, text: &str) -> Vec<String> {
-        let text = if self.normalize {
-            Cow::Owned(text.nfc().to_string())
-        } else {
-            Cow::Borrowed(text)
-        };
-
-        let text = text.unicode_words();
-
-        let text = if let Some(stop_words) = &self.stop_words {
-            let target = if self.normalize {
-                ContainsKind::Normalized
-            } else {
-               ContainsKind::Raw
-            };
-            text.filter(|value| !stop_words.contains(target, *value)).collect_vec()
-        } else {
-            text.collect_vec()
-        };
-
-        if let Some(stemmer) = self.stemmer {
-            let stemmer = rust_stemmers::Stemmer::create(stemmer);
-            text.into_iter().map(|value| stemmer.stem(value).to_lowercase()).collect_vec()
-        } else {
-            text.into_iter().map(|value| value.to_lowercase()).collect_vec()
-        }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use isolang::Language;
-    use crate::features::text_processing::text_preprocessor::{DirStopWordListRepository, StopWordListRegistry, Tokenizer};
-
-    #[test]
-    fn can_exec(){
-        let mut registry = StopWordListRegistry::new(false);
-        registry.register(DirStopWordListRepository::new("./data/stopwords/iso").expect("Should exist!"));
-        let tokenizer = Tokenizer::new(
-            true,
-            registry.get_or_load_sync(Language::from_639_1("de").unwrap()),
-            Some(rust_stemmers::Algorithm::German)
-        );
-
-        const TEST_TEXT: &str = "Hallo welt was ist Höher, ÅΩ oder `katze\u{30b}hier";
-
-        println!("{TEST_TEXT}\n{:?}", tokenizer.tokenize(TEST_TEXT))
-    }
+/// Retrieves the default stopwords for a provided [lang].
+pub fn get_default_stopwords_for_lang(lang: &isolang::Language) -> Option<&'static [&'static str]>{
+    get_default_stopwords_for(lang.to_639_3())
 }
