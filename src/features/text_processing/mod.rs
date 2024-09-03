@@ -20,6 +20,7 @@ pub mod tf_idf;
 pub mod corpus;
 pub mod vectorizer;
 
+/// Creates a vectorizer for a corpus.
 pub fn create_vectorizer<I: Iterator<Item=T>, T: AsRef<str>, Tf: TfAlgorithm, Idf: IdfAlgorithm>(mut train_data: I, tokenizer: &Tokenizer, tf_idf: TfIdf<Tf, Idf>) -> Result<vectorizer::DocumentVectorizer<String, Tf,Idf>, Idf::Error> {
     let mut corpus_statistics = CorpusStatisticsCollector::default();
     for document in train_data {

@@ -102,6 +102,8 @@ pub struct CrawlConfig {
     /// If this is set all stopwords inclide the default stopwords known to atra (drfault: true)
     pub use_default_stopwords: bool,
 
+
+
     #[cfg(feature = "chrome")]
     /// The settings for a chrome instance
     pub chrome_settings: Option<ChromeSettings>,
@@ -328,7 +330,7 @@ impl TryFrom<BudgetSettingsDef> for BudgetSetting {
 
 /// The budget for the crawled website
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(try_from = "FromType", into = "IntoType")]
+#[serde(try_from = "BudgetSettingsDef", into = "BudgetSettingsDef")]
 pub enum BudgetSetting {
     /// Only crawls the seed domains
     SeedOnly {

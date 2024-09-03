@@ -14,21 +14,23 @@
 
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, ErrorKind, Write};
-use camino::Utf8Path;
+use camino::{Utf8Path, Utf8PathBuf};
 use csv::{StringRecord, StringRecordsIntoIter};
+use isolang::Language;
 use itertools::Itertools;
-use liblinear::solver::L2R_L2LOSS_SVR;
+use liblinear::Model;
+use liblinear::solver::{GenericSolver, L2R_L2LOSS_SVR};
+use liblinear::solver::traits::{IsSupportVectorRegressionSolver, IsTrainableSolver};
 use serde::{Deserialize};
 use thiserror::Error;
-use crate::features::gdpr::classifier::{DocumentClassifier, train};
+use crate::features::gdpr::classifier::{DocumentClassifier};
+use crate::features::gdpr::classifier::train as train2;
 use crate::features::gdpr::error::LibLinearError;
-use crate::features::gdpr::traits::GdbrContext;
-use crate::features::text_processing::text_preprocessor::Tokenizer;
+use crate::features::gdpr::traits::{GdbrContext, GdbrRecognizerConfig, GdbrRecognizerTrainConfig};
 use crate::features::text_processing::tf_idf::{Idf, IdfAlgorithm, Tf, TfIdf};
-use crate::features::gdpr::traits::GdbrConfig;
-use crate::features::text_processing::traits::Config as Cfg2;
+use crate::features::tokenizing::StopwordContext;
+use crate::features::tokenizing::tokenizer::Tokenizer;
 
-pub mod svm;
 pub mod classifier;
 pub mod error;
 pub mod traits;
@@ -58,62 +60,27 @@ pub enum GdprError {
     LibLinear(#[from] LibLinearError),
     #[error(transparent)]
     CSV(#[from] csv::Error),
-    #[error("Was not able to load the gdpr!")]
-    NoGdprDataFound,
     #[error(transparent)]
     Serialisation(#[from] bincode::Error)
 }
 
-pub async fn gdpr(
-    context: &impl GdbrContext
-) -> Result<DocumentClassifier<Tf, Idf, L2R_L2LOSS_SVR>, GdprError> {
-    let cfg = context.gdpr_config();
-    async fn train_gdpr(
-        context: &impl GdbrContext,
-        path: impl AsRef<Utf8Path>
-    ) -> Result<DocumentClassifier<Tf, Idf, L2R_L2LOSS_SVR>, GdprError>{
-        let path = path.as_ref();
-        let svm = path.join("svm.csv");
-        if !svm.exists() {
-            return Err(GdprError::IO(std::io::Error::new(ErrorKind::NotFound, format!("The file {} was not found!", svm.to_string()))));
-        }
-        let tf_idf = path.join("tf_idf.txt");
-        if !tf_idf.exists() {
-            return Err(GdprError::IO(std::io::Error::new(ErrorKind::NotFound, format!("The file {} was not found!", tf_idf.to_string()))));
-        }
-        let data = BufReader::new(File::options().read(true).open(tf_idf)?);
 
-        let cfg = context.gdpr_config();
+pub async fn gdpr<C, SOLVER: IsTrainableSolver + IsSupportVectorRegressionSolver>(
+    cfg: &GdbrRecognizerConfig,
+    context: &C
+) -> Result<DocumentClassifier<Tf, Idf, SOLVER>, GdprError> where
+    C: StopwordContext,
+    Model<SOLVER>: TryFrom<Model<GenericSolver>>
+{
 
-        let tokenizer = if let Some(lang) = cfg.target_language() {
-            context.stopword_registry().get_or_load(lang).await
-        } else {
-            None
-        };
-
-
-        let tokenizer = Tokenizer::new(
-            cfg.normalize_text(),
-            tokenizer,
-            cfg.stemmer()
-        );
-
-
-
-        let vectorizer = super::text_processing::create_vectorizer(
-            data.lines().filter_map(|value| value.ok()),
-            &tokenizer,
-            TfIdf::new(cfg.tf(), cfg.idf())
-        )?;
-
-        let mut csv_reader = csv::ReaderBuilder::new();
-        csv_reader.has_headers(true);
-        let mut csv_reader = csv_reader.from_path(svm)?;
-        let header = csv_reader.headers()?;
-
+    async fn train<C, SOLVER: IsTrainableSolver + IsSupportVectorRegressionSolver>(
+        context: &C,
+        language: &Language,
+        training: &GdbrRecognizerTrainConfig
+    ) -> Result<DocumentClassifier<Tf, Idf, SOLVER>, GdprError> where C: StopwordContext {
         struct CsvProvider {
             header: StringRecord,
-            string_records_iter: StringRecordsIntoIter<File>,
+            string_records_iter: StringRecordsIntoIter<BufReader<File>>,
         }
 
         impl Iterator for CsvProvider {
@@ -125,58 +92,107 @@ pub async fn gdpr(
             }
         }
 
-        let provider = CsvProvider {
-            header: header.clone(),
-            string_records_iter: csv_reader.into_records()
-        };
-
-        let training = train(
-            vectorizer,
-            tokenizer,
-            provider
-        )?;
-
-        Ok(training)
-    }
-
-    let can_load_something = cfg.path_to_trained_classifier().is_some_and(|value| value.exists());
-
-    if !can_load_something || cfg.retrain_if_possible() {
-        if let Some(path) = cfg.path_to_train_data() {
-            match train_gdpr(context, path).await {
-                Ok(value) => {
-                    if let Some(path) = cfg.path_to_trained_classifier() {
-                        if path.exists() {
-                            std::fs::remove_file(&path)?;
-                        }
-                        let outp = File::options().create(true).write(true).open(path)?;
-                        let mut outp = BufWriter::new(outp);
-                        bincode::serialize_into(&mut outp, &value)?;
-                        outp.flush()?;
-                        drop(outp);
-                        return Ok(value);
-                    } else {
-                        log::warn!("No path to save trained svm provided!");
-                        return Ok(value);
-                    }
+        fn read_train_data(path: impl AsRef<Utf8Path>) -> Result<CsvProvider, GdprError> {
+            let mut csv_reader = csv::ReaderBuilder::new();
+            csv_reader.has_headers(true);
+            let mut csv_reader = csv_reader.from_reader(BufReader::new(File::open(path.as_ref())?));
+            let header = csv_reader.headers()?;
+            Ok(
+                CsvProvider {
+                    header: header.clone(),
+                    string_records_iter: csv_reader.into_records()
                 }
-                Err(err) => {
-                    log::error!("Failed to train the svm due to {}", err);
-                }
+            )
+        }
+
+        if !training.train_data.exists() {
+            return Err(GdprError::IO(std::io::Error::new(ErrorKind::NotFound, format!("The file {} was not found!", training.train_data.to_string()))));
+        }
+
+        let stopwords = context.stopword_registry().get_or_load(&language).await;
+        let tokenizer = Tokenizer::new(
+            language.clone(),
+            training.normalize_tokens,
+            stopwords,
+            training.stemmer.clone()
+        );
+
+        let vectorizer = match &training.tf_idf_data {
+            None => {
+                let reader = read_train_data(&training.train_data)?;
+                super::text_processing::create_vectorizer(
+                    reader.map(|value| value.text),
+                    &tokenizer,
+                    TfIdf::new(training.tf.clone(), training.idf.clone())
+                )?
             }
-        } else {
-            log::warn!("Was not able to find train data for gdpr filter!");
+            Some(path) => {
+                let data = BufReader::new(File::options().read(true).open(path)?);
+                super::text_processing::create_vectorizer(
+                    data.lines().filter_map(|value| value.ok()),
+                    &tokenizer,
+                    TfIdf::new(training.tf.clone(), training.idf.clone())
+                )?
+            }
+        };
+        let reader = read_train_data(&training.train_data)?;
+        Ok(
+            train2(
+                language,
+                vectorizer,
+                tokenizer,
+                reader
+            )?
+        )
+    }
+
+    let model = match cfg {
+        GdbrRecognizerConfig::Load {
+            trained_svm,
+            ..
+        } => {
+            let mut outp = BufReader::new(File::options().read(true).open(trained_svm)?);
+            bincode::deserialize_from(&mut outp)?
         }
-        if !can_load_something {
-            return Err(GdprError::NoGdprDataFound);
+        GdbrRecognizerConfig::Train {
+            language,
+            training,
+            ..
+        } => {
+            train(
+                context,
+                language,
+                training
+            ).await?
+        }
+        GdbrRecognizerConfig::All {
+            language,
+            training,
+            retrain_if_possible,
+            trained_svm,
+            ..
+        } => {
+            if !retrain_if_possible && trained_svm.exists() {
+                let mut outp = BufReader::new(File::options().read(true).open(trained_svm)?);
+                bincode::deserialize_from(&mut outp)?
+            } else {
+                let trained = train(
+                    context,
+                    language,
+                    training
+                ).await?;
+                let mut outp = BufWriter::new(File::options().write(true).create(true).truncate(true).open(trained_svm)?);
+                bincode::serialize_into(&mut outp, &trained_svm)?;
+                trained
+            }
+        }
+    };
+
+    if let Some(test_data) = cfg.test_data() {
+        if test_data.exists() {
+            todo!()
         }
     }
 
-    if let Some(path) = cfg.path_to_trained_classifier() {
-        let mut file = BufReader::new(File::options().read(true).open(path)?);
-        Ok(bincode::deserialize_from(&mut file)?)
-    } else {
-        log::warn!("Was not able to find train data for gdpr filter!");
-        Err(GdprError::NoGdprDataFound)
-    }
+    Ok(model)
 }

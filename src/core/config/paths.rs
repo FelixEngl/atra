@@ -13,7 +13,9 @@
 //limitations under the License.
 
 use camino::{Utf8Path, Utf8PathBuf};
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use crate::features::tokenizing::StopwordRegistryConfig;
 
 /// Config of the session, basically paths etc.
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
@@ -23,7 +25,8 @@ pub struct PathsConfig {
     #[serde(default = "_default_root_folder")]
     pub root: Utf8PathBuf,
     pub directories: Directories,
-    pub files: Files
+    pub files: Files,
+    stopword_registry: StopwordRegistryConfig
 }
 
 fn _default_root_folder() -> Utf8PathBuf { "./atra_data".parse::<Utf8PathBuf>().unwrap() }
@@ -34,17 +37,19 @@ impl Default for PathsConfig {
         Self {
             root: _default_root_folder(),
             files: Files::default(),
-            directories: Directories::default()
+            directories: Directories::default(),
+            stopword_registry: StopwordRegistryConfig::default()
         }
     }
 }
 
 impl PathsConfig {
-    pub fn new(root: impl AsRef<Utf8Path>, directories: Directories, files: Files) -> Self {
+    pub fn new(root: impl AsRef<Utf8Path>, directories: Directories, files: Files, stopword_registry: StopwordRegistryConfig) -> Self {
         Self {
             root: root.as_ref().to_path_buf(),
             directories,
-            files
+            files,
+            stopword_registry
         }
     }
 }
@@ -83,15 +88,11 @@ impl PathsConfig {
         )
     }
 
-    pub fn dirs_stopwords(&self) -> Option<Vec<Utf8PathBuf>> {
-        Some(
-            self.directories.stopword_dirs?.iter().map(
-                |value|
-                self.root.join(value)
-            ).collect()
-        )
+    pub fn stopword_registry_config(&self) -> StopwordRegistryConfig {
+        StopwordRegistryConfig {
+            registries: self.stopword_registry.registries.iter().map(|value| value.clone().set_root_if_necessary(&self.root)).collect_vec()
+        }
     }
-
 }
 
 
@@ -104,8 +105,6 @@ pub struct Directories {
     /// Path to the big files directory
     #[serde(default = "_default_big_files_dir")]
     pub big_files: Utf8PathBuf,
-    /// Path to the dirs with stopword lists.
-    pub stopword_dirs: Option<Vec<Utf8PathBuf>>
 }
 
 impl Directories {
@@ -113,7 +112,6 @@ impl Directories {
         Self {
             database: database.as_ref().to_path_buf(),
             big_files: big_files.as_ref().to_path_buf(),
-            stopword_dirs: None
         }
     }
 }
@@ -123,7 +121,6 @@ impl Default for Directories {
         Self {
             database: _default_database_dir(),
             big_files: _default_big_files_dir(),
-            stopword_dirs: None
         }
     }
 }
@@ -172,11 +169,19 @@ fn _default_web_graph_file() -> Utf8PathBuf { "./web_graph.ttl".parse::<Utf8Path
 
 #[cfg(test)]
 mod test {
+    use camino::Utf8PathBuf;
     use crate::core::config::paths::PathsConfig;
 
     #[test]
     fn can_make_init(){
         let config = PathsConfig::default();
         println!("{}", config.dir_big_files())
+    }
+
+    #[test]
+    fn paths_arw_always_correct(){
+        let mut config = PathsConfig::default();
+        config.directories.big_files = Utf8PathBuf::from("C:\\e\\test");
+        assert_eq!(config.dir_big_files(), Utf8PathBuf::from("C:\\e\\test"));
     }
 }

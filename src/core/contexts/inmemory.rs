@@ -40,7 +40,7 @@ use crate::core::contexts::errors::{LinkHandlingError, RecoveryError};
 use crate::core::origin::AtraOriginProvider;
 use crate::core::origin::managers::InMemoryOriginManager;
 use crate::core::url::atra_uri::AtraUri;
-use crate::features::tokenizing::stopwords::StopWordListRegistry;
+use crate::features::tokenizing::stopwords::StopWordRegistry;
 
 #[derive(Debug)]
 pub struct InMemoryContext {
@@ -56,7 +56,7 @@ pub struct InMemoryContext {
     started_at: OffsetDateTime,
     links_queue: InMemoryLinkQueue,
     link_net_manager: InMemoryLinkNetManager,
-    stop_word_list_registry: StopWordListRegistry
+    stop_word_registry: StopWordRegistry
 }
 
 
@@ -72,7 +72,7 @@ impl InMemoryContext {
             state: tokio::sync::RwLock::new(HashMap::new()),
             links_queue: InMemoryLinkQueue::default(),
             data_urls: Default::default(),
-            stop_word_list_registry: StopWordListRegistry::new(configs.use_default_stopwords()),
+            stop_word_registry: StopWordRegistry::default(),
             configs,
             host_manager: Default::default(),
             started_at: OffsetDateTime::now_utc(),
@@ -247,8 +247,8 @@ impl super::Context for InMemoryContext {
 }
 
 impl crate::features::tokenizing::StopwordContext for InMemoryContext {
-    fn stopword_registry(&self) -> &StopWordListRegistry {
-        &self.stop_word_list_registry
+    fn stopword_registry(&self) -> &StopWordRegistry {
+        &self.stop_word_registry
     }
 }
 

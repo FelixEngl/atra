@@ -28,7 +28,7 @@ use crate::features::tokenizing::stopwords::{ContainsKind, StopWordList};
 /// A primitive tokenizer.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Tokenizer {
-    language: Option<Language>,
+    language: Language,
     normalize: bool,
     stop_words: Option<Arc<StopWordList>>,
     stemmer: Option<rust_stemmers::Algorithm>,
@@ -37,7 +37,7 @@ pub struct Tokenizer {
 impl Tokenizer {
 
     pub fn new(
-        language: Option<Language>,
+        language: Language,
         normalize: bool,
         stop_words: Option<Arc<StopWordList>>,
         stemmer: Option<rust_stemmers::Algorithm>
@@ -83,17 +83,17 @@ impl Tokenizer {
 #[cfg(test)]
 mod test {
     use isolang::Language;
-    use crate::features::tokenizing::stopwords::{DirStopWordListRepository, StopWordListRegistry};
+    use crate::features::tokenizing::stopwords::{StopWordRegistry, StopWordRepository};
     use crate::features::tokenizing::tokenizer::Tokenizer;
 
     #[test]
     fn can_exec(){
-        let mut registry = StopWordListRegistry::default();
-        registry.register(DirStopWordListRepository::new("./data/stopwords/iso").expect("Should exist!"));
+        let mut registry = StopWordRegistry::default();
+        registry.register(StopWordRepository::IsoDefault);
         let tokenizer = Tokenizer::new(
-            None,
+            Language::Deu,
             true,
-            registry.get_or_load_sync(Language::from_639_1("de").unwrap()),
+            registry.get_or_load_sync(&Language::from_639_1("de").unwrap()),
             Some(rust_stemmers::Algorithm::German)
         );
 

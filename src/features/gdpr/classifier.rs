@@ -1,17 +1,19 @@
-use liblinear::model::traits::ModelBase;
-use liblinear::PredictionInput;
+use isolang::Language;
+use liblinear::model::traits::{ModelBase, TrainableModel};
+use liblinear::{Parameters, PredictionInput, TrainingInput};
 use liblinear::solver::{L2R_L2LOSS_SVR};
-use liblinear::solver::traits::IsLogisticRegressionSolver;
+use liblinear::solver::traits::{IsLogisticRegressionSolver, IsSupportVectorRegressionSolver};
 use serde::{Deserialize, Serialize};
 use crate::features::gdpr::error::LibLinearError;
 use crate::features::gdpr::TrainModelEntry;
-use crate::features::text_processing::text_preprocessor::Tokenizer;
 use crate::features::text_processing::tf_idf::{IdfAlgorithm, TfAlgorithm};
 use crate::features::text_processing::vectorizer::{DocumentVectorizer};
 use liblinear::solver::traits::IsTrainableSolver;
 use serde::de::DeserializeOwned;
 use liblinear::Model;
+use liblinear::parameter::traits::SetRegressionLossSensitivity;
 use liblinear::solver::GenericSolver;
+use scraper::Html;
 use crate::features::tokenizing::tokenizer::Tokenizer;
 
 #[derive(Serialize, Deserialize)]
@@ -20,8 +22,9 @@ use crate::features::tokenizing::tokenizer::Tokenizer;
     deserialize = "Tf: DeserializeOwned, Idf: DeserializeOwned, SOLVER: IsTrainableSolver, Model<SOLVER>: TryFrom<Model<GenericSolver>>"
 ))]
 pub struct DocumentClassifier<Tf, Idf, SOLVER> {
+    language: Language,
     #[serde(with = "model_serializer")]
-    svm: liblinear::Model<SOLVER>,
+    svm: Model<SOLVER>,
     vectorizer: DocumentVectorizer<String, Tf, Idf>,
     tokenizer: Tokenizer
 }
@@ -37,7 +40,7 @@ mod model_serializer {
     use serde::de::Error as SError;
     use serde::ser::Error as DError;
 
-    pub fn serialize<S, SOLVER: IsTrainableSolver>(model: &liblinear::Model<SOLVER>, ser: S) -> Result<S::Ok, S::Error> where S: Serializer {
+    pub fn serialize<S, SOLVER: IsTrainableSolver>(model: &Model<SOLVER>, ser: S) -> Result<S::Ok, S::Error> where S: Serializer {
         let file = tempdir().map_err(S::Error::custom)?;
         let model_path = file.path().join("model.tmp");
         let model_path = model_path.canonicalize_utf8().map_err(S::Error::custom)?;
@@ -65,14 +68,15 @@ mod model_serializer {
 }
 
 impl<Tf, Idf, SOLVER> DocumentClassifier<Tf, Idf, SOLVER> {
-    pub fn new(svm: Model<SOLVER>, vectorizer: DocumentVectorizer<String, Tf, Idf>, tokenizer: Tokenizer) -> Self {
-        Self { svm, vectorizer, tokenizer }
+    pub fn new(language: Language, svm: Model<SOLVER>, vectorizer: DocumentVectorizer<String, Tf, Idf>, tokenizer: Tokenizer) -> Self {
+        Self { language, svm, vectorizer, tokenizer }
     }
 }
 
-pub fn train<Tf: TfAlgorithm, Idf: IdfAlgorithm, I: IntoIterator<Item=TrainModelEntry>>(
+pub fn train<Tf: TfAlgorithm, Idf: IdfAlgorithm, I: IntoIterator<Item=TrainModelEntry>, SOLVER>(
+    language: &Language,
     vectorizer: DocumentVectorizer<String, Tf, Idf>, tokenizer: Tokenizer, data: I
-) -> Result<DocumentClassifier<Tf, Idf, L2R_L2LOSS_SVR>, LibLinearError> {
+) -> Result<DocumentClassifier<Tf, Idf, SOLVER>, LibLinearError> where SOLVER: IsTrainableSolver + IsSupportVectorRegressionSolver {
 
     let mut labels = Vec::new();
     let mut features = Vec::new();
@@ -88,9 +92,21 @@ pub fn train<Tf: TfAlgorithm, Idf: IdfAlgorithm, I: IntoIterator<Item=TrainModel
 
     log::info!("Train SVM with {} elements.", labels.len());
 
+    let data = TrainingInput::from_sparse_features(
+        labels,
+        features
+    )?;
+
+    let mut params = Parameters::<SOLVER>::default();
+    params
+        .regression_loss_sensitivity(0.1)
+        .stopping_tolerance(0.0003)
+        .constraints_violation_cost(10.0);
+
     Ok(
         DocumentClassifier::new(
-            super::svm::train(labels, features)?,
+            language.clone(),
+            Model::train(&data, &params)?,
             vectorizer,
             tokenizer
         )
@@ -112,10 +128,26 @@ impl<Tf, Idf, SOLVER> DocumentClassifier<Tf, Idf, SOLVER> where Tf: TfAlgorithm,
 }
 
 impl<Tf, Idf, SOLVER> DocumentClassifier<Tf, Idf, SOLVER> where Tf: TfAlgorithm, Idf: IdfAlgorithm, SOLVER: IsLogisticRegressionSolver {
-    pub fn predict_dsgvo(&self, doc: impl AsRef<str>) -> Result<f64, LibLinearError> {
+    pub fn predict(&self, doc: impl AsRef<str>) -> Result<f64, LibLinearError> {
         let doc = self.vectorizer
             .vectorize_document(self.tokenizer.tokenize(doc.as_ref()), true)
             .sparse_features();
         Ok(self.svm.predict(&PredictionInput::from_sparse_features(doc)?)?)
+    }
+
+    fn move_up_dom_until() {
+
+    }
+
+    fn identify_in_subtree(&self, doc: impl AsRef<str>) {
+
+        let html = Html::parse_document(doc.as_ref());
+        let element = html.root_element();
+        element.inner_html()
+        for elem in element.children() {
+
+            element.traverse()
+            elem.children()
+        }
     }
 }

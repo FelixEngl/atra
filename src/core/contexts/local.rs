@@ -39,7 +39,7 @@ use crate::core::queue::file::RawAgingQueueFile;
 use crate::core::shutdown::UnsafeShutdownGuard;
 use crate::core::url::queue::{UrlQueue, UrlQueueElement, UrlQueueWrapper};
 use crate::core::UrlWithDepth;
-use crate::features::tokenizing::stopwords::StopWordListRegistry;
+use crate::features::tokenizing::stopwords::StopWordRegistry;
 use crate::util::RuntimeContext;
 
 
@@ -60,7 +60,7 @@ pub struct LocalContext {
     // Internal states
     last_scan_over_link_states: RwLock<Option<(bool, OffsetDateTime)>>,
     ct_discovered_websites: AtomicUsize,
-    stop_word_list_registry: StopWordListRegistry,
+    stop_word_registry: StopWordRegistry,
     _graceful_shutdown_guard: UnsafeShutdownGuard
 }
 
@@ -94,7 +94,7 @@ impl LocalContext {
             &runtime_context
         )?;
 
-        let stop_word_list_registry = StopWordListRegistry::initialize(&configs)?;
+        let stop_word_registry = StopWordRegistry::initialize(&configs)?;
 
         let url_queue = UrlQueueWrapper::open(configs.paths().file_queue())?;
         let blacklist = BlacklistManager::open(
@@ -117,7 +117,7 @@ impl LocalContext {
                 last_scan_over_link_states: RwLock::new(None),
                 ct_discovered_websites: AtomicUsize::new(0),
                 links_net_manager: Arc::new(web_graph_manager),
-                stop_word_list_registry,
+                stop_word_registry,
                 _graceful_shutdown_guard: runtime_context.shutdown_guard().clone()
             }
         )
@@ -131,8 +131,8 @@ impl LocalContext {
 }
 
 impl crate::features::tokenizing::StopwordContext for LocalContext {
-    fn stopword_registry(&self) -> &StopWordListRegistry {
-        &self.stop_word_list_registry
+    fn stopword_registry(&self) -> &StopWordRegistry {
+        &self.stop_word_registry
     }
 }
 
