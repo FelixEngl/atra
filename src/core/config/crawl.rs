@@ -27,6 +27,7 @@ use strum::EnumString;
 use thiserror::Error;
 use crate::core::extraction::extractor::{Extractor};
 use crate::core::UrlWithDepth;
+use crate::features::tokenizing::StopwordRegistryConfig;
 
 /// The general crawling settings for a single
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
@@ -102,7 +103,8 @@ pub struct CrawlConfig {
     /// If this is set all stopwords inclide the default stopwords known to atra (drfault: true)
     pub use_default_stopwords: bool,
 
-
+    /// Used to configure the stopword registry if needed.
+    pub stopword_registry: Option<StopwordRegistryConfig>,
 
     #[cfg(feature = "chrome")]
     /// The settings for a chrome instance
@@ -139,6 +141,7 @@ impl Default for CrawlConfig {
             link_extractors: Extractor::default(),
             decode_big_files_up_to: None,
             use_default_stopwords: true,
+            stopword_registry: None,
             #[cfg(feature = "chrome")]
             chrome_settings: Default::default()
         }

@@ -19,3 +19,4 @@ pub mod templating;
 pub mod file_owner;
 pub mod errors;
 pub mod serial;
+pub mod root;

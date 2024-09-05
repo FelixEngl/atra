@@ -18,9 +18,7 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use unicode_normalization::UnicodeNormalization;
 
-use crate::core::config::Configs;
-
-
+use crate::features::tokenizing::StopwordRegistryConfig;
 
 /// A registry for stopwords.
 /// May have multiple repositories.
@@ -37,9 +35,9 @@ unsafe impl Send for StopWordRegistry {}
 unsafe impl Sync for StopWordRegistry {}
 
 impl StopWordRegistry {
-    pub fn initialize(cfg: &Configs) -> Result<Self, io::Error>  {
+    pub fn initialize(cfg: &StopwordRegistryConfig) -> Result<Self, io::Error>  {
         let mut new = Self::default();
-        new.repositories = cfg.paths.stopword_registry_config().registries;
+        new.repositories = cfg.to_vec();
         Ok(new)
     }
 
@@ -54,7 +52,7 @@ impl StopWordRegistry {
                 collection.extend(found)
             }
         }
-        return (!collection.is_empty()).then_some(collection);
+        (!collection.is_empty()).then_some(collection)
     }
 
     #[cfg(test)]

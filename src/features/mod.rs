@@ -12,6 +12,11 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-pub mod gdpr;
+pub mod svm;
 pub mod text_processing;
 pub mod tokenizing;
+pub mod csv;
+pub mod gdbr_identifiert;
+pub mod html_tags;
+pub mod scraper_ext;
+mod simple_test_data;

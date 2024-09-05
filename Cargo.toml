@@ -122,7 +122,8 @@ anyhow = "1.0"
 
 # Scraping
 scraper = "0.20"
-#html5ever = "0.28"
+html5ever = "0"
+ego-tree = "0"
 
 texting_robots = "0.2"
 sitemap = "0.4"
@@ -157,13 +158,8 @@ csv = { version = "1.3" }
 # Languages
 whatlang = "0.16"
 
-# GDPR
-## SVM
-liblinear = { path= "external/liblinear/crates/liblinear" }
-## Errors of SVM...
-#failure = { version = "0.1", optional = true }
-
-#suffix = { version = "1.3", optional = true }
+# SVM
+liblinear = { path= "external/liblinear/crates/liblinear", features = ["serde"] }
 
 # TOR
 # libtor-sys = "47.13.0"

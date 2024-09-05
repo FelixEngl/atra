@@ -1,6 +1,7 @@
 use std::collections::{HashMap};
 use std::collections::hash_map::Entry;
-use std::error::Error;
+use std::error::Error as StdError;
+use std::fmt::Debug;
 use std::hash::Hash;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -71,7 +72,7 @@ impl<Tf, Idf> Copy for TfIdf<Tf, Idf> where Tf: Copy, Idf: Copy{}
 
 /// Trait for IDF Algorithms
 pub trait IdfAlgorithm {
-    type Error: Error;
+    type Error: StdError;
 
     /// Calculates the IDF value for a single word based on the provided statistics.
     ///

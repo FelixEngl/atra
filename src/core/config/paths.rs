@@ -15,6 +15,7 @@
 use camino::{Utf8Path, Utf8PathBuf};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use crate::core::io::root::RootSetter;
 use crate::features::tokenizing::StopwordRegistryConfig;
 
 /// Config of the session, basically paths etc.
@@ -25,8 +26,7 @@ pub struct PathsConfig {
     #[serde(default = "_default_root_folder")]
     pub root: Utf8PathBuf,
     pub directories: Directories,
-    pub files: Files,
-    stopword_registry: StopwordRegistryConfig
+    pub files: Files
 }
 
 fn _default_root_folder() -> Utf8PathBuf { "./atra_data".parse::<Utf8PathBuf>().unwrap() }
@@ -38,7 +38,6 @@ impl Default for PathsConfig {
             root: _default_root_folder(),
             files: Files::default(),
             directories: Directories::default(),
-            stopword_registry: StopwordRegistryConfig::default()
         }
     }
 }
@@ -49,7 +48,6 @@ impl PathsConfig {
             root: root.as_ref().to_path_buf(),
             directories,
             files,
-            stopword_registry
         }
     }
 }
@@ -71,6 +69,12 @@ macro_rules! path_constructors {
     };
 }
 
+impl RootSetter for PathsConfig {
+    fn set_root_if_possible(&self, path: impl AsRef<Utf8Path>) -> Option<Utf8PathBuf> {
+        Some(self.root.join(path))
+    }
+}
+
 impl PathsConfig {
 
     pub fn root_path(&self) -> &Utf8Path  {
@@ -86,12 +90,6 @@ impl PathsConfig {
             root => file_web_graph = files.web_graph;
             root => dir_big_files = directories.big_files;
         )
-    }
-
-    pub fn stopword_registry_config(&self) -> StopwordRegistryConfig {
-        StopwordRegistryConfig {
-            registries: self.stopword_registry.registries.iter().map(|value| value.clone().set_root_if_necessary(&self.root)).collect_vec()
-        }
     }
 }
 

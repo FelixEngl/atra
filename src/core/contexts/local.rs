@@ -60,7 +60,7 @@ pub struct LocalContext {
     // Internal states
     last_scan_over_link_states: RwLock<Option<(bool, OffsetDateTime)>>,
     ct_discovered_websites: AtomicUsize,
-    stop_word_registry: StopWordRegistry,
+    stop_word_registry: Option<StopWordRegistry>,
     _graceful_shutdown_guard: UnsafeShutdownGuard
 }
 
@@ -94,7 +94,9 @@ impl LocalContext {
             &runtime_context
         )?;
 
-        let stop_word_registry = StopWordRegistry::initialize(&configs)?;
+
+
+        let stop_word_registry = configs.crawl.stopword_registry.as_ref().map(StopWordRegistry::initialize).transpose()?;
 
         let url_queue = UrlQueueWrapper::open(configs.paths().file_queue())?;
         let blacklist = BlacklistManager::open(
@@ -131,8 +133,8 @@ impl LocalContext {
 }
 
 impl crate::features::tokenizing::StopwordContext for LocalContext {
-    fn stopword_registry(&self) -> &StopWordRegistry {
-        &self.stop_word_registry
+    fn stopword_registry(&self) -> Option<&StopWordRegistry> {
+        self.stop_word_registry.as_ref()
     }
 }
 

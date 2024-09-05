@@ -1,7 +1,7 @@
 pub mod stopwords;
 pub mod tokenizer;
 
-use std::collections::HashMap;
+use std::ops::Deref;
 use isolang::Language;
 use rust_stemmers::Algorithm;
 use serde::{Deserialize, Serialize};
@@ -12,13 +12,21 @@ use crate::features::tokenizing::stopwords::StopWordRegistry;
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, Default)]
 #[serde(transparent)]
 pub struct StopwordRegistryConfig {
-    pub registries: Vec<StopWordRepository>
+    pub(super) registries: Vec<StopWordRepository>
 }
 
 impl PartialEq for StopwordRegistryConfig {
     fn eq(&self, other: &Self) -> bool {
         self.registries.len() == other.registries.len()
             && self.registries.iter().all(|value| other.registries.contains(value))
+    }
+}
+
+impl Deref for StopwordRegistryConfig {
+    type Target = [StopWordRepository];
+
+    fn deref(&self) -> &Self::Target {
+        &self.registries
     }
 }
 
@@ -34,6 +42,6 @@ pub struct TokenizerConfig {
 
 /// The context needed for tokenizing to work
 pub trait StopwordContext {
-    fn stopword_registry(&self) -> &StopWordRegistry;
+    fn stopword_registry(&self) -> Option<&StopWordRegistry>;
 }
 

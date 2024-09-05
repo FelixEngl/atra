@@ -17,31 +17,6 @@ pub enum StopWordRepository {
     File { with_iso_default: bool, language: Language, file: Utf8PathBuf },
 }
 
-impl StopWordRepository {
-    pub fn set_root_if_necessary(self, root: impl AsRef<Utf8Path>) -> Self {
-        match self {
-            StopWordRepository::IsoDefault => StopWordRepository::IsoDefault,
-            StopWordRepository::DirRepo { dir, with_iso_default } => {
-                let dir = if dir.is_relative() {
-                    root.as_ref().join(&dir)
-                } else {
-                    dir
-                };
-                StopWordRepository::DirRepo {dir, with_iso_default}
-
-            }
-            StopWordRepository::File { file, with_iso_default, language } => {
-                let dir = if file.is_relative() {
-                    root.as_ref().join(&file)
-                } else {
-                    file
-                };
-                StopWordRepository::DirRepo {dir, with_iso_default}
-            }
-        }
-    }
-}
-
 #[derive(Debug, Error)]
 #[error("Was not able to propery convert the definition to a recognized StopWordRepository definition: {0:?}")]
 #[repr(transparent)]

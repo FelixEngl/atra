@@ -247,8 +247,8 @@ impl super::Context for InMemoryContext {
 }
 
 impl crate::features::tokenizing::StopwordContext for InMemoryContext {
-    fn stopword_registry(&self) -> &StopWordRegistry {
-        &self.stop_word_registry
+    fn stopword_registry(&self) -> Option<&StopWordRegistry> {
+        Some(&self.stop_word_registry)
     }
 }
 
