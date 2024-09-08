@@ -55,8 +55,8 @@ impl Extractor {
                         Ok(value) => {
                             log::debug!("Extracted {value} links with {extractor:?}.");
                         }
-                        Err(_) => {
-                            log::error!("Failed the extractor {:?}", extractor);
+                        Err(err) => {
+                            log::error!("Failed the extractor with {:?}", err);
                         }
                     }
                 } else {

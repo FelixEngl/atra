@@ -13,7 +13,7 @@
 //limitations under the License.
 
 use std::collections::{HashMap};
-use std::path::Path;
+use std::path::{Path};
 use std::fs::File;
 use std::io::{BufWriter, Read, Write};
 use isolang::Language;

@@ -19,4 +19,3 @@ pub mod csv;
 pub mod gdbr_identifiert;
 pub mod html_tags;
 pub mod scraper_ext;
-mod simple_test_data;

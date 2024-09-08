@@ -205,6 +205,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 name = "atra"
 version = "0.1.0"
 dependencies = [
+ "aho-corasick",
  "anyhow",
  "async-trait",
  "bincode",
@@ -261,6 +262,7 @@ dependencies = [
  "rio_turtle",
  "rocksdb",
  "rust-stemmers",
+ "ryu",
  "scopeguard",
  "scraper",
  "sealed",
@@ -4392,6 +4394,7 @@ checksum = "471d1c1645d361eb782a1650b1786a8fb58dd625e681a04c09f5ff7c8764a7b0"
 dependencies = [
  "hashbrown 0.14.5",
  "once_cell",
+ "serde",
 ]
 
 [[package]]

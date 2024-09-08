@@ -12,6 +12,7 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+use std::io::Read;
 use std::path::Path;
 use encoding_rs::Encoding;
 
@@ -87,6 +88,7 @@ impl<A, B> DecodedData<A, B> where A: AsRef<str>, B: AsRef<Path> {
             DecodedData::None => {false}
         }
     }
+
 
     pub fn map_in_memory<R: AsRef<str>, F>(self, block: F) -> DecodedData<R, B> where F: FnOnce(A) -> R {
         match self {

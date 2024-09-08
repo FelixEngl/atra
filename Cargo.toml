@@ -68,12 +68,18 @@ rand = "0.8"
 itertools = "0.13"
 url = { version = "2.5", features = ["serde"] }
 const_format = "0"
-deranged = { version = "0.3", features = ["serde"] }
-float-cmp = "0.9.0"
-#aho-corasick = "1"
+#libm = "0.2"
 
-# Static stuff
-#once_cell = "1.19"
+# Special Types
+## Ranged Integers
+deranged = { version = "0.3", features = ["serde"] }
+
+# Pattern Matching
+memchr = "2"
+aho-corasick = "1"
+
+# Float
+float-cmp = "0.9.0"
 
 # Memory stuff
 smallvec = { version = "1.13", features = ["serde", "const_new", "const_generics", "write", "union"] }
@@ -97,7 +103,6 @@ num_enum = "0.7"
 enum-iterator = "2.0"
 
 # Bits and bytes
-memchr = "2"
 ubyte = "0.10"
 byteorder = "1"
 
@@ -120,26 +125,34 @@ anyhow = "1.0"
 # Cluster
 # https://crates.io/crates/paxakos
 
-# Scraping
-scraper = "0.20"
+# HTML Parsing
 html5ever = "0"
 ego-tree = "0"
 
+# Scraping
+scraper = "0.20"
 texting_robots = "0.2"
 sitemap = "0.4"
 linkify = "0.10"
 ress = "0"
+#mupdf = { path= "external/mupdf" }
+#link_scraper = { version = "0.1", features = ["all"] }
+psl = "2"
+
+# Type System
 mime = "0.3"
+file-format = { git = "https://github.com/FelixEngl/file-format.git", branch = "main", features = ["reader", "serde", "extended-enums", "from-all"] }
+
+
+# String Encodings
 encoding_rs = { version = "0.8", features = ["serde"] }
 chardetng = "0.1"
-#publicsuffix = "2.2"
-psl = "2"
-file-format = { git = "https://github.com/FelixEngl/file-format.git", branch = "main", features = ["reader", "serde", "extended-enums", "from-all"] }
 
 
 # Parsing
 nom = "7"
 unescaper = "0.1"
+ryu = "1.0"
 
 # Archive
 tar = "0.4"
@@ -156,7 +169,7 @@ isolang = { version = "2.4", features = ["serde"] }
 csv = { version = "1.3" }
 
 # Languages
-whatlang = "0.16"
+whatlang = { version = "0.16", features = ["serde"] }
 
 # SVM
 liblinear = { path= "external/liblinear/crates/liblinear", features = ["serde"] }
@@ -171,12 +184,17 @@ mockall = "0.12"
 lipsum = "0.9"
 
 
+[patch.crates-io]
+#mupdf-sys = { path= "external/mupdf/mupdf-sys" }
+#mupdf = { path= "external/mupdf" }
+
 [build-dependencies]
 #file-format = { git = "https://github.com/FelixEngl/file-format.git", branch = "main", features = ["reader", "extended-enums"] }
-paste = "1.0"
+#paste = "1.0"
 isolang = "2.4"
 tinyjson = "2.5"
-flate2 = "1.0"
+#flate2 = "1.0"
+#cc = "1.1"
 #curl = "0.4"
 #serde = "1.0"
 #serde_json = "1.0"

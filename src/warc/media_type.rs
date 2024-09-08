@@ -21,6 +21,8 @@ use std::str;
 
 use compact_str::{CompactString, ToCompactString};
 use const_format::concatcp;
+use itertools::Itertools;
+use mime::{Mime, Params};
 use nom::{AsChar, InputTakeAtPosition, IResult};
 use nom::branch::alt;
 use nom::bytes::complete::take_till;
@@ -30,7 +32,7 @@ use nom::combinator::{map, map_res};
 use nom::error::{ErrorKind, FromExternalError, ParseError, VerboseError};
 use nom::multi::many_till;
 use nom::sequence::{delimited, pair, preceded, separated_pair};
-
+use crate::core::format::mime::MimeType;
 use crate::nom_ext::simple_operators::is_empty_or_fail;
 
 
@@ -68,6 +70,15 @@ impl MediaType {
             parameters
         }
     }
+
+    pub fn from_mime(mime: &Mime) -> Self {
+        let params = Parameters::from_params(mime.params());
+        Self {
+            type_: mime.type_().to_compact_string(),
+            sub_type: mime.subtype().to_compact_string(),
+            parameters: (!params.is_empty()).then_some(params)
+        }
+    }
 }
 
 impl Display for MediaType {
@@ -80,10 +91,24 @@ impl Display for MediaType {
     }
 }
 
+
 /// A vec of parameters
 #[derive(Debug, Clone, Eq)]
 #[repr(transparent)]
 pub struct Parameters(Vec<Parameter>);
+
+impl Parameters {
+    pub fn from_params(params: Params) -> Self {
+        Self(
+            params
+                .map(
+                    |(k, v)|
+                        Parameter::new(k.to_compact_string(), v.to_compact_string())
+                )
+                .collect_vec()
+        )
+    }
+}
 
 impl Display for Parameters {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -153,6 +178,12 @@ impl BorrowMut<Vec<Parameter>> for Parameters {
 pub struct Parameter  {
     name: CompactString,
     value: CompactString
+}
+
+impl Parameter {
+    pub fn new(name: CompactString, value: CompactString) -> Self {
+        Self { name, value }
+    }
 }
 
 impl Display for Parameter {

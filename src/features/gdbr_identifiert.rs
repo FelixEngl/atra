@@ -1,11 +1,14 @@
 use std::cell::Cell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Entry;
 use std::hash::{Hash, Hasher};
+use std::iter::Filter;
 use std::ops::Deref;
 use std::rc::Rc;
+use std::sync::Arc;
 use ego_tree::iter::{Edge, Traverse};
 use ego_tree::NodeRef;
+use isolang::Language;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
@@ -13,10 +16,94 @@ use liblinear::solver::traits::{IsTrainableSolver, Solver};
 use liblinear::Model;
 use liblinear::solver::{GenericSolver, L2R_L2LOSS_SVR};
 use scraper::{Html, Node};
+use tokio::sync::RwLock;
 use crate::features::html_tags::{HtmlTag, HtmlTagCategory};
 use crate::features::scraper_ext::Text;
 use crate::features::svm::classifier::DocumentClassifier;
 use crate::features::text_processing::tf_idf::{Idf, IdfAlgorithm, Tf, TfAlgorithm};
+
+
+
+#[derive(Debug, Clone)]
+pub struct GdbrIdentifierRegistry<TF, IDF, SOLVER: Solver> {
+    default: Option<GdbrIdentifier<TF, IDF, SOLVER>>,
+    by_language: Option<HashMap<Language, LazyLanguageBoundGdbrIdentifier<TF, IDF, SOLVER>>>
+}
+
+impl<TF, IDF, SOLVER: Solver> GdbrIdentifierRegistry<TF, IDF, SOLVER> {
+    pub fn get_by_language(&self, language: &whatlang::Info) -> Option<&GdbrIdentifier<TF, IDF, SOLVER>> {
+        if let Some(ref by_language) = self.by_language {
+            Language::from_639_3(language.lang().code())
+            if let Some(found) = by_language.get(&) {
+
+            }
+        }
+    }
+}
+
+struct LazyLanguageBoundGdbrIdentifier<TF, IDF, SOLVER: Solver> {
+    min_confidence: Option<f64>,
+    identifier: std::sync::LazyLock<GdbrIdentifier<TF, IDF, SOLVER>>
+}
+
+impl<TF, IDF, SOLVER: Solver> LazyLanguageBoundGdbrIdentifier<TF, IDF, SOLVER> {
+    pub fn get_by_min_confidence(&self, confidence: f64) -> Option<&GdbrIdentifier<TF, IDF, SOLVER>> {
+        if let Some(min_cofidence) = self.min_confidence {
+            if min_cofidence <= confidence {
+                Some(&self.identifier)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn get(&self) -> &GdbrIdentifier<TF, IDF, SOLVER> {
+        &self.identifier
+    }
+}
+
+
+
+
+
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+pub enum FilterMode {
+    OnScore,
+    OnMaxScore,
+    OnAverageScore,
+}
+
+impl FilterMode {
+    pub fn is_above_threshold<'a, T>(&self, score: &ScoredNodeRef<'a, T>, threshold: f64) -> bool {
+        match self {
+            FilterMode::OnScore => {
+                score.score() >= threshold
+            }
+            FilterMode::OnMaxScore => {
+                score.max_score() >= threshold
+            }
+            FilterMode::OnAverageScore => {
+                score.avg_score() >= threshold
+            }
+        }
+    }
+
+    pub fn find_all_above<'a, T: 'a, I: IntoIterator<Item=ScoredNodeRef<'a, T>>>(&self, scores: I, threshold: f64) -> Vec<I::Item> {
+        match self {
+            FilterMode::OnScore => {
+                scores.into_iter().filter(|value: &ScoredNodeRef<'a, T>| value.score() >= threshold).collect_vec()
+            }
+            FilterMode::OnMaxScore => {
+                scores.into_iter().filter(|value: &ScoredNodeRef<'a, T>| value.max_score() >= threshold).collect_vec()
+            }
+            FilterMode::OnAverageScore => {
+                scores.into_iter().filter(|value: &ScoredNodeRef<'a, T>| value.avg_score() >= threshold).collect_vec()
+            }
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(bound(
@@ -25,14 +112,17 @@ use crate::features::text_processing::tf_idf::{Idf, IdfAlgorithm, Tf, TfAlgorith
 ))]
 pub struct GdbrIdentifier<TF, IDF, SOLVER> where SOLVER: Solver {
     solver: DocumentClassifier<TF, IDF, SOLVER>,
-    element_threshold: f64,
-    gdbr_threshold: f64,
-    filter_on_max_score: bool
+    threshold: f64,
+    filter_threshold: f64,
+    filter_by: FilterMode
 }
 
+unsafe impl<TF, IDF, SOLVER> Sync for GdbrIdentifier<TF, IDF, SOLVER> where SOLVER: Solver{}
+unsafe impl<TF, IDF, SOLVER> Send for GdbrIdentifier<TF, IDF, SOLVER> where SOLVER: Solver{}
+
 impl<TF, IDF, SOLVER> GdbrIdentifier<TF, IDF, SOLVER> where SOLVER: Solver {
-    pub fn new(solver: DocumentClassifier<TF, IDF, SOLVER>, element_threshold: f64, gdbr_threshold: f64, filter_on_max_score: bool) -> Self {
-        Self { solver, element_threshold, gdbr_threshold, filter_on_max_score }
+    pub fn new(solver: DocumentClassifier<TF, IDF, SOLVER>, threshold: f64, filter_score: f64, filter_by: FilterMode) -> Self {
+        Self { solver, threshold, filter_threshold: filter_score, filter_by }
     }
 }
 
@@ -61,6 +151,11 @@ impl<'a, T>  ScoredNodeRef<'a, T> {
 
     pub fn max_score(&self) -> f64 {
         self.inner.1.get()
+    }
+
+    #[inline(always)]
+    pub fn avg_score(&self) -> f64 {
+        (self.inner.0 + self.inner.1.get()) / 2.0
     }
 
     pub fn set_max_score(&mut self, max_score: f64) {
@@ -132,12 +227,12 @@ where
         match node.value() {
             Node::Text(text) => {
                 let result = self.predict(text.deref()).unwrap();
-                (!result.is_nan() && result >= self.element_threshold).then_some((result, node))
+                (!result.is_nan() && result >= self.threshold).then_some((result, node))
             }
             Node::Element(element) => {
                 let values = Text::traverse(&node).join(" ");
                 let result = self.predict(&values).unwrap();
-                (!result.is_nan() && result >= self.element_threshold).then_some((result, node))
+                (!result.is_nan() && result >= self.threshold).then_some((result, node))
             }
             _ => None
         }
@@ -152,7 +247,6 @@ where
     }
 
     fn identify_gdbr_elements_in_html<'a>(&self, html: &'a Html) -> Option<Vec<Vec<ScoredNodeRef<'a, Node>>>> {
-
         let initial = html.tree
             .nodes()
             .into_iter()
@@ -217,21 +311,27 @@ where
         }
     }
 
+    fn get_most_probable<'a>(&self, html: &'a Html) -> Option<ScoredNodeRef<'a, Node>> {
+        if let Some(gdbr_nodes) = self.identify_gdbr_elements_in_html(html) {
+            let value = VecDeque::from(gdbr_nodes).pop_back()?;
+            debug_assert!(!value.is_empty());
+            self.filter_by.find_all_above(value, self.filter_threshold).into_iter().next()
+        } else {
+            None
+        }
+    }
+
+    /// Removes the gbr from the parsed html
+    pub fn remove_gdbr(&self, html: &mut Html) {
+        if let Some(found) = self.get_most_probable(&html) {
+            let mut node = unsafe{html.tree.get_unchecked_mut(found.node().id())};
+            node.detach()
+        }
+    }
+
     pub fn has_gbr(&self, html: &str) -> bool {
         let html = Html::parse_document(html);
-        if let Some(gdbr_nodes) = self.identify_gdbr_elements_in_html(&html) {
-            gdbr_nodes.last().is_some_and(|value| {
-                debug_assert!(!value.is_empty());
-                println!("Result: {}", value.iter().map(|value| format!("({}/{})", value.score(), value.max_score())).join(", "));
-                if self.filter_on_max_score {
-                    value.iter().any(|value| value.max_score() >= self.gdbr_threshold)
-                } else {
-                    value.iter().any(|value| value.score() >= self.gdbr_threshold)
-                }
-            })
-        } else {
-            false
-        }
+        self.get_most_probable(&html).is_some()
     }
 }
 
@@ -246,7 +346,7 @@ mod test {
     use scraper::{Html, Node};
     use serde::{Deserialize, Serialize};
     use crate::core::url::atra_uri::AtraUri;
-    use crate::features::gdbr_identifiert::GdbrIdentifier;
+    use crate::features::gdbr_identifiert::{FilterMode, GdbrIdentifier};
     use crate::features::scraper_ext::Text;
     use crate::features::svm::test::{create_german_gdbr_svm, train_data};
 
@@ -292,11 +392,16 @@ mod test {
         uri: AtraUri,
         content: String,
         html: String,
-        removed_html_part: Option<String>
+        removed_html_part: Option<String>,
+        page_source_cleaned_html: Option<String>,
+        page_source_removed_html: Option<String>,
+        content_removed_assistant: Option<String>,
+        page_source_cleaned_assistant: Option<String>
     }
 
     #[test]
     fn create(){
+
         let test_set: TestSet<TestSetRow> = serde_json::from_reader(BufReader::new(File::open("D:\\Downloads\\processed_test_set.json").unwrap())).unwrap();
         for value in test_set.rows {
             let language = match value.language.as_str() {
@@ -320,7 +425,7 @@ mod test {
             create_german_gdbr_svm(),
             0.1,
             0.5,
-            false
+            FilterMode::OnMaxScore
         );
         let html = Html::parse_document(DATA);
         let gdbr_nodes = identifier.identify_gdbr_elements_in_html(&html).unwrap();
@@ -355,7 +460,7 @@ mod test {
             create_german_gdbr_svm(),
             0.1,
             0.5,
-            false
+            FilterMode::OnScore
         );
         for value in train_data() {
             let result = identifier.has_gbr(&value.text);

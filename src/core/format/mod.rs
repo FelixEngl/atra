@@ -2,6 +2,7 @@ pub mod supported;
 pub mod file_format_detection;
 pub mod mime;
 pub(crate) mod mime_serialize;
+pub mod mime_ext;
 
 use serde::{Deserialize, Serialize};
 use crate::core::format::supported::AtraSupportedFileFormat;
@@ -14,7 +15,7 @@ use crate::core::format::mime::{determine_mime_information, MimeType};
 pub struct AtraFileInformation {
     pub format: AtraSupportedFileFormat,
     pub mime: Option<MimeType>,
-    pub detected: Option<DetectedFileFormat>
+    pub detected: Option<DetectedFileFormat>,
 }
 
 impl AtraFileInformation {
@@ -23,7 +24,7 @@ impl AtraFileInformation {
     pub fn new(
         format: AtraSupportedFileFormat,
         mime: Option<MimeType>,
-        detected: Option<DetectedFileFormat>
+        detected: Option<DetectedFileFormat>,
     ) -> Self {
         Self { format, mime, detected }
     }

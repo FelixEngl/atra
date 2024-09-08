@@ -14,12 +14,14 @@
 
 use std::cmp::max;
 use std::io::Read;
+use std::ops::Deref;
 use std::str::FromStr;
 use mime::{Mime, Name};
 use serde::{Deserialize, Serialize};
 use crate::core::contexts::Context;
 use crate::core::format::file_format_detection::DetectedFileFormat;
 use crate::core::format::mime::{MimeType};
+use crate::core::format::mime_ext;
 use crate::core::response::ResponseData;
 
 /// The inferred processable, type for a complete page for this crawler
@@ -31,8 +33,43 @@ pub enum AtraSupportedFileFormat {
     PlainText,
     JSON,
     XML,
+    RTF,
     Decodeable,
     Unknown // todo: Add identifier for binary
+}
+
+impl AtraSupportedFileFormat {
+    pub fn mime_type_for_warc(&self) -> &Mime {
+        match self {
+            AtraSupportedFileFormat::HTML => {
+                &mime::TEXT_HTML
+            }
+            AtraSupportedFileFormat::PDF => {
+                &mime::APPLICATION_PDF
+            }
+            AtraSupportedFileFormat::JavaScript => {
+                &mime::APPLICATION_JAVASCRIPT
+            }
+            AtraSupportedFileFormat::PlainText => {
+                &mime::TEXT_PLAIN
+            }
+            AtraSupportedFileFormat::JSON => {
+                &mime::APPLICATION_JSON
+            }
+            AtraSupportedFileFormat::XML => {
+                &mime_ext::APPLICATION_XML
+            }
+            AtraSupportedFileFormat::RTF => {
+                &mime_ext::APPLICATION_RTF
+            }
+            AtraSupportedFileFormat::Decodeable => {
+                &mime::APPLICATION_OCTET_STREAM
+            }
+            AtraSupportedFileFormat::Unknown => {
+                &mime::APPLICATION_OCTET_STREAM
+            }
+        }
+    }
 }
 
 fn check_file_ending(respone: &ResponseData, endings: &[&'static str]) -> bool {
@@ -85,13 +122,13 @@ fn html_heuristic(to_check: &[u8]) -> bool {
 macro_rules! supports_method {
     ($(
         typ: $typ: ident
-        mime: $mime: ident
+        mime: $mime: literal
         $(file_endings: $endings: expr)?
     )+) => {
         fn name_2_supported_file_format(name: Name<'_>) -> Option<AtraSupportedFileFormat>{
-            match name {
+            match name.as_str() {
                 $(
-                    mime::$mime => Some(AtraSupportedFileFormat::$typ),
+                    $mime => Some(AtraSupportedFileFormat::$typ),
                 )+
                 _ => None
             }
@@ -118,34 +155,38 @@ impl AtraSupportedFileFormat {
 
     supports_method! {
         typ: HTML
-        mime: HTML
+        mime: "html"
         file_endings: ["html", "xhtml", "htm"]
 
         typ: PDF
-        mime: PDF
+        mime: "pdf"
         file_endings: ["pdf"]
 
+        typ: RTF
+        mime: "rdf"
+        file_endings: ["rtf"]
+
         typ: JavaScript
-        mime: JAVASCRIPT
+        mime: "javascript"
         file_endings: ["js"]
 
         typ: PlainText
-        mime: PLAIN
+        mime: "plain"
         file_endings: ["txt"]
 
         typ: JSON
-        mime: JSON
+        mime: "json"
         file_endings: ["json"]
 
         typ: XML
-        mime: XML
+        mime: "xml"
         file_endings: ["xml"]
 
         typ: Decodeable
-        mime: CSS
+        mime: "css"
 
         typ: Decodeable
-        mime: CSV
+        mime: "csv"
     }
 
 

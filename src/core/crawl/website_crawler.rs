@@ -45,7 +45,7 @@ use crate::core::crawl::errors::SeedCreationError;
 use crate::core::crawl::intervals::InvervalManager;
 use crate::core::crawl::result::CrawlResult;
 use crate::core::crawl::seed::{CrawlSeed};
-use crate::core::{DataHolder, UrlWithDepth, VecDataHolder};
+use crate::core::{data_processing, DataHolder, UrlWithDepth, VecDataHolder};
 use crate::core::link_state::{LinkStateDBError, LinkStateType};
 use crate::core::robots::{GeneralRobotsInformation, RobotsInformation};
 use crate::core::shutdown::ShutdownReceiver;
@@ -619,9 +619,25 @@ impl<S: CrawlSeed> WebsiteCrawler<S> {
 
                     let file_information = AtraFileInformation::determine(context, &response_data);
 
-                    let (analyzed, links) = match crate::core::data_processing::process(context, &response_data, &file_information).await {
+                    let (analyzed, links) = match data_processing::process(context, &response_data, &file_information).await {
                         Ok(analyzed) => {
-                            let result = context.configs().crawl().link_extractors.extract(context, &response_data, &file_information, &analyzed).await;
+                            let lang = if file_information.is_decodeable() {
+                                if let Some(a) = analyzed.as_in_memory() {
+                                    whatlang::detect(a.as_str())
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            };
+                            
+                            let result = context
+                                .configs()
+                                .crawl()
+                                .link_extractors
+                                .extract(context, &response_data, &file_information, &analyzed)
+                                .await;
+
                             (analyzed, result)
                         }
                         Err(err) => {

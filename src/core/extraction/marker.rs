@@ -44,3 +44,8 @@ impl ExtractorMethodHint {
 pub enum ExtractorMethodMeta {
     Html(LinkOrigin)
 }
+
+pub trait ExtractorMethodMetaFactory {
+    fn new_without_meta(&self) -> ExtractorMethodHint;
+    fn new_with_meta(&self, meta: ExtractorMethodMeta) -> ExtractorMethodHint;
+}

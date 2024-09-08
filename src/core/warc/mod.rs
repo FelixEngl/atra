@@ -254,15 +254,14 @@ pub fn write_warc<W: SpecialWarcWriter>(worker_warc_writer: &mut W, content: &Cr
     } else {
         None
     }.unwrap_or_else(|| {
-        match &content.meta.file_information.format {
-            AtraSupportedFileFormat::HTML => { MediaType::new("text", "html", None) }
-            AtraSupportedFileFormat::PDF => {MediaType::new("application", "pdf", None) }
-            AtraSupportedFileFormat::JavaScript => {MediaType::new("text", "javascript", None)}
-            AtraSupportedFileFormat::PlainText => {MediaType::new("text", "plain", None)}
-            AtraSupportedFileFormat::JSON => {MediaType::new("application", "json", None)}
-            AtraSupportedFileFormat::XML => {MediaType::new("application", "xml", None)}
-            AtraSupportedFileFormat::Decodeable => {MediaType::new("application", "octet-stream", None)}
-            AtraSupportedFileFormat::Unknown => {MediaType::new("application", "octet-stream", None)}
+        if let Some(ref mimes) = content.meta.file_information.mime {
+            if let Some(mime) = mimes.iter().next(){
+                MediaType::from_mime(mime)
+            } else {
+                MediaType::from_mime(content.meta.file_information.format.mime_type_for_warc())
+            }
+        } else {
+            MediaType::from_mime(content.meta.file_information.format.mime_type_for_warc())
         }
     });
 
