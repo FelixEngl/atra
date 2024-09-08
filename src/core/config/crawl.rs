@@ -50,6 +50,8 @@ pub struct CrawlConfig {
     pub crawl_javascript: bool,
     /// Try to extract links from tags with onclick attribute for the crawl-queue (default: false)
     pub crawl_onclick_by_heuristic: bool,
+    /// Tries to apply a gdpr filter if one is defined.
+    pub apply_gdbr_filter_if_possible: bool,
     /// Only store html-files in the warc
     pub store_only_html_in_warc: bool,
 
@@ -128,6 +130,7 @@ impl Default for CrawlConfig {
             crawl_javascript: true,
             crawl_onclick_by_heuristic: false,
             store_only_html_in_warc: true,
+            apply_gdbr_filter_if_possible: true,
             headers: None,
             delay: None,
             cache: false,
