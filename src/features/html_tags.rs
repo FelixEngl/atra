@@ -218,6 +218,6 @@ hmtl_tags_categories!(
     Lists: Menu, Ul, Ol, Li, Dir, Dl, Dt, Dd;
     Tables: Table, Caption, Th, Tr, Td, Thead, Tbody, Tfoot, Col, Colgroup;
     StylesAndSemantics: Style, Div, Span, Header, Hgroup, Footer, Main, Section, Search, Article, Aside, Details, Dialog, Summary, Data;
-    MetaInfo: Head, Meta, Base, Basefont;
+    MetaInfo: Meta, Base, Basefont;
     Programming: Script, Noscript, Applet, Embed, Object, Param;
 );

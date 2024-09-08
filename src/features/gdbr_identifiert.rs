@@ -3,13 +3,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Entry;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
-use std::iter::Filter;
-use std::marker::PhantomData;
 use std::ops::Deref;
 use std::rc::Rc;
-use std::sync::{Arc, LazyLock};
-use compact_str::format_compact;
-use ego_tree::iter::{Edge, Traverse};
 use ego_tree::NodeRef;
 use isolang::Language;
 use itertools::Itertools;
@@ -18,11 +13,8 @@ use serde::de::DeserializeOwned;
 use liblinear::solver::traits::{IsTrainableSolver, Solver};
 use liblinear::Model;
 use liblinear::parameter::serde::SupportsParametersCreation;
-use liblinear::solver::{GenericSolver, L2R_L2LOSS_SVR};
+use liblinear::solver::{GenericSolver};
 use scraper::{Html, Node};
-use tokio::sync::RwLock;
-use crate::core::config::Configs;
-use crate::core::contexts::Context;
 use crate::core::io::root::RootSetter;
 use crate::features::html_tags::{HtmlTag, HtmlTagCategory};
 use crate::features::scraper_ext::Text;
@@ -30,9 +22,10 @@ use crate::features::svm::classifier::DocumentClassifier;
 use crate::features::svm::config::SvmRecognizerConfig;
 use crate::features::svm::{create_document_classifier};
 use crate::features::svm::error::SvmCreationError;
-use crate::features::text_processing::tf_idf::{Idf, IdfAlgorithm, Tf, TfAlgorithm};
-use crate::features::tokenizing::stopwords::StopWordRegistry;
+use crate::features::text_processing::tf_idf::{IdfAlgorithm, TfAlgorithm};
 use crate::features::tokenizing::SupportsStopwords;
+
+// L2R_L2LOSS_SVR
 
 /// A trait that allows a context to support the initialisation of gdbr
 pub trait SupportsGdbrIdentifier<TF: TfAlgorithm, IDF: IdfAlgorithm> {
@@ -376,7 +369,7 @@ where
                 let result = self.predict(text.deref()).unwrap();
                 (!result.is_nan() && result >= self.threshold).then_some((result, node))
             }
-            Node::Element(element) => {
+            Node::Element(_) => {
                 let values = Text::traverse(&node).join(" ");
                 let result = self.predict(&values).unwrap();
                 (!result.is_nan() && result >= self.threshold).then_some((result, node))
@@ -437,7 +430,7 @@ where
                                 result.insert(value);
                             }
                         }
-                        Entry::Occupied(mut entry) => {
+                        Entry::Occupied(entry) => {
                             let mut v = entry.get().clone();
                             v.set_max_score(last_entry.max_score());
                             result.insert(v);
@@ -484,85 +477,13 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::fs::File;
-    use std::hash::{Hash};
-    use std::io::BufReader;
     use std::ops::Deref;
-    use isolang::Language;
     use itertools::Itertools;
     use scraper::{Html, Node};
-    use serde::{Deserialize, Serialize};
-    use crate::core::url::atra_uri::AtraUri;
     use crate::features::gdbr_identifiert::{FilterMode, GdbrIdentifier};
     use crate::features::scraper_ext::Text;
     use crate::features::svm::test::{create_german_gdbr_svm, train_data};
 
-    #[derive(Deserialize)]
-    struct TestSet<T> {
-        rows: Vec<T>
-    }
-
-    #[derive(Deserialize, Default)]
-    #[serde(default)]
-    struct TestSetRow {
-        language: String,
-        url: String,
-        content: String,
-        page_source_html: String,
-        content_removed: Option<String>,
-        page_source_cleaned_html: Option<String>,
-        page_source_removed_html: Option<String>,
-        #[serde(alias = "contains_GDPR")]
-        contains_gdbr: bool,
-    }
-
-    #[derive(Deserialize, Default)]
-    #[serde(default)]
-    struct ProcessedTestSetRow {
-        language: String,
-        url: String,
-        content: String,
-        page_source_html: String,
-        content_removed: Option<String>,
-        page_source_cleaned_html: Option<String>,
-        page_source_removed_html: Option<String>,
-        #[serde(alias = "contains_GDPR")]
-        contains_gdbr: bool,
-        content_removed_assistant: Option<String>,
-        page_source_cleaned_assistant: Option<String>
-    }
-
-    #[derive(Serialize)]
-    struct TestEntryRow {
-        has_gdbr: bool,
-        language: Language,
-        uri: AtraUri,
-        content: String,
-        html: String,
-        removed_html_part: Option<String>,
-        page_source_cleaned_html: Option<String>,
-        page_source_removed_html: Option<String>,
-        content_removed_assistant: Option<String>,
-        page_source_cleaned_assistant: Option<String>
-    }
-
-    #[test]
-    fn create(){
-
-        let test_set: TestSet<TestSetRow> = serde_json::from_reader(BufReader::new(File::open("D:\\Downloads\\processed_test_set.json").unwrap())).unwrap();
-        for value in test_set.rows {
-            let language = match value.language.as_str() {
-                "__label__de" => {
-                    Language::Deu
-                }
-                _ => unreachable!()
-            };
-            let uri: AtraUri = value.url.parse().unwrap();
-            println!("{}", uri);
-            println!("{}", value.content);
-            println!("");
-        }
-    }
 
     #[test]
     fn test_might() {
@@ -581,13 +502,13 @@ mod test {
             println!("Level: {i}");
             for value in v {
                 match value.node().value() {
-                    Node::Text(value) => {println!("    Text")}
+                    Node::Text(_) => {println!("    Text")}
                     Node::Element(value) => {println!("    Element: {}", value.name())}
                     _ => println!("    Unsupported Type")
                 }
                 let mut content = match value.node().value() {
                     Node::Text(value) => value.deref().to_string(),
-                    Node::Element(elem) => Text::traverse(&value.node()).join(" "),
+                    Node::Element(_) => Text::traverse(&value.node()).join(" "),
                     _ => {
                         println!(">> ERROR with node!");
                         continue

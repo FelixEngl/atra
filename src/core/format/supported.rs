@@ -14,8 +14,8 @@
 
 use std::cmp::max;
 use std::io::Read;
-use std::ops::Deref;
 use std::str::FromStr;
+use file_format::{FileFormat, Kind};
 use mime::{Mime, Name};
 use serde::{Deserialize, Serialize};
 use crate::core::contexts::Context;
@@ -24,48 +24,91 @@ use crate::core::format::mime::{MimeType};
 use crate::core::format::mime_ext;
 use crate::core::response::ResponseData;
 
-/// The inferred processable, type for a complete page for this crawler
+// https://gonze.com/playlists/playlist-format-survey.html#M3U
+
+/// The inferred processable, type for a complete page for this crawler.
+/// Does not give detailed information about the real type.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
-pub enum AtraSupportedFileFormat {
+pub enum InterpretedProcessibleFileFormat {
     HTML,
     PDF,
     JavaScript,
+
+    /// Plaintext
     PlainText,
+    StructuredPlainText,
+    ProgrammingLanguage,
+
+    MP3Url,
+
     JSON,
+
     XML,
+    SVG,
+
     RTF,
+    OOXML,
+    ODF,
+    IMAGE,
+
     Decodeable,
+
+    /// Usually a binary format. But can be anything that can not be decoded by normal means. (Like a ZIP-File)
+    Unsupported,
     Unknown // todo: Add identifier for binary
 }
 
-impl AtraSupportedFileFormat {
-    pub fn mime_type_for_warc(&self) -> &Mime {
+impl InterpretedProcessibleFileFormat {
+
+    pub fn supports_decoding(&self) -> bool {
+        !matches!(self, Self::Unsupported | Self::Unknown | Self::IMAGE | Self::RTF | Self::OOXML | Self::ODF)
+    }
+
+    pub fn fallback_mime_type_for_warc(&self) -> &Mime {
         match self {
-            AtraSupportedFileFormat::HTML => {
+            InterpretedProcessibleFileFormat::HTML => {
                 &mime::TEXT_HTML
             }
-            AtraSupportedFileFormat::PDF => {
+            InterpretedProcessibleFileFormat::PDF => {
                 &mime::APPLICATION_PDF
             }
-            AtraSupportedFileFormat::JavaScript => {
+            InterpretedProcessibleFileFormat::JavaScript => {
                 &mime::APPLICATION_JAVASCRIPT
             }
-            AtraSupportedFileFormat::PlainText => {
+            InterpretedProcessibleFileFormat::PlainText => {
                 &mime::TEXT_PLAIN
             }
-            AtraSupportedFileFormat::JSON => {
+            InterpretedProcessibleFileFormat::JSON => {
                 &mime::APPLICATION_JSON
             }
-            AtraSupportedFileFormat::XML => {
+            InterpretedProcessibleFileFormat::XML => {
                 &mime_ext::APPLICATION_XML
             }
-            AtraSupportedFileFormat::RTF => {
+            InterpretedProcessibleFileFormat::RTF => {
                 &mime_ext::APPLICATION_RTF
             }
-            AtraSupportedFileFormat::Decodeable => {
-                &mime::APPLICATION_OCTET_STREAM
+            InterpretedProcessibleFileFormat::OOXML => {
+                &mime_ext::APPLICATION_OOXML_STAR
             }
-            AtraSupportedFileFormat::Unknown => {
+            InterpretedProcessibleFileFormat::ODF => {
+                &mime_ext::APPLICATION_ODF_STAR
+            }
+            InterpretedProcessibleFileFormat::IMAGE => {
+                &mime::IMAGE_STAR
+            }
+            InterpretedProcessibleFileFormat::SVG => {
+                &mime::IMAGE_SVG
+            }
+            InterpretedProcessibleFileFormat::MP3Url => {
+                &mime_ext::AUDIO_MP3_URL
+            }
+            InterpretedProcessibleFileFormat::StructuredPlainText
+            | InterpretedProcessibleFileFormat::ProgrammingLanguage => {
+                &mime::TEXT_STAR
+            }
+            InterpretedProcessibleFileFormat::Unsupported
+            | InterpretedProcessibleFileFormat::Decodeable
+            | InterpretedProcessibleFileFormat::Unknown => {
                 &mime::APPLICATION_OCTET_STREAM
             }
         }
@@ -119,74 +162,67 @@ fn html_heuristic(to_check: &[u8]) -> bool {
     }
 }
 
+
+
 macro_rules! supports_method {
     ($(
-        typ: $typ: ident
-        mime: $mime: literal
-        $(file_endings: $endings: expr)?
+        $typ: ident: $pattern:pat $(if $guard:expr)? $(,)?
     )+) => {
-        fn name_2_supported_file_format(name: Name<'_>) -> Option<AtraSupportedFileFormat>{
-            match name.as_str() {
-                $(
-                    $mime => Some(AtraSupportedFileFormat::$typ),
-                )+
+        fn mime_2_supported_file_format(mime: &Mime) -> Option<InterpretedProcessibleFileFormat> {
+            match (mime.type_().as_str().to_lowercase().as_str(), mime.subtype().as_str().to_lowercase().as_str(), mime.suffix().map(|value| value.as_str().to_lowercase().as_str())) {
+                $($pattern $(if $guard)? => return Some(InterpretedProcessibleFileFormat::$typ),)+
                 _ => None
             }
-        }
-
-        fn extension_2_supported_file_format(respone: &ResponseData) -> Option<AtraSupportedFileFormat>{
-            $(
-                $(
-                    if check_file_ending(respone, &$endings) {
-                        return Some(AtraSupportedFileFormat::$typ)
-                    }
-                )?
-            )+
-            return None
         }
     };
 }
 
-impl AtraSupportedFileFormat {
+macro_rules! supports_fileending_method {
+    ($(
+        $typ: ident: $pattern:pat $(if $guard:expr)? $(,)?
+    )+) => {
+        fn extension_2_supported_file_format(response: &ResponseData) -> Option<InterpretedProcessibleFileFormat>{
+            if let Some(file_endings) = response.url.url().get_file_endings() {
+                let last = *file_endings.last()?;
+                match last {
+                    $(
+                    $pattern $(if $guard)? => Some(InterpretedProcessibleFileFormat::$typ),
+                    )+
+                    _ => None
+                }
+            } else {
+                None
+            }
+        }
+    };
+}
 
-    pub fn supports_decoding(&self) -> bool {
-        matches!(self, Self::HTML | Self::JavaScript | Self::PlainText | Self::JSON | Self::XML | Self::Decodeable)
+impl InterpretedProcessibleFileFormat {
+
+    supports_fileending_method! {
+        HTML: "html" | "xhtml" | "htm"
+        PDF: "pdf"
+        RTF: "rtf"
+        JavaScript: "js"
+        PlainText: "txt"
+        JSON: "json"
+        XML: "xml"
+        OOXML: "xslx" | "docx" | "pptx"
+        ODF: "odt"|"ods"|"odp"|"odg"|"odc"|"odf"|"odi"|"odm"|"ott"|"ots"|"otp"|"otg"|"otf"|"oth"|"oti"|"otc"
+        StructuredPlainText: "csv"
+        ProgrammingLanguage: "css"
     }
 
     supports_method! {
-        typ: HTML
-        mime: "html"
-        file_endings: ["html", "xhtml", "htm"]
-
-        typ: PDF
-        mime: "pdf"
-        file_endings: ["pdf"]
-
-        typ: RTF
-        mime: "rdf"
-        file_endings: ["rtf"]
-
-        typ: JavaScript
-        mime: "javascript"
-        file_endings: ["js"]
-
-        typ: PlainText
-        mime: "plain"
-        file_endings: ["txt"]
-
-        typ: JSON
-        mime: "json"
-        file_endings: ["json"]
-
-        typ: XML
-        mime: "xml"
-        file_endings: ["xml"]
-
-        typ: Decodeable
-        mime: "css"
-
-        typ: Decodeable
-        mime: "csv"
+        HTML: ("text", "html", _)
+        PDF: (_, "pdf", _)
+        RTF: (_, "rdf", _)
+        JavaScript: (_, "javascript", _)
+        PlainText: ("text", "plain", _)
+        JSON: (_, "json", _) | (_, _, Some("json"))
+        XML: (_, "xml", _) | (_, _, Some("xml"))
+        ProgrammingLanguage: (_, "css", _)
+        StructuredPlainText: (_, "csv", _)
     }
 
 
@@ -196,15 +232,91 @@ impl AtraSupportedFileFormat {
         mime: Option<&MimeType>,
         file_format: Option<&DetectedFileFormat>,
         context: &impl Context
-    ) -> AtraSupportedFileFormat {
+    ) -> InterpretedProcessibleFileFormat {
         let mut is_text = false;
 
-        if let Some(mime) = mime.map(|value| value.names_iter()) {
-            for mime_name in mime {
-                if let Some(by_mime) = Self::name_2_supported_file_format(mime_name) {
+        if let Some(detected) = file_format {
+            let most_probable = detected.most_probable_file_format();
+
+            match most_probable {
+                FileFormat::HypertextMarkupLanguage => return InterpretedProcessibleFileFormat::HTML,
+                // TODO: Calendar format
+                FileFormat::Icalendar
+                | FileFormat::Vcalendar
+                | FileFormat:: Vcard
+                | FileFormat::WebVideoTextTracks => return InterpretedProcessibleFileFormat::StructuredPlainText,
+
+                // TODO: Programming Language
+                FileFormat::LuaScript
+                | FileFormat::PythonScript
+                | FileFormat::RubyScript
+                | FileFormat::ShellScript
+                | FileFormat::ToolCommandLanguageScript
+                | FileFormat::MsDosBatch
+                | FileFormat::PerlScript
+                | FileFormat::Latex
+                | FileFormat::ClojureScript
+                | FileFormat::WebassemblyText => return InterpretedProcessibleFileFormat::ProgrammingLanguage,
+
+                FileFormat::RichTextFormat => return InterpretedProcessibleFileFormat::RTF,
+                FileFormat::PortableDocumentFormat => return InterpretedProcessibleFileFormat::PDF,
+                FileFormat::ScalableVectorGraphics => return InterpretedProcessibleFileFormat::SVG,
+                FileFormat::ExtensibleMarkupLanguage => return InterpretedProcessibleFileFormat::XML,
+                FileFormat::OfficeOpenXmlDocument
+                | FileFormat::OfficeOpenXmlDrawing
+                | FileFormat::OfficeOpenXmlPresentation
+                | FileFormat::OfficeOpenXmlSpreadsheet => return InterpretedProcessibleFileFormat::OOXML,
+                FileFormat::OpendocumentDatabase
+                | FileFormat::OpendocumentFormula
+                | FileFormat::OpendocumentFormulaTemplate
+                | FileFormat::OpendocumentGraphics
+                | FileFormat::OpendocumentGraphicsTemplate
+                | FileFormat::OpendocumentPresentation
+                | FileFormat::OpendocumentPresentationTemplate
+                | FileFormat::OpendocumentSpreadsheet
+                | FileFormat::OpendocumentSpreadsheetTemplate
+                | FileFormat::OpendocumentText
+                | FileFormat::OpendocumentTextMaster
+                | FileFormat::OpendocumentTextMasterTemplate
+                | FileFormat::OpendocumentTextTemplate => return InterpretedProcessibleFileFormat::ODF,
+
+                FileFormat::MayaAscii
+                | FileFormat::Model3dAscii
+                | FileFormat::BmfontAscii
+                | FileFormat::DrawingExchangeFormatAscii
+                | FileFormat::PolygonAscii
+                | FileFormat::UniversalSceneDescriptionAscii
+                | FileFormat::StereolithographyAscii => return InterpretedProcessibleFileFormat::PlainText,
+                FileFormat::MayaBinary
+                | FileFormat::Model3dBinary
+                | FileFormat::BmfontBinary
+                | FileFormat::DrawingExchangeFormatBinary
+                | FileFormat::PolygonBinary
+                | FileFormat::UniversalSceneDescriptionBinary => return InterpretedProcessibleFileFormat::Unsupported,
+                FileFormat::Mp3Url => return InterpretedProcessibleFileFormat::MP3Url,
+                FileFormat::Empty => return InterpretedProcessibleFileFormat::Unsupported,
+                // FileFormat::PlainText => {/* Plaintext has to be handles below due to HTML etc. */}
+                other => {
+                    if other.media_type().contains("+xml") {
+                        return InterpretedProcessibleFileFormat::XML
+                    } else {
+                        match other.kind() {
+                            Kind::Image => return InterpretedProcessibleFileFormat::IMAGE,
+                            // TODO: Zip Files etc.
+                            Kind::Executable | Kind::Font | Kind::Archive | Kind::Package | Kind::Compressed | Kind::Disk | Kind::Video => return InterpretedProcessibleFileFormat::Unsupported,
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(mimes) = mime.map(|value| value.iter()) {
+            for mime in mimes {
+                if let Some(by_mime) = Self::mime_2_supported_file_format(mime) {
                     return by_mime
                 }
-                if mime_name == mime::TEXT {
+                if mime.subtype() == mime::TEXT {
                     is_text = true;
                 }
             }
@@ -216,17 +328,7 @@ impl AtraSupportedFileFormat {
 
         if let Some(file_format) = file_format {
             let mime = Mime::from_str(file_format.most_probable_file_format().media_type()).expect("The mimes in file_format are always valid!");
-            if let Some(suffix) = mime.suffix() {
-                if let Some(found) = Self::name_2_supported_file_format(suffix) {
-                    return found
-                }
-            }
-
-            if let Some(found) = Self::name_2_supported_file_format(mime.subtype()) {
-                return found
-            }
-
-            if let Some(found) = Self::name_2_supported_file_format(mime.type_()) {
+            if let Some(found) = Self::mime_2_supported_file_format(&mime) {
                 return found
             }
         }
@@ -246,6 +348,8 @@ impl AtraSupportedFileFormat {
                 false
             }
         }
+
+        // Grabbing straws
 
         if is_text {
             if guess_if_html::<512>(context, page) {

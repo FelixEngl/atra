@@ -9,13 +9,11 @@ use std::collections::hash_map::Entry;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::io;
-use std::io::BufRead;
 use std::ops::Deref;
 use std::sync::{Arc, RwLock};
 
 use compact_str::{CompactString, ToCompactString};
 use isolang::Language;
-use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use unicode_normalization::UnicodeNormalization;
 
@@ -34,7 +32,7 @@ pub struct StopWordRegistry {
 
 impl StopWordRegistry {
     pub fn initialize(cfg: &StopwordRegistryConfig) -> Result<Self, io::Error>  {
-        let mut new = Self::default();
+        let new = Self::default();
         new.repositories.write().unwrap().extend(cfg.to_vec());
         Ok(new)
     }
@@ -161,17 +159,4 @@ impl<Q> Extend<Q> for StopWordList where Q: ToCompactString {
         self.raw.shrink_to_fit();
         self.normalized.shrink_to_fit();
     }
-}
-
-
-
-/// Retrieves the default stopwords for a provided [lang] in iso3 format.
-pub fn get_default_stopwords_for(lang: &str) -> Option<&'static [&'static str]>{
-    todo!()
-}
-
-
-/// Retrieves the default stopwords for a provided [lang].
-pub fn get_default_stopwords_for_lang(lang: &isolang::Language) -> Option<&'static [&'static str]>{
-    get_default_stopwords_for(lang.to_639_3())
 }

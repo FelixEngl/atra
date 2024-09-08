@@ -4,3 +4,4 @@
 [submodule "external/mupdf"]
 	path = external/mupdf
 	url = https://github.com/FelixEngl/mupdf-rs.git
+	branch = dynamic

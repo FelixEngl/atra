@@ -98,6 +98,7 @@ The following table shows the configs written as qualified paths for a json.
 | crawl.link_extractors            | JSON; ``[- Command -, - Command -]`` (see [Link Extractor Settings](#Link-Extractor-Settings)) | A custom configuration of extractors. (default: see [Extractor Settings](#Extractor-Settings))                                                                                          |
 | crawl.decode_big_files_up_to     | uInt/null; in Byte                                                                             | If this value is set Atra tries to decode and process files that are only downloaded as<br/>blob but do not overstep this provided size (in Bytes).<br/>Null means off. (default: null) |
 | crawl.use_default_stopwords      | boolean                                                                                        | If this is set all stopwords inclide the default stopwords known to atra (drfault: true)                                                                                                |
+| crawl.gbdr                       | JSON/null; ()                                                                                  |
 | crawl.chrome_settings            | - unused -                                                                                     | - unused -                                                                                                                                                                              |
 
 ### Log Level
@@ -234,3 +235,6 @@ Decides when to apply a link-extractor on some kind of data.
 | Always     | "Always"     | Always applies this extractor.                               |
 | IfSuitable | "IfSuitable" | Only applies the extractor iff the file is of a fitting type |
 | Fallback   | "Fallback"   | If everything fails, try this extractor.                     |
+
+
+### GBDR filter

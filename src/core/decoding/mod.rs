@@ -30,7 +30,7 @@ use crate::core::contexts::Context;
 use crate::core::{DataHolder, VecDataHolder};
 use crate::core::format::AtraFileInformation;
 use crate::core::response::{ResponseData};
-use crate::core::format::supported::{AtraSupportedFileFormat};
+use crate::core::format::supported::{InterpretedProcessibleFileFormat};
 use crate::static_selectors;
 
 /// An error while decoding
@@ -78,7 +78,7 @@ pub async fn decode<'a>(context: &impl Context, page: &'a ResponseData, identifi
     let mut decodings = get_decoders_by_mime(identified_type).unwrap_or_default();
 
     // use probably defective encodings from header and body somewhere?
-    if identified_type.format == AtraSupportedFileFormat::HTML {
+    if identified_type.format == InterpretedProcessibleFileFormat::HTML {
         static_selectors! {
             [
                 META_CHARSET = "meta[charset]"

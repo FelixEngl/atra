@@ -13,10 +13,8 @@
 //limitations under the License.
 
 use camino::{Utf8Path, Utf8PathBuf};
-use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use crate::core::io::root::RootSetter;
-use crate::features::tokenizing::StopwordRegistryConfig;
 
 /// Config of the session, basically paths etc.
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
@@ -43,7 +41,7 @@ impl Default for PathsConfig {
 }
 
 impl PathsConfig {
-    pub fn new(root: impl AsRef<Utf8Path>, directories: Directories, files: Files, stopword_registry: StopwordRegistryConfig) -> Self {
+    pub fn new(root: impl AsRef<Utf8Path>, directories: Directories, files: Files) -> Self {
         Self {
             root: root.as_ref().to_path_buf(),
             directories,

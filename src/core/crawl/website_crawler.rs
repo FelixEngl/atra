@@ -51,7 +51,7 @@ use crate::core::robots::{GeneralRobotsInformation, RobotsInformation};
 use crate::core::shutdown::ShutdownReceiver;
 use crate::core::database_error::DatabaseError;
 use crate::core::format::AtraFileInformation;
-use crate::core::format::supported::AtraSupportedFileFormat;
+use crate::core::format::supported::InterpretedProcessibleFileFormat;
 use crate::core::sitemaps::parse::retrieve_and_parse;
 use crate::core::origin::{AtraOriginProvider, AtraUrlOrigin};
 
@@ -621,16 +621,6 @@ impl<S: CrawlSeed> WebsiteCrawler<S> {
 
                     let (analyzed, links) = match data_processing::process(context, &response_data, &file_information).await {
                         Ok(analyzed) => {
-                            let lang = if file_information.is_decodeable() {
-                                if let Some(a) = analyzed.as_in_memory() {
-                                    whatlang::detect(a.as_str())
-                                } else {
-                                    None
-                                }
-                            } else {
-                                None
-                            };
-                            
                             let result = context
                                 .configs()
                                 .crawl()
@@ -648,7 +638,7 @@ impl<S: CrawlSeed> WebsiteCrawler<S> {
                     log::trace!("Finished analysis: {}", target);
 
                     if context.configs().crawl.store_only_html_in_warc {
-                        if file_information.format != AtraSupportedFileFormat::HTML {
+                        if file_information.format != InterpretedProcessibleFileFormat::HTML {
                             response_data.content = match response_data.content {
                                 VecDataHolder::InMemory { data } => {
                                     let path = context.fs().create_unique_path_for_dat_file(&url_str);

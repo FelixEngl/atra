@@ -3,7 +3,6 @@ use std::collections::hash_map::Entry;
 use std::error::Error as StdError;
 use std::fmt::Debug;
 use std::hash::Hash;
-use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use crate::features::text_processing::corpus::CorpusDocumentStatistics;
@@ -140,7 +139,7 @@ impl IdfAlgorithm for Idf {
     /// [word_frequency] denotes the frequency of a specific word in a corpus.
     ///
     /// Returns nan if the calculation is not possible.
-    fn calculate_idf_with_word_frequency<W, S: CorpusDocumentStatistics<Word=W>>(&self, statistics: & S, word: &W, word_frequency: u64) -> Result<f64, IdfError> {
+    fn calculate_idf_with_word_frequency<W, S: CorpusDocumentStatistics<Word=W>>(&self, statistics: & S, _: &W, word_frequency: u64) -> Result<f64, IdfError> {
         match self {
             Idf::Unary => {
                 Ok(1.0)
@@ -294,9 +293,9 @@ mod test {
         statistics.add(doc2.clone());
         statistics.add(doc3.clone());
         println!("{statistics}");
-        let vectorizer = statistics.provide_vectorizer(super::defaults::TERM_FREQUENCY_INVERSE).unwrap();
+        let _vectorizer = statistics.provide_vectorizer(super::defaults::TERM_FREQUENCY_INVERSE).unwrap();
         let doc_test = "bro it is going to rain today".unicode_words().collect_vec();
-        let tf1 = Tf::TermFrequency.calculate_tf(doc_test.clone());
+        let _tf1 = Tf::TermFrequency.calculate_tf(doc_test.clone());
 
         fn test_vectorized(vectorized: VectorizedDocument<&str>) {
             println!("{:?}\n", vectorized);

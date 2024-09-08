@@ -2,7 +2,7 @@ use std::convert::TryFrom;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use camino::{Utf8Path, Utf8PathBuf};
+use camino::{Utf8PathBuf};
 use isolang::Language;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};

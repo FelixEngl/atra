@@ -16,7 +16,6 @@ use std::borrow::Cow;
 use std::fmt::Debug;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, ErrorKind, Read};
-use std::ops::Deref;
 use std::sync::Arc;
 use camino::{Utf8Path};
 use isolang::Language;
@@ -319,7 +318,7 @@ pub(crate) mod test {
             println!("{:?} -> {:?}", trained.predict(&value.text).unwrap() < 0.5, value.is_class);
         }
         let x = serde_json::to_string(&trained).unwrap();
-        let loaded: DocumentClassifier<Tf, Idf, L2R_L2LOSS_SVR> = serde_json::from_str(&x).unwrap();
+        let _loaded: DocumentClassifier<Tf, Idf, L2R_L2LOSS_SVR> = serde_json::from_str(&x).unwrap();
         drop(x);
     }
 }

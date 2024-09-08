@@ -30,11 +30,11 @@ use crate::core::crawl::result::CrawlResult;
 use crate::core::{VecDataHolder};
 use crate::core::database_error::DatabaseError;
 use crate::core::digest::labeled_xxh128_digest;
-use crate::core::format::supported::AtraSupportedFileFormat;
+use crate::core::format::supported::InterpretedProcessibleFileFormat;
 use crate::core::io::errors::{ErrorWithPath, ToErrorWithPath};
 use crate::core::io::file_owner::FileOwner;
 use crate::core::warc::skip_pointer::{WarcSkipPointer, WarcSkipPointerWithPath};
-use crate::warc::media_type::{MediaType, parse_media_type};
+use crate::warc::media_type::{parse_media_type};
 use crate::warc::header::{WarcHeader};
 use crate::warc::field::{UriLikeFieldValue};
 use crate::warc::record_type::WarcRecordType;
@@ -244,26 +244,16 @@ pub fn write_warc<W: SpecialWarcWriter>(worker_warc_writer: &mut W, content: &Cr
     let found = if let Some(ref found) = found_ll {
         match parse_media_type::<true>(found.as_bytes()) {
             Ok(value) => {
-                Some(value.1)
+                value.1
             }
             Err(err) => {
                 log::error!("Failed to parse media type: {err}");
-                None
+                content.meta.file_information.get_best_media_type_for_warc()
             }
         }
     } else {
-        None
-    }.unwrap_or_else(|| {
-        if let Some(ref mimes) = content.meta.file_information.mime {
-            if let Some(mime) = mimes.iter().next(){
-                MediaType::from_mime(mime)
-            } else {
-                MediaType::from_mime(content.meta.file_information.format.mime_type_for_warc())
-            }
-        } else {
-            MediaType::from_mime(content.meta.file_information.format.mime_type_for_warc())
-        }
-    });
+        content.meta.file_information.get_best_media_type_for_warc()
+    };
 
 
 
@@ -341,7 +331,7 @@ pub fn write_warc<W: SpecialWarcWriter>(worker_warc_writer: &mut W, content: &Cr
     let mut body = header;
 
     let (data, is_base64) = match content.meta.file_information.format {
-        AtraSupportedFileFormat::Unknown => {
+        InterpretedProcessibleFileFormat::Unknown => {
             log_consume!(builder.atra_is_base64(true));
             (Cow::Owned(BASE64.encode(data.as_slice()).into_bytes()), true)
         }
@@ -457,7 +447,7 @@ mod test {
     use crate::core::{UrlWithDepth, VecDataHolder};
     use crate::core::format::AtraFileInformation;
     use crate::core::format::mime::MimeType;
-    use crate::core::format::supported::AtraSupportedFileFormat;
+    use crate::core::format::supported::InterpretedProcessibleFileFormat;
     use crate::core::warc::{MockSpecialWarcWriter, write_warc};
 
     #[test]
@@ -479,7 +469,7 @@ mod test {
             None,
             Some(encoding_rs::UTF_8),
             AtraFileInformation::new(
-                AtraSupportedFileFormat::HTML,
+                InterpretedProcessibleFileFormat::HTML,
                 Some(MimeType::new_single(mime::TEXT_HTML_UTF_8)),
                 None
             )
@@ -545,7 +535,7 @@ mod test {
             None,
             Some(encoding_rs::UTF_8),
             AtraFileInformation::new(
-                AtraSupportedFileFormat::Unknown,
+                InterpretedProcessibleFileFormat::Unknown,
                 None,
                 None
             )

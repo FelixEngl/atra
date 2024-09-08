@@ -136,7 +136,6 @@ sitemap = "0.4"
 linkify = "0.10"
 ress = "0"
 #mupdf = { path= "external/mupdf" }
-link_scraper = { version = "0.1", features = ["all"] }
 psl = "2"
 
 # Type System
@@ -173,6 +172,12 @@ whatlang = { version = "0.16", features = ["serde"] }
 
 # SVM
 liblinear = { path= "external/liblinear/crates/liblinear", features = ["serde"] }
+
+[target.'cfg(windows)'.dependencies]
+link_scraper = { version = "0.1", features = ["plaintext", "xml", "xlink", "svg", "ooxml", "odf", "rtf", "image"] }
+
+[target.'cfg(not(windows))'.dependencies]
+link_scraper = { version = "0.1", features = ["pdf", "plaintext", "xml", "xlink", "svg", "ooxml", "odf", "rtf", "image"] }
 
 # TOR
 # libtor-sys = "47.13.0"

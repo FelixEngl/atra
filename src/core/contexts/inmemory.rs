@@ -256,7 +256,7 @@ impl crate::features::tokenizing::SupportsStopwords for InMemoryContext {
 
 impl SupportsGdbrIdentifier<Tf, Idf> for InMemoryContext {
     fn gdbr_config(&self) -> Option<&GdbrIdentifierRegistryConfig<Tf, Idf>> {
-        self.configs.crawl.gdbr_config.as_ref()
+        self.configs.crawl.gbdr.as_ref()
     }
 
     fn root_setter(&self) -> Option<&impl RootSetter> {

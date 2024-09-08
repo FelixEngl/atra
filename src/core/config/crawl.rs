@@ -109,7 +109,7 @@ pub struct CrawlConfig {
     pub stopword_registry: Option<StopwordRegistryConfig>,
 
     /// Used to configure the gdbr feature
-    pub gdbr_config: Option<GdbrIdentifierRegistryConfig<Tf, Idf>>,
+    pub gbdr: Option<GdbrIdentifierRegistryConfig<Tf, Idf>>,
 
     #[cfg(feature = "chrome")]
     /// The settings for a chrome instance
@@ -147,7 +147,7 @@ impl Default for CrawlConfig {
             decode_big_files_up_to: None,
             use_default_stopwords: true,
             stopword_registry: None,
-            gdbr_config: None,
+            gbdr: None,
             #[cfg(feature = "chrome")]
             chrome_settings: Default::default()
         }

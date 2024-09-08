@@ -6,7 +6,6 @@ use liblinear::{Parameters, PredictionInput, TrainingInput};
 use liblinear::solver::traits::{Solver, IsTrainableSolver};
 use liblinear::Model;
 use liblinear::model::traits::{ModelBase, TrainableModel};
-use liblinear::parameter::traits::SetRegressionLossSensitivity;
 use liblinear::solver::GenericSolver;
 use crate::features::tokenizing::tokenizer::Tokenizer;
 use crate::features::svm::error::LibLinearError;
@@ -76,7 +75,7 @@ mod model_serializer {
         buf.flush().map_err(D::Error::custom)?;
         drop(buf);
         let model = liblinear::model::serde::load_model_from_disk(model_path.as_str()).map_err(D::Error::custom)?;
-        Ok(model.try_into().map_err(|err| D::Error::custom("Failed to convert model!"))?)
+        Ok(model.try_into().map_err(|_| D::Error::custom("Failed to convert model! {err:?}"))?)
     }
 }
 

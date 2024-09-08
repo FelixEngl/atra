@@ -32,7 +32,6 @@ use nom::combinator::{map, map_res};
 use nom::error::{ErrorKind, FromExternalError, ParseError, VerboseError};
 use nom::multi::many_till;
 use nom::sequence::{delimited, pair, preceded, separated_pair};
-use crate::core::format::mime::MimeType;
 use crate::nom_ext::simple_operators::is_empty_or_fail;
 
 

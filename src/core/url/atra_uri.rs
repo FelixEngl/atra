@@ -16,6 +16,7 @@ use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use case_insensitive_string::CaseInsensitiveString;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use url::Url;
@@ -72,6 +73,20 @@ impl AtraUri {
 
     pub fn path(&self) -> Option<&str> {
         match self { AtraUri::Url(value) => {Some(value.path())} }
+    }
+
+    pub fn get_file_endings(&self) -> Option<Vec<&str>> {
+        match self {
+            AtraUri::Url(value) => {
+                let last = value.path_segments()?.last()?;
+                let sep = last.find('.')?;
+                if sep == last.len() - 1 {
+                    return None
+                }
+                let result = (&last[sep+1..]).split_terminator('.').filter(|value| !value.is_empty()).collect_vec();
+                (!result.is_empty()).then_some(result)
+            }
+        }
     }
 
     pub fn same_host(&self, other: &Self) -> bool {
@@ -292,6 +307,19 @@ mod test {
                 assert_eq!(old, new, "Failed {old:?} {new:?} for base={base}, other={other}");
             }
         }
+    }
+
+    #[test]
+    fn can_find_fileendings(){
+        let uri1: AtraUri = "https://www.siemens.com/path/to/something/data.pdf".parse().unwrap();
+        let uri2: AtraUri = "https://www.siemens.com/path/to/something/data.pdf#help".parse().unwrap();
+        let uri3: AtraUri = "https://www.siemens.com/path/to/something/other_data.tar.gz#help".parse().unwrap();
+        assert_eq!(Some(vec!["pdf"]), uri1.get_file_endings());
+        assert_eq!(Some(vec!["pdf"]), uri2.get_file_endings());
+        assert_eq!(Some(vec!["tar", "gz"]), uri3.get_file_endings());
+        assert_eq!(Some("pdf"), uri1.file_extension());
+        assert_eq!(Some("pdf"), uri2.file_extension());
+        assert_eq!(Some("gz"), uri3.file_extension());
     }
 }
 
