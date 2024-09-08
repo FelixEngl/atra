@@ -97,7 +97,7 @@ pub trait IdfAlgorithm {
 
 /// Default IDF Algorithms
 /// From https://en.wikipedia.org/wiki/Tf%E2%80%93idf
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Idf {
     Unary,
     InverseDocumentFrequency,
@@ -176,7 +176,7 @@ pub trait TfAlgorithm {
 
 /// Default TF Algorithms
 /// From https://en.wikipedia.org/wiki/Tf%E2%80%93idf
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Tf {
     Binary,
     RawCount,

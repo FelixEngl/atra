@@ -16,6 +16,7 @@ use std::borrow::Cow;
 use std::fmt::Debug;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, ErrorKind, Read};
+use std::ops::Deref;
 use std::sync::Arc;
 use camino::{Utf8Path};
 use isolang::Language;
@@ -30,7 +31,7 @@ use crate::features::svm::classifier::{DocumentClassifier};
 use crate::features::svm::error::{LibLinearError, SvmCreationError};
 use crate::features::svm::config::{SvmRecognizerConfig, DocumentClassifierConfig};
 use crate::features::text_processing::tf_idf::{IdfAlgorithm, TfAlgorithm, TfIdf};
-use crate::features::tokenizing::StopwordContext;
+use crate::features::tokenizing::SupportsStopwords;
 use crate::features::tokenizing::stopwords::StopWordList;
 use crate::features::tokenizing::tokenizer::Tokenizer;
 
@@ -46,11 +47,8 @@ pub struct TrainModelEntry {
     pub text: String
 }
 
-
-
-
 /// gdbr - L2R_L2LOSS_SVR
-pub async fn create_document_classifier<C, TF, IDF, SOLVER>(
+pub fn create_document_classifier<C, TF, IDF, SOLVER>(
     cfg: &SvmRecognizerConfig<TF, IDF>,
     context: &C,
     root_setter: Option<&impl RootSetter>
@@ -58,10 +56,9 @@ pub async fn create_document_classifier<C, TF, IDF, SOLVER>(
     TF: TfAlgorithm + Serialize + DeserializeOwned + Clone + Debug,
     IDF: IdfAlgorithm + Serialize + DeserializeOwned + Clone + Debug,
     SOLVER: SupportsParametersCreation,
-    C: StopwordContext,
-    Model<SOLVER>: TryFrom<Model<GenericSolver>>
-{
-    let model = match cfg {
+    Model<SOLVER>: TryFrom<Model<GenericSolver>>,
+    C: SupportsStopwords, {
+    let model = match &cfg {
         SvmRecognizerConfig::Load {
             trained_svm,
             min_doc_length,
@@ -93,7 +90,13 @@ pub async fn create_document_classifier<C, TF, IDF, SOLVER>(
                 training,
                 match context.stopword_registry() {
                     None => {None}
-                    Some(registry) => {registry.get_or_load(&language).await}
+                    Some(registry) => {
+                        if cfg.can_train() {
+                            registry.get_or_load(cfg.language())
+                        } else {
+                            None
+                        }
+                    }
                 }
             )?
         }
@@ -127,7 +130,13 @@ pub async fn create_document_classifier<C, TF, IDF, SOLVER>(
                     training,
                     match context.stopword_registry() {
                         None => {None}
-                        Some(registry) => {registry.get_or_load(&language).await}
+                        Some(registry) => {
+                            if cfg.can_train() {
+                                registry.get_or_load(cfg.language())
+                            } else {
+                                None
+                            }
+                        }
                     }
                 )?;
                 let mut outp = BufWriter::new(File::options().write(true).create(true).truncate(true).open(trained_svm.as_path())?);
@@ -139,7 +148,7 @@ pub async fn create_document_classifier<C, TF, IDF, SOLVER>(
 
     if let Some(test_data) = cfg.test_data() {
         if test_data.exists() {
-            todo!()
+            log::warn!("Testing the trained svm is currently not supported!")
         }
     }
 
@@ -242,14 +251,14 @@ pub(crate) mod test {
     use crate::features::svm::{read_train_data, train, TrainModelEntry};
     use crate::features::svm::classifier::DocumentClassifier;
     use crate::features::text_processing::tf_idf::{Idf, Tf};
-    use crate::features::tokenizing::{StopwordContext, StopwordRegistryConfig};
+    use crate::features::tokenizing::{SupportsStopwords, StopwordRegistryConfig};
     use crate::features::tokenizing::stopwords::{StopWordRegistry, StopWordRepository};
 
     struct RegistryContainer {
         stop_word_registry: StopWordRegistry
     }
 
-    impl StopwordContext for RegistryContainer {
+    impl SupportsStopwords for RegistryContainer {
         fn stopword_registry(&self) -> Option<&StopWordRegistry> {
             Some(&self.stop_word_registry)
         }
@@ -289,7 +298,7 @@ pub(crate) mod test {
         train::<_, _, L2R_L2LOSS_SVR>(
             &Language::Deu,
             &cfg,
-            reg.stop_word_registry.get_or_load_sync(&Language::Deu)
+            reg.stop_word_registry.get_or_load(&Language::Deu)
         ).expect("The training failed!")
     }
 

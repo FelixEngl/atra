@@ -3,4 +3,4 @@
 	url = https://github.com/FelixEngl/liblinear-rs.git
 [submodule "external/mupdf"]
 	path = external/mupdf
-	url = https://github.com/messense/mupdf-rs.git
+	url = https://github.com/FelixEngl/mupdf-rs.git

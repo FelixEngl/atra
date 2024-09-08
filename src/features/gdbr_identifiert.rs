@@ -1,11 +1,14 @@
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Entry;
+use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::iter::Filter;
+use std::marker::PhantomData;
 use std::ops::Deref;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
+use compact_str::format_compact;
 use ego_tree::iter::{Edge, Traverse};
 use ego_tree::NodeRef;
 use isolang::Language;
@@ -14,62 +17,204 @@ use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
 use liblinear::solver::traits::{IsTrainableSolver, Solver};
 use liblinear::Model;
+use liblinear::parameter::serde::SupportsParametersCreation;
 use liblinear::solver::{GenericSolver, L2R_L2LOSS_SVR};
 use scraper::{Html, Node};
 use tokio::sync::RwLock;
+use crate::core::config::Configs;
+use crate::core::contexts::Context;
+use crate::core::io::root::RootSetter;
 use crate::features::html_tags::{HtmlTag, HtmlTagCategory};
 use crate::features::scraper_ext::Text;
 use crate::features::svm::classifier::DocumentClassifier;
+use crate::features::svm::config::SvmRecognizerConfig;
+use crate::features::svm::{create_document_classifier};
+use crate::features::svm::error::SvmCreationError;
 use crate::features::text_processing::tf_idf::{Idf, IdfAlgorithm, Tf, TfAlgorithm};
+use crate::features::tokenizing::stopwords::StopWordRegistry;
+use crate::features::tokenizing::SupportsStopwords;
+
+/// A trait that allows a context to support the initialisation of gdbr
+pub trait SupportsGdbrIdentifier<TF: TfAlgorithm, IDF: IdfAlgorithm> {
+    fn gdbr_config(&self) -> Option<&GdbrIdentifierRegistryConfig<TF, IDF>>;
+
+    fn root_setter(&self) -> Option<&impl RootSetter>;
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
+#[serde(bound(
+    serialize = "TF: Clone + Serialize + Debug, IDF: Clone + Serialize + Debug",
+    deserialize = "TF: Clone + DeserializeOwned + Debug, IDF: Clone + DeserializeOwned + Debug"
+))]
+pub struct GdbrIdentifierRegistryConfig<TF: TfAlgorithm, IDF: IdfAlgorithm> {
+    default: Option<GdbrIdentifierConfig<TF, IDF>>,
+    by_language: Option<HashMap<Language, LanguageBoundGdbrIdentifierConfig<TF, IDF>>>
+}
+
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone)]
+#[serde(bound(
+    serialize = "TF: Clone + Serialize + Debug, IDF: Clone + Serialize + Debug",
+    deserialize = "TF: Clone + DeserializeOwned + Debug, IDF: Clone + DeserializeOwned + Debug"
+))]
+pub struct LanguageBoundGdbrIdentifierConfig<TF: TfAlgorithm, IDF: IdfAlgorithm> {
+    only_if_reliable: bool,
+    identifier: GdbrIdentifierConfig<TF, IDF>
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(bound(
+    serialize = "TF: Clone + Serialize + Debug, IDF: Clone + Serialize + Debug",
+    deserialize = "TF: Clone + DeserializeOwned + Debug, IDF: Clone + DeserializeOwned + Debug"
+))]
+pub struct GdbrIdentifierConfig<TF: TfAlgorithm, IDF: IdfAlgorithm>  {
+    pub threshold: f64,
+    pub filter_threshold: f64,
+    pub filter_by: FilterMode,
+    pub svm: SvmRecognizerConfig<TF, IDF>
+}
+
+impl<TF: TfAlgorithm + PartialEq, IDF: IdfAlgorithm + PartialEq> Eq for GdbrIdentifierConfig<TF, IDF> {}
+
+impl<TF: TfAlgorithm + PartialEq, IDF: IdfAlgorithm + PartialEq> PartialEq for GdbrIdentifierConfig<TF, IDF> {
+    fn eq(&self, other: &Self) -> bool {
+        self.filter_by.eq(&other.filter_by)
+            && float_cmp::approx_eq!(f64, self.filter_threshold, other.filter_threshold)
+            && float_cmp::approx_eq!(f64, self.threshold, other.threshold)
+            && self.svm == other.svm
+    }
+}
 
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default)]
 pub struct GdbrIdentifierRegistry<TF, IDF, SOLVER: Solver> {
     default: Option<GdbrIdentifier<TF, IDF, SOLVER>>,
-    by_language: Option<HashMap<Language, LazyLanguageBoundGdbrIdentifier<TF, IDF, SOLVER>>>
+    by_language: Option<HashMap<Language, LanguageBoundGdbrIdentifier<TF, IDF, SOLVER>>>
 }
 
 impl<TF, IDF, SOLVER: Solver> GdbrIdentifierRegistry<TF, IDF, SOLVER> {
     pub fn get_by_language(&self, language: &whatlang::Info) -> Option<&GdbrIdentifier<TF, IDF, SOLVER>> {
-        if let Some(ref by_language) = self.by_language {
-            Language::from_639_3(language.lang().code())
-            if let Some(found) = by_language.get(&) {
+        let by_language = self.by_language.as_ref()?;
+        let identified = Language::from_639_3(language.lang().code())?;
+        let found = by_language.get(&identified)?;
+        found.get_with_reliability(language.is_reliable())
+    }
 
-            }
+    pub fn get_default(&self) -> Option<&GdbrIdentifier<TF, IDF, SOLVER>> {
+        self.default.as_ref()
+    }
+
+    pub fn get_by_language_or_default(&self, language: &whatlang::Info) -> Option<&GdbrIdentifier<TF, IDF, SOLVER>> {
+        match self.get_by_language(language) {
+            x @ Some(_) => x,
+            None => self.get_default()
         }
     }
 }
 
-struct LazyLanguageBoundGdbrIdentifier<TF, IDF, SOLVER: Solver> {
-    min_confidence: Option<f64>,
-    identifier: std::sync::LazyLock<GdbrIdentifier<TF, IDF, SOLVER>>
-}
+impl<TF, IDF, SOLVER: Solver> GdbrIdentifierRegistry<TF, IDF, SOLVER>
+where
+    TF: TfAlgorithm + Serialize + DeserializeOwned + Clone + Debug,
+    IDF: IdfAlgorithm + Serialize + DeserializeOwned + Clone + Debug,
+    SOLVER: SupportsParametersCreation,
+    Model<SOLVER>: TryFrom<Model<GenericSolver>>
+{
 
-impl<TF, IDF, SOLVER: Solver> LazyLanguageBoundGdbrIdentifier<TF, IDF, SOLVER> {
-    pub fn get_by_min_confidence(&self, confidence: f64) -> Option<&GdbrIdentifier<TF, IDF, SOLVER>> {
-        if let Some(min_cofidence) = self.min_confidence {
-            if min_cofidence <= confidence {
-                Some(&self.identifier)
+    pub fn new_from_config<C: SupportsGdbrIdentifier<TF, IDF> + SupportsStopwords>(context: &C) -> Result<Option<Self>, SvmCreationError<IDF>> {
+        if let Some(config) = context.gdbr_config() {
+            let default = if let Some(ref default) = config.default {
+                match create_document_classifier(&default.svm, context, context.root_setter()) {
+                    Ok(value) => {
+                        Some(
+                            GdbrIdentifier::new(
+                                value,
+                                default.threshold,
+                                default.filter_threshold,
+                                default.filter_by
+                            )
+                        )
+                    }
+                    Err(err) => {
+                        return Err(err)
+                    }
+                }
             } else {
                 None
-            }
+            };
+
+            let by_language = if let Some(ref others) = config.by_language {
+                  others.iter().map( |(k, v)| {
+                      match create_document_classifier(&v.identifier.svm, context, context.root_setter()) {
+                          Ok(value) => {
+                              Ok(
+                                  (*k, LanguageBoundGdbrIdentifier::new(
+                                      v.only_if_reliable,
+                                      GdbrIdentifier::new(
+                                          value,
+                                          v.identifier.threshold,
+                                          v.identifier.filter_threshold,
+                                          v.identifier.filter_by
+                                      )
+                                  ))
+                              )
+                          }
+                          Err(err) => {
+                              Err(err)
+                          }
+                      }
+                  }).process_results(|value| {
+                      let collected = value.collect::<HashMap<Language, LanguageBoundGdbrIdentifier<_, _, _>>>();
+                      (!collected.is_empty()).then_some(collected)
+                  })?
+            } else {
+                None
+            };
+
+            Ok(
+                Some(
+                    Self {
+                        default,
+                        by_language
+                    }
+                )
+            )
+        } else {
+            Ok(None)
+        }
+    }
+
+}
+
+#[derive(Debug)]
+struct LanguageBoundGdbrIdentifier<TF, IDF, SOLVER: Solver> {
+    only_if_reliable: bool,
+    identifier: GdbrIdentifier<TF, IDF, SOLVER>
+}
+
+impl<TF, IDF, SOLVER: Solver> LanguageBoundGdbrIdentifier<TF, IDF, SOLVER> {
+    pub fn new(only_if_reliable: bool, identifier: GdbrIdentifier<TF, IDF, SOLVER>) -> Self {
+        Self { only_if_reliable, identifier }
+    }
+
+    pub fn get_with_reliability(&self, is_reliable: bool) -> Option<&GdbrIdentifier<TF, IDF, SOLVER>>
+    {
+        if !self.only_if_reliable || is_reliable {
+            Some(self.get())
         } else {
             None
         }
     }
 
-    pub fn get(&self) -> &GdbrIdentifier<TF, IDF, SOLVER> {
+    pub fn get(&self) -> &GdbrIdentifier<TF, IDF, SOLVER>
+    {
         &self.identifier
     }
 }
 
 
-
-
-
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize, Default)]
 pub enum FilterMode {
+    #[default]
     OnScore,
     OnMaxScore,
     OnAverageScore,
@@ -104,6 +249,8 @@ impl FilterMode {
         }
     }
 }
+
+
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(bound(

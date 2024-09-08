@@ -1,15 +1,15 @@
 use std::fmt::Debug;
-use std::num::NonZeroUsize;
 use std::sync::Arc;
 use camino::{Utf8Path, Utf8PathBuf};
 use isolang::Language;
+use itertools::Itertools;
 use liblinear::parameter::serde::GenericParameters;
 use liblinear::solver::L2R_L2LOSS_SVR;
-use moka::ops::compute::Op;
 use rust_stemmers::Algorithm;
 use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
 use thiserror::Error;
+use crate::core::toolkit::comp_opt;
 use crate::features::svm::classifier::DocumentClassifier;
 use crate::features::text_processing::tf_idf::{Idf, IdfAlgorithm, Tf, TfAlgorithm};
 
@@ -187,7 +187,7 @@ pub struct SvmParameterConfig {
 
 
 #[derive(Debug, Clone)]
-pub struct DocumentClassifierConfig<TF = Tf, IDF = Idf> where TF: TfAlgorithm, IDF: IdfAlgorithm {
+pub struct DocumentClassifierConfig<TF: TfAlgorithm = Tf, IDF: IdfAlgorithm = Idf> {
     pub tf: TF,
     pub idf: IDF,
     pub train_data: Utf8PathBuf,
@@ -229,13 +229,48 @@ impl<TF, IDF> DocumentClassifierConfig<TF, IDF> where TF: TfAlgorithm, IDF: IdfA
 }
 
 
+impl<TF, IDF> Eq for DocumentClassifierConfig<TF, IDF> where TF: TfAlgorithm + Eq, IDF: IdfAlgorithm + Eq {}
+
+impl<TF, IDF> PartialEq for DocumentClassifierConfig<TF, IDF> where TF: TfAlgorithm + PartialEq, IDF: IdfAlgorithm + PartialEq {
+    fn eq(&self, other: &Self) -> bool {
+        fn comp_params(params_a: &Option<GenericParameters>, params_b: &Option<GenericParameters>) -> bool {
+            match (params_a, params_b) {
+                (Some(a), Some(b)) => {
+                    a.regularize_bias == b.regularize_bias
+                        && comp_opt(a.epsilon, b.epsilon, |a, b| float_cmp::approx_eq!(f64, a, b))
+                        && comp_opt(a.cost, b.cost, |a, b| float_cmp::approx_eq!(f64, a, b))
+                        && comp_opt(a.p, b.p, |a, b| float_cmp::approx_eq!(f64, a, b))
+                        && comp_opt(a.nu, b.nu, |a, b| float_cmp::approx_eq!(f64, a, b))
+                        && comp_opt(a.bias, b.bias, |a, b| float_cmp::approx_eq!(f64, a, b))
+                        && comp_opt(a.cost_penalty.as_ref(), b.cost_penalty.as_ref(), |a, b| { a.len() == b.len() && a.iter().zip_eq(b.iter()).all(|(a, b)| a.0 == b.0 && float_cmp::approx_eq!(f64, a.1, b.1)) })
+                        && comp_opt(a.initial_solutions.as_ref(), b.initial_solutions.as_ref(), |a, b| { a.len() == b.len() && a.iter().zip_eq(b.iter()).all(|(a, b)| float_cmp::approx_eq!(f64, *a, *b)) })
+                }
+                (None, None) => true,
+                _ => false
+            }
+        }
+
+        self.tf == other.tf
+            && self.idf == other.idf
+            && self.train_data == other.train_data
+            && self.tf_idf_data == other.tf_idf_data
+            && self.normalize_tokens == other.normalize_tokens
+            && self.filter_stopwords == other.filter_stopwords
+            && self.stemmer == other.stemmer
+            && self.min_doc_length == other.min_doc_length
+            && self.min_vector_length == other.min_vector_length
+            && comp_params(&self.parameters, &other.parameters)
+    }
+}
+
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(bound(
-    serialize = "TF: Clone + Serialize, IDF: Clone + Serialize",
+    serialize = "TF: Clone + Serialize + Debug, IDF: Clone + Serialize + Debug",
     deserialize = "TF: Clone + DeserializeOwned + Debug, IDF: Clone + DeserializeOwned + Debug"
 ))]
 #[serde(try_from = "SvmRecognizerConfigSer<TF, IDF>", into = "SvmRecognizerConfigSer<TF, IDF>")]
-pub enum SvmRecognizerConfig<TF = Tf, IDF = Idf> where TF: TfAlgorithm + Debug, IDF: IdfAlgorithm + Debug {
+pub enum SvmRecognizerConfig<TF: TfAlgorithm = Tf, IDF: IdfAlgorithm = Idf> {
     Load {
         language: Language,
         trained_svm: Utf8PathBuf,
@@ -259,6 +294,81 @@ pub enum SvmRecognizerConfig<TF = Tf, IDF = Idf> where TF: TfAlgorithm + Debug, 
     }
 }
 
+impl<TF, IDF> Eq for SvmRecognizerConfig<TF, IDF> where TF: TfAlgorithm + Eq, IDF: IdfAlgorithm + Eq {}
+
+impl<TF, IDF> PartialEq for SvmRecognizerConfig<TF, IDF> where TF: TfAlgorithm + PartialEq, IDF: IdfAlgorithm + PartialEq {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                Self::Load{
+                    language,
+                    trained_svm,
+                    test_data,
+                    min_doc_length,
+                    min_vector_length
+                },
+                Self::Load {
+                    language: language_b,
+                    trained_svm: trained_svm_b,
+                    test_data: test_data_b,
+                    min_doc_length: min_doc_length_b,
+                    min_vector_length: min_vector_length_b,
+                }
+            ) => {
+                language == language_b
+                    && trained_svm == trained_svm_b
+                    && test_data == test_data_b
+                    && min_doc_length == min_doc_length_b
+                    && min_vector_length == min_vector_length_b
+            }
+            (
+                Self::Train{
+                    language,
+                    test_data,
+                    classifier,
+                },
+                Self::Train {
+                    language: language_b,
+                    test_data: test_data_b,
+                    classifier: classifier_b,
+                }
+            ) => {
+                language == language_b
+                    && test_data == test_data_b
+                    && classifier == classifier_b
+            }
+            (
+                Self::All{
+                    language,
+                    retrain_if_possible,
+                    trained_svm,
+                    test_data,
+                    classifier,
+                    min_doc_length,
+                    min_vector_length
+                },
+                Self::All {
+                    language: language_b,
+                    retrain_if_possible: retrain_if_possible_b,
+                    trained_svm: trained_svm_b,
+                    test_data: test_data_b,
+                    classifier: classifier_b,
+                    min_doc_length: min_doc_length_b,
+                    min_vector_length: min_vector_length_b,
+                }
+            ) => {
+                language == language_b
+                    && retrain_if_possible == retrain_if_possible_b
+                    && trained_svm == trained_svm_b
+                    && test_data == test_data_b
+                    && min_doc_length == min_doc_length_b
+                    && min_vector_length == min_vector_length_b
+                    && classifier == classifier_b
+            }
+            _ => false
+        }
+    }
+}
 
 impl<TF, IDF> SvmRecognizerConfig<TF, IDF>
 where
@@ -272,6 +382,10 @@ where
             SvmRecognizerConfig::Train { language, .. } => {language}
             SvmRecognizerConfig::All { language, .. } => {language}
         }
+    }
+
+    pub fn can_train(&self) -> bool {
+        matches!(self, SvmRecognizerConfig::Train{..} | SvmRecognizerConfig::All{..})
     }
 
 
@@ -292,6 +406,7 @@ where
         }
     }
 }
+
 
 #[derive(Debug, Error)]
 #[error("Failed to initialize any meningful config with {0:?}")]

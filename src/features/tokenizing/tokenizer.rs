@@ -90,7 +90,7 @@ mod test {
         let tokenizer = Tokenizer::new(
             Language::Deu,
             true,
-            registry.get_or_load_sync(&Language::from_639_1("de").unwrap()),
+            registry.get_or_load(&Language::from_639_1("de").unwrap()),
             Some(rust_stemmers::Algorithm::German)
         );
 

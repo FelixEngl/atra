@@ -12,7 +12,6 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::cell::LazyCell;
 use std::cmp::min;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
@@ -37,9 +36,12 @@ use crate::core::robots::{InMemoryRobotsManager, ShareableRobotsManager};
 use crate::core::url::queue::{EnqueueCalled, UrlQueue, UrlQueueElement, UrlQueueElementWeak};
 use crate::core::{UrlWithDepth, VecDataHolder};
 use crate::core::contexts::errors::{LinkHandlingError, RecoveryError};
+use crate::core::io::root::RootSetter;
 use crate::core::origin::AtraOriginProvider;
 use crate::core::origin::managers::InMemoryOriginManager;
 use crate::core::url::atra_uri::AtraUri;
+use crate::features::gdbr_identifiert::{GdbrIdentifierRegistryConfig, SupportsGdbrIdentifier};
+use crate::features::text_processing::tf_idf::{Idf, Tf};
 use crate::features::tokenizing::stopwords::StopWordRegistry;
 
 #[derive(Debug)]
@@ -246,9 +248,19 @@ impl super::Context for InMemoryContext {
 
 }
 
-impl crate::features::tokenizing::StopwordContext for InMemoryContext {
+impl crate::features::tokenizing::SupportsStopwords for InMemoryContext {
     fn stopword_registry(&self) -> Option<&StopWordRegistry> {
         Some(&self.stop_word_registry)
+    }
+}
+
+impl SupportsGdbrIdentifier<Tf, Idf> for InMemoryContext {
+    fn gdbr_config(&self) -> Option<&GdbrIdentifierRegistryConfig<Tf, Idf>> {
+        self.configs.crawl.gdbr_config.as_ref()
+    }
+
+    fn root_setter(&self) -> Option<&impl RootSetter> {
+        Some(&self.configs.paths)
     }
 }
 

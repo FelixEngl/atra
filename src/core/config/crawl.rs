@@ -27,6 +27,8 @@ use strum::EnumString;
 use thiserror::Error;
 use crate::core::extraction::extractor::{Extractor};
 use crate::core::UrlWithDepth;
+use crate::features::gdbr_identifiert::GdbrIdentifierRegistryConfig;
+use crate::features::text_processing::tf_idf::{Idf, Tf};
 use crate::features::tokenizing::StopwordRegistryConfig;
 
 /// The general crawling settings for a single
@@ -106,6 +108,9 @@ pub struct CrawlConfig {
     /// Used to configure the stopword registry if needed.
     pub stopword_registry: Option<StopwordRegistryConfig>,
 
+    /// Used to configure the gdbr feature
+    pub gdbr_config: Option<GdbrIdentifierRegistryConfig<Tf, Idf>>,
+
     #[cfg(feature = "chrome")]
     /// The settings for a chrome instance
     pub chrome_settings: Option<ChromeSettings>,
@@ -142,6 +147,7 @@ impl Default for CrawlConfig {
             decode_big_files_up_to: None,
             use_default_stopwords: true,
             stopword_registry: None,
+            gdbr_config: None,
             #[cfg(feature = "chrome")]
             chrome_settings: Default::default()
         }

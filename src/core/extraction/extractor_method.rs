@@ -5,11 +5,11 @@ use crate::core::extraction::marker::{ExtractorMethodHint, ExtractorMethodMeta, 
 use crate::core::extraction::extractor::{ProcessedData, ExtractorResult};
 use crate::core::extraction::raw::extract_possible_urls;
 use crate::core::format::supported::AtraSupportedFileFormat;
-use crate::core::VecDataHolder;
 use crate::core::contexts::Context;
 use crate::core::extraction::links::ExtractedLink;
 use crate::core::decoding::DecodedData;
 use crate::core::extraction::extractor_method::LinkExtractionError::NotCompatible;
+use crate::core::VecDataHolder;
 
 #[derive(Debug, Error)]
 pub enum LinkExtractionError {
@@ -26,10 +26,10 @@ pub enum LinkExtractionError {
 
 #[derive(Debug, Error)]
 pub enum LinkExtractionSubError {
-    // #[error(transparent)]
-    // Pdf(#[from] link_scraper::formats::pdf::PdfScrapingError),
-    // #[error(transparent)]
-    // Rtf(#[from] link_scraper::formats::rtf::RtfScrapingError),
+    #[error(transparent)]
+    Pdf(#[from] link_scraper::formats::pdf::PdfScrapingError),
+    #[error(transparent)]
+    Rtf(#[from] link_scraper::formats::rtf::RtfScrapingError),
 }
 
 macro_rules! create_extractor_method {
@@ -95,15 +95,15 @@ create_extractor_method! {
         extractor: fn extract_links_raw;
     }
 
-    // PdfV1 {
-    //     alias: "pdf_v1";
-    //     extractor: fn extract_links_pdf;
-    // }
-    //
-    // RTF {
-    //     alias: "rtf_v1";
-    //     extractor: fn extract_links_rtf;
-    // }
+    PdfV1 {
+        alias: "pdf_v1";
+        extractor: fn extract_links_pdf;
+    }
+
+    RTF {
+        alias: "rtf_v1";
+        extractor: fn extract_links_rtf;
+    }
 }
 
 impl ExtractorMethod {
@@ -121,12 +121,12 @@ impl ExtractorMethod {
             ExtractorMethod::RawV1 => {
                 true
             }
-            // ExtractorMethod::PdfV1 => {
-            //     matches!(page.1.format, AtraSupportedFileFormat::PDF)
-            // }
-            // ExtractorMethod::RTF => {
-            //     matches!(page.1.format, AtraSupportedFileFormat::RTF)
-            // }
+            ExtractorMethod::PdfV1 => {
+                matches!(page.1.format, AtraSupportedFileFormat::PDF)
+            }
+            ExtractorMethod::RTF => {
+                matches!(page.1.format, AtraSupportedFileFormat::RTF)
+            }
         }
     }
 }
@@ -279,7 +279,6 @@ macro_rules! create_extraction_fn {
         async fn $name(extractor: &impl ExtractorMethodMetaFactory, _context: &impl Context, page: &ProcessedData<'_>, output: &mut ExtractorResult) -> Result<usize, LinkExtractionError> {
             match &page.0.content {
                 VecDataHolder::InMemory { data } => {
-
                     match $($tt)+::scrape(&data) {
                         Ok(result) => {
                             let mut ct = 0;
@@ -314,6 +313,6 @@ macro_rules! create_extraction_fn {
     };
 }
 
-// create_extraction_fn!(extract_links_pdf("pdf", link_scraper::formats::pdf));
-// create_extraction_fn!(extract_links_rtf("rtf", link_scraper::formats::rtf));
+create_extraction_fn!(extract_links_pdf("pdf", link_scraper::formats::pdf));
+create_extraction_fn!(extract_links_rtf("rtf", link_scraper::formats::rtf));
 

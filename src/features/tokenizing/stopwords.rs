@@ -1,7 +1,7 @@
 pub mod iso_stopwords;
 mod repository;
 
-pub use repository::{StopWordRepository, StopWordRepositoryConversionError, StopWordListRepository};
+pub use repository::{StopWordRepository, StopWordListRepository};
 
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
@@ -10,7 +10,8 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::io;
 use std::io::BufRead;
-use std::sync::Arc;
+use std::ops::Deref;
+use std::sync::{Arc, RwLock};
 
 use compact_str::{CompactString, ToCompactString};
 use isolang::Language;
@@ -25,29 +26,27 @@ use crate::features::tokenizing::StopwordRegistryConfig;
 /// If multiple repositories are provided the used stopword list is
 ///     - The first loaded stopword list, if fast is set
 ///     - a combination of all provided stopword lists from all registered repositories if fast is not net.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct StopWordRegistry {
-    cached_stop_words: tokio::sync::RwLock<HashMap<Language, Arc<StopWordList>>>,
-    repositories: Vec<StopWordRepository>
+    cached_stop_words: Arc<RwLock<HashMap<Language, Arc<StopWordList>>>>,
+    repositories: Arc<RwLock<Vec<StopWordRepository>>>
 }
-
-unsafe impl Send for StopWordRegistry {}
-unsafe impl Sync for StopWordRegistry {}
 
 impl StopWordRegistry {
     pub fn initialize(cfg: &StopwordRegistryConfig) -> Result<Self, io::Error>  {
         let mut new = Self::default();
-        new.repositories = cfg.to_vec();
+        new.repositories.write().unwrap().extend(cfg.to_vec());
         Ok(new)
     }
 
     pub fn register(&mut self, repository: StopWordRepository) {
-        self.repositories.push(repository)
+        self.repositories.write().unwrap().push(repository)
     }
 
     fn load_stop_words(&self, language: &Language) -> Option<Vec<String>> {
+        let read = self.repositories.read().unwrap();
         let mut collection = Vec::new();
-        for repo in &self.repositories {
+        for repo in read.deref() {
             if let Some(found) = repo.load_raw_stop_words(&language) {
                 collection.extend(found)
             }
@@ -55,26 +54,13 @@ impl StopWordRegistry {
         (!collection.is_empty()).then_some(collection)
     }
 
-    #[cfg(test)]
-    pub fn get_or_load_sync(&self, language: &Language) -> Option<Arc<StopWordList>> {
-        tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(
-                async move {
-                    self.get_or_load(language).await
-                }
-            )
-    }
-
-    pub async fn get_or_load(&self, language: &Language) -> Option<Arc<StopWordList>> {
-        let lock = self.cached_stop_words.read().await;
+    pub fn get_or_load(&self, language: &Language) -> Option<Arc<StopWordList>> {
+        let lock = self.cached_stop_words.read().unwrap();
         if let Some(found) = lock.get(&language).map(|value| value.clone()) {
             return Some(found);
         }
         drop(lock);
-        let mut lock = self.cached_stop_words.write().await;
+        let mut lock = self.cached_stop_words.write().unwrap();
         match lock.entry(language.clone()) {
             Entry::Occupied(value) => {
                 Some(value.get().clone())

@@ -41,7 +41,18 @@ pub struct TokenizerConfig {
 }
 
 /// The context needed for tokenizing to work
-pub trait StopwordContext {
+pub trait SupportsStopwords {
     fn stopword_registry(&self) -> Option<&StopWordRegistry>;
 }
 
+impl SupportsStopwords for Option<StopWordRegistry> {
+    fn stopword_registry(&self) -> Option<&StopWordRegistry> {
+        self.as_ref()
+    }
+}
+
+impl SupportsStopwords for Option<&StopWordRegistry> {
+    fn stopword_registry(&self) -> Option<&StopWordRegistry> {
+        self.clone()
+    }
+}

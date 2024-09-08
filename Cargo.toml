@@ -136,7 +136,7 @@ sitemap = "0.4"
 linkify = "0.10"
 ress = "0"
 #mupdf = { path= "external/mupdf" }
-#link_scraper = { version = "0.1", features = ["all"] }
+link_scraper = { version = "0.1", features = ["all"] }
 psl = "2"
 
 # Type System
@@ -186,7 +186,7 @@ lipsum = "0.9"
 
 [patch.crates-io]
 #mupdf-sys = { path= "external/mupdf/mupdf-sys" }
-#mupdf = { path= "external/mupdf" }
+mupdf = { path= "external/mupdf" }
 
 [build-dependencies]
 #file-format = { git = "https://github.com/FelixEngl/file-format.git", branch = "main", features = ["reader", "extended-enums"] }

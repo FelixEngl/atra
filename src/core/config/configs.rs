@@ -44,6 +44,7 @@ impl Configs {
     pub fn paths(&self) -> &PathsConfig {
         &self.paths
     }
+
     #[inline]
     pub fn system(&self) -> &SystemConfig {
         &self.system
@@ -85,7 +86,7 @@ mod test {
         let mut config = Configs::default();
         config.session.crawl_job_id = 99;
         let mut writer = BufWriter::new(File::options().write(true).create(true).open("./atra_test.json").unwrap());
-        write!(&mut writer, "{}", serde_json::to_string(&config).unwrap());
+        write!(&mut writer, "{}", serde_json::to_string(&config).unwrap()).unwrap();
         drop(writer);
 
         let mut s = String::new();

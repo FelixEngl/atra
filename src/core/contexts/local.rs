@@ -23,7 +23,6 @@ use crate::core::link_state::{LinkStateManager, LinkState, LinkStateDB, LinkStat
 use crate::core::config::configs::Configs;
 use crate::core::contexts::{RecoveryCommand};
 use crate::core::contexts::errors::{LinkHandlingError, RecoveryError};
-use crate::core::contexts::inmemory::InMemoryContext;
 use crate::core::crawl::db::{CrawlDB};
 use crate::core::crawl::seed::CrawlSeed;
 use crate::core::crawl::slim::{SlimCrawlResult};
@@ -33,12 +32,15 @@ use crate::core::extraction::ExtractedLink;
 use crate::core::robots::{OffMemoryRobotsManager, ShareableRobotsManager};
 use crate::core::rocksdb_ext::{open_db};
 use crate::core::io::fs::FileSystemAccess;
+use crate::core::io::root::RootSetter;
 use crate::core::origin::AtraOriginProvider;
 use crate::core::web_graph::{WebGraphEntry, QueuingWebGraphManager, WebGraphManager};
 use crate::core::queue::file::RawAgingQueueFile;
 use crate::core::shutdown::UnsafeShutdownGuard;
 use crate::core::url::queue::{UrlQueue, UrlQueueElement, UrlQueueWrapper};
 use crate::core::UrlWithDepth;
+use crate::features::gdbr_identifiert::{GdbrIdentifierRegistryConfig, SupportsGdbrIdentifier};
+use crate::features::text_processing::tf_idf::{Idf, Tf};
 use crate::features::tokenizing::stopwords::StopWordRegistry;
 use crate::util::RuntimeContext;
 
@@ -132,9 +134,19 @@ impl LocalContext {
     }
 }
 
-impl crate::features::tokenizing::StopwordContext for LocalContext {
+impl crate::features::tokenizing::SupportsStopwords for LocalContext {
     fn stopword_registry(&self) -> Option<&StopWordRegistry> {
         self.stop_word_registry.as_ref()
+    }
+}
+
+impl SupportsGdbrIdentifier<Tf, Idf> for LocalContext {
+    fn gdbr_config(&self) -> Option<&GdbrIdentifierRegistryConfig<Tf, Idf>> {
+        self.configs.crawl.gdbr_config.as_ref()
+    }
+
+    fn root_setter(&self) -> Option<&impl RootSetter> {
+        Some(&self.configs.paths)
     }
 }
 
