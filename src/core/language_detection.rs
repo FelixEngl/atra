@@ -90,7 +90,7 @@ pub fn detect_language<'a>(
     file_type: &AtraFileInformation,
     decoded: &DecodedData<String, Utf8PathBuf>
 ) -> Result<Option<IdentifiedLanguage>, std::io::Error> {
-    const MAX_IN_MEMORY_FOR_LANG: u64 = (1u64 * ByteUnit::MB).as_u64();
+    const MAX_IN_MEMORY_FOR_LANG: u64 = 1u64 * ByteUnit::MB.as_u64();
 
     fn create_limited_sample_file_reader(context: &impl Context, path: impl AsRef<Path>) -> std::io::Result<impl Read> {
         let max_bytes = if let Some(mfs) = context.configs().crawl.max_file_size {
@@ -148,7 +148,7 @@ pub fn detect_language<'a>(
                             q.extend(values);
                         }
                         Value::Object(obj) => {
-                            q.extend(obj.values())
+                            q.extend(obj.into_iter().map(|(_, v)| v))
                         }
                         _ => {}
                     }
@@ -193,10 +193,9 @@ pub fn detect_language<'a>(
                 whatlang::detect(&collected).map(From::from)
             }
 
-            let cfg = ParserConfig2 {
-                ignore_invalid_encoding_declarations: true,
-                ..Default::default()
-            }.ignore_comments(true);
+            let cfg = ParserConfig2::new()
+                .ignore_invalid_encoding_declarations(true)
+                .ignore_comments(true);
 
             match decoded {
                 DecodedData::InMemory { data, .. } => {

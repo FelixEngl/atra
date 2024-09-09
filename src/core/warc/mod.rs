@@ -448,6 +448,7 @@ mod test {
     use crate::core::format::AtraFileInformation;
     use crate::core::format::mime::MimeType;
     use crate::core::format::supported::InterpretedProcessibleFileFormat;
+    use crate::core::language_detection::IdentifiedLanguage;
     use crate::core::warc::{MockSpecialWarcWriter, write_warc};
 
     #[test]
@@ -472,7 +473,8 @@ mod test {
                 InterpretedProcessibleFileFormat::HTML,
                 Some(MimeType::new_single(mime::TEXT_HTML_UTF_8)),
                 None
-            )
+            ),
+            Some(IdentifiedLanguage::ENG)
         );
 
         let mut special = MockSpecialWarcWriter::new();
@@ -538,7 +540,8 @@ mod test {
                 InterpretedProcessibleFileFormat::Unknown,
                 None,
                 None
-            )
+            ),
+            Some(IdentifiedLanguage::ENG)
         );
 
         let mut special = MockSpecialWarcWriter::new();
