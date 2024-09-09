@@ -46,11 +46,7 @@ impl PartialEq for Extractor {
 impl Extractor {
 
     /// If the
-    async fn apply_extractors<const FALLBACK_MODE: bool, C, TF, IDF>(&self, context: &C, response: ProcessedData<'_>, result: &mut ExtractorResult)
-    where
-        C: Context + SupportsGdbrIdentifier<TF, IDF>,
-        TF: TfAlgorithm,
-        IDF: IdfAlgorithm
+    async fn apply_extractors<const FALLBACK_MODE: bool, C>(&self, context: &C, response: ProcessedData<'_>, result: &mut ExtractorResult) where C: Context
     {
         for extractor in &self.0 {
             // Require that both are either true or false
@@ -77,21 +73,18 @@ impl Extractor {
     }
 
     /// Extracts the data this the set extractors
-    pub async fn extract<C, TF, IDF>(&self, context: &C, response: &ResponseData, identified_type: &AtraFileInformation, decoded: &DecodedData<String, Utf8PathBuf>, lang: Option<&IdentifiedLanguage>) -> ExtractorResult
-    where
-        C: Context + SupportsGdbrIdentifier<TF, IDF>,
-        TF: TfAlgorithm,
-        IDF: IdfAlgorithm
+    pub async fn extract<C, >(&self, context: &C, response: &ResponseData, identified_type: &AtraFileInformation, decoded: &DecodedData<String, Utf8PathBuf>, lang: Option<&IdentifiedLanguage>) -> ExtractorResult
+    where C: Context
     {
         log::trace!("Extractor: {:?} - {}", identified_type.format, response.url);
         let mut result = ExtractorResult::default();
         let holder = ProcessedData(response, identified_type, decoded, lang);
-        self.apply_extractors::<false, _, _, _>(context, holder, &mut result).await;
+        self.apply_extractors::<false, _>(context, holder, &mut result).await;
         if result.no_extractor_applied() || result.is_empty() {
             if !result.no_extractor_applied() {
                 log::debug!("Extractor: Unsupported type: {:?}", identified_type.format);
             }
-            self.apply_extractors::<true, _, _, _>(context, holder, &mut result).await;
+            self.apply_extractors::<true, _>(context, holder, &mut result).await;
         }
         result
     }

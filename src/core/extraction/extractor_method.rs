@@ -79,11 +79,9 @@ pub enum ExtractorMethod {
 }
 
 impl ExtractorMethod {
-    pub async fn extract_links<C, TF, IDF>(&self, context: &C, page: &ProcessedData<'_>, output: &mut ExtractorResult) -> Result<usize, LinkExtractionError>
+    pub async fn extract_links<C>(&self, context: &C, page: &ProcessedData<'_>, output: &mut ExtractorResult) -> Result<usize, LinkExtractionError>
     where
-        C: Context + SupportsGdbrIdentifier<TF, IDF>,
-        TF: TfAlgorithm,
-        IDF: IdfAlgorithm
+        C: Context
     {
         if self.is_compatible(context, page) {
             return Err(NotCompatible);
@@ -168,7 +166,9 @@ impl ExtractorMethod {
 }
 
 
-async fn extract_links_hml(extractor: &impl ExtractorMethodMetaFactory, context: &impl Context, page: &ProcessedData<'_>, output: &mut ExtractorResult) -> Result<usize, LinkExtractionError> {
+async fn extract_links_hml<C>(extractor: &impl ExtractorMethodMetaFactory, context: &C, page: &ProcessedData<'_>, output: &mut ExtractorResult) -> Result<usize, LinkExtractionError>
+where C: Context
+{
     match &page.2 {
         DecodedData::InMemory { data: result, .. } => {
             let cfg = context.configs();

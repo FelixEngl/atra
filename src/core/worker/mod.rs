@@ -25,7 +25,7 @@ use crate::core::seed_provider::{AbortCause, get_seed_from_context, QueueExtract
 use crate::core::shutdown::{ShutdownReceiver};
 use crate::core::sync::barrier::{ContinueOrStop, WorkerBarrier};
 use crate::features::gdbr_identifiert::SupportsGdbrIdentifier;
-use crate::features::text_processing::tf_idf::{IdfAlgorithm, TfAlgorithm};
+use crate::features::text_processing::tf_idf::{Idf, IdfAlgorithm, Tf, TfAlgorithm};
 
 /// The exit state of the crawl task
 #[derive(Debug, Copy, Clone, Eq, PartialEq, EnumString, Display)]
@@ -37,11 +37,9 @@ pub enum ExitState {
 
 
 /// The core method for crawling data.
-pub async fn work<C, TF, IDF, S>(context: WorkerContext<C>, shutdown: S, worker_barrier: Arc<WorkerBarrier>) -> Result<ExitState, ()>
+pub async fn work<C, S>(context: WorkerContext<C>, shutdown: S, worker_barrier: Arc<WorkerBarrier>) -> Result<ExitState, ()>
 where
-    C: SlimCrawlTaskContext + Context + SupportsGdbrIdentifier<TF, IDF>,
-    TF: TfAlgorithm,
-    IDF: IdfAlgorithm,
+    C: SlimCrawlTaskContext,
     S: ShutdownReceiver
 {
     const PATIENCE: i32 = 150;

@@ -449,15 +449,9 @@ impl<S: CrawlSeed> WebsiteCrawler<S> {
     }
 
     /// The crawl method.
-    pub async fn crawl<Cont, TF, IDF, Shutdown>(
-        &mut self,
-        context: &Cont,
-        shutdown: Shutdown
-    ) -> Result<(), Vec<WebsiteCrawlerError>>
+    pub async fn crawl<Cont, Shutdown>(&mut self, context: &Cont, shutdown: Shutdown) -> Result<(), Vec<WebsiteCrawlerError>>
     where
-        Cont: CrawlTaskContext + Context + SupportsGdbrIdentifier<TF, IDF>,
-        TF: TfAlgorithm,
-        IDF: IdfAlgorithm,
+        Cont: CrawlTaskContext + Context,
         Shutdown: ShutdownReceiver
     {
 

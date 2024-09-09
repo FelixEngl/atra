@@ -30,8 +30,13 @@ use crate::core::link_state::{LinkState, LinkStateDBError, LinkStateType};
 use crate::core::{UrlWithDepth, VecDataHolder};
 use crate::core::contexts::errors::{LinkHandlingError, RecoveryError};
 use crate::core::io::errors::{ErrorWithPath};
+use crate::core::io::root::RootSetter;
 use crate::core::stores::warc::ThreadsafeMultiFileWarcWriter;
 use crate::core::warc::{write_warc};
+use crate::features::gdbr_identifiert::{GdbrIdentifierRegistry, GdbrIdentifierRegistryConfig, SupportsGdbrIdentifier};
+use crate::features::text_processing::tf_idf::{Idf, Tf};
+use crate::features::tokenizing::stopwords::StopWordRegistry;
+use crate::features::tokenizing::SupportsStopwords;
 
 /// A context for a specific worker
 #[derive(Debug)]
@@ -77,11 +82,22 @@ impl<T: SlimCrawlTaskContext> WorkerContext<T> {
     }
 }
 
+impl<T: SlimCrawlTaskContext> SupportsStopwords for WorkerContext<T> {
+    delegate::delegate! {
+        to self.inner {
+            fn stopword_registry(&self) -> Option<&StopWordRegistry>;
+        }
+    }
+}
+
 impl<T: SlimCrawlTaskContext> Context for WorkerContext<T> {
     type RobotsManager = T::RobotsManager;
     type UrlQueue = T::UrlQueue;
     type HostManager = T::HostManager;
     type WebGraphManager = T::WebGraphManager;
+    type Solver = T::Solver;
+    type TF = T::TF;
+    type IDF = T::IDF;
 
     delegate::delegate! {
         to self.inner {
@@ -142,12 +158,12 @@ impl<T: SlimCrawlTaskContext> Context for WorkerContext<T> {
 
             /// Recover the
             async fn recover<'a>(&self, command: RecoveryCommand<'a>) -> Result<(), RecoveryError>;
+
+            fn gdbr_registry(&self) -> Option<&GdbrIdentifierRegistry<Self::TF, Self::IDF, Self::Solver>>;
+
         }
     }
 }
-
-
-impl Borrow<>
 
 
 #[derive(Debug, Error)]

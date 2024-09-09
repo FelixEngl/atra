@@ -35,7 +35,7 @@ pub enum LinkOrigin {
 }
 
 /// Extracts links from an html
-pub fn extract_links<'a, C: SupportsGdbrIdentifier<TF, IDF>, TF: TfAlgorithm, IDF: IdfAlgorithm>(
+pub fn extract_links<'a, C: Context>(
     root_url: &'a UrlWithDepth,
     html: &str,
     respect_nofollow: bool,

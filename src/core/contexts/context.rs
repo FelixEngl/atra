@@ -14,6 +14,7 @@
 
 use std::collections::HashSet;
 use std::fmt::Debug;
+use liblinear::solver::traits::Solver;
 use time::Duration;
 use crate::core::blacklist::PolyBlackList;
 use crate::core::config::Configs;
@@ -29,8 +30,9 @@ use crate::core::robots::RobotsManager;
 use crate::core::link_state::{LinkState, LinkStateDBError, LinkStateType};
 use crate::core::url::queue::UrlQueue;
 use crate::core::UrlWithDepth;
-
-
+use crate::features::gdbr_identifiert::GdbrIdentifierRegistry;
+use crate::features::text_processing::tf_idf::{Idf, IdfAlgorithm, Tf, TfAlgorithm};
+use crate::features::tokenizing::SupportsStopwords;
 
 /// What do you want to recover?
 #[allow(dead_code)]
@@ -45,7 +47,7 @@ pub enum RecoveryCommand<'a> {
 
 
 /// The context for a crawl
-pub trait Context: Debug +  Send + Sync + 'static {
+pub trait Context: SupportsStopwords + Debug +  Send + Sync + 'static {
     /// The used robots manager
     type RobotsManager: RobotsManager;
 
@@ -57,6 +59,12 @@ pub trait Context: Debug +  Send + Sync + 'static {
 
     /// The manager for the link net
     type WebGraphManager: WebGraphManager;
+
+    type Solver: Solver;
+
+    type TF: TfAlgorithm;
+
+    type IDF: IdfAlgorithm;
 
     /// Returns true if poll possible
     async fn can_poll(&self) -> bool;
@@ -75,6 +83,9 @@ pub trait Context: Debug +  Send + Sync + 'static {
 
     /// Returns a reference to the config
     fn configs(&self) -> &Configs;
+
+    /// Gdbr Registry
+    fn gdbr_registry(&self) -> Option<&GdbrIdentifierRegistry<Self::TF, Self::IDF, Self::Solver>>;
 
     /// When did the crawl officially start?
     fn crawl_started_at(&self) -> time::OffsetDateTime;

@@ -113,6 +113,9 @@ impl super::Context for InMemoryContext {
     type UrlQueue = InMemoryLinkQueue;
     type HostManager = InMemoryOriginManager;
     type WebGraphManager = InMemoryLinkNetManager;
+    type Solver = L2R_L2LOSS_SVR;
+    type TF = Tf;
+    type IDF = Idf;
 
     async fn can_poll(&self) -> bool {
         !self.links_queue.is_empty().await
@@ -137,6 +140,10 @@ impl super::Context for InMemoryContext {
 
     fn configs(&self) -> &Configs {
         &self.configs
+    }
+
+    fn gdbr_registry(&self) -> Option<&GdbrIdentifierRegistry<Self::TF, Self::IDF, Self::Solver>> {
+        self.gdbr_registry.as_ref()
     }
 
     fn crawl_started_at(&self) -> OffsetDateTime {
@@ -254,16 +261,6 @@ impl super::Context for InMemoryContext {
 impl crate::features::tokenizing::SupportsStopwords for InMemoryContext {
     fn stopword_registry(&self) -> Option<&StopWordRegistry> {
         Some(&self.stop_word_registry)
-    }
-}
-
-impl SupportsGdbrIdentifier<Tf, Idf> for InMemoryContext {
-    fn gdbr_config(&self) -> Option<&GdbrIdentifierRegistryConfig<Tf, Idf>> {
-        self.configs.crawl.gbdr.as_ref()
-    }
-
-    fn root_setter(&self) -> Option<&impl RootSetter> {
-        Some(&self.configs.paths)
     }
 }
 

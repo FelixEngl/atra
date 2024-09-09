@@ -154,21 +154,14 @@ impl crate::features::tokenizing::SupportsStopwords for LocalContext {
     }
 }
 
-impl SupportsGdbrIdentifier<Tf, Idf> for LocalContext {
-    fn gdbr_config(&self) -> Option<&GdbrIdentifierRegistryConfig<Tf, Idf>> {
-        self.configs.crawl.gbdr.as_ref()
-    }
-
-    fn root_setter(&self) -> Option<&impl RootSetter> {
-        Some(&self.configs.paths)
-    }
-}
-
 impl super::Context for LocalContext {
     type RobotsManager = ShareableRobotsManager;
     type UrlQueue = UrlQueueWrapper<RawAgingQueueFile>;
     type HostManager = InMemoryOriginManager;
     type WebGraphManager = QueuingWebGraphManager;
+    type Solver = L2R_L2LOSS_SVR;
+    type TF = Tf;
+    type IDF = Idf;
 
     async fn can_poll(&self) -> bool {
         !self.url_queue.is_empty().await
@@ -192,6 +185,10 @@ impl super::Context for LocalContext {
 
     fn configs(&self) -> &Configs {
         &self.configs
+    }
+
+    fn gdbr_registry(&self) -> Option<&GdbrIdentifierRegistry<Self::TF, Self::IDF, Self::Solver>> {
+        self.gdbr_filer_registry.as_ref()
     }
 
     fn crawl_started_at(&self) -> OffsetDateTime {
