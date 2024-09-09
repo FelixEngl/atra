@@ -18,9 +18,9 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 use std::time::SystemTime;
 use crate::core::origin::entry::OriginEntry;
-use crate::core::origin::errors::OriginManagerError;
+use crate::core::origin::errors::{GuardPoisonedError, OriginManagerError};
 use crate::core::origin::guard::OriginGuard;
-use crate::core::origin::{OriginManager, GuardPoisonedError, AtraOriginProvider};
+use crate::core::origin::{OriginManager, AtraOriginProvider};
 use crate::core::origin::manager::InternalOriginManager;
 use crate::core::origin::AtraUrlOrigin;
 use crate::core::UrlWithDepth;
@@ -174,7 +174,8 @@ mod test {
     use std::time::Duration;
     use itertools::{Itertools, Position};
     use smallvec::SmallVec;
-    use crate::core::origin::{AtraOriginProvider, OriginManager, OriginManagerError};
+    use crate::core::origin::{AtraOriginProvider, OriginManager};
+    use crate::core::origin::errors::OriginManagerError;
     use crate::core::UrlWithDepth;
 
     #[tokio::test]

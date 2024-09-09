@@ -23,7 +23,10 @@ use crate::core::decoding::DecodedData;
 use super::ExtractedLink;
 use crate::core::extraction::extractor_method::ExtractorMethod;
 use crate::core::format::AtraFileInformation;
+use crate::core::language_detection::IdentifiedLanguage;
 use crate::core::response::ResponseData;
+use crate::features::gdbr_identifiert::SupportsGdbrIdentifier;
+use crate::features::text_processing::tf_idf::{IdfAlgorithm, TfAlgorithm};
 /*
     To register a new extractor, create a extractor_decode_action_declaration
     and extractor_sub_extractor_declaration.
@@ -43,7 +46,12 @@ impl PartialEq for Extractor {
 impl Extractor {
 
     /// If the
-    async fn apply_extractors<const FALLBACK_MODE: bool>(&self, context: &impl Context, response: ProcessedData<'_>, result: &mut ExtractorResult) {
+    async fn apply_extractors<const FALLBACK_MODE: bool, C, TF, IDF>(&self, context: &C, response: ProcessedData<'_>, result: &mut ExtractorResult)
+    where
+        C: Context + SupportsGdbrIdentifier<TF, IDF>,
+        TF: TfAlgorithm,
+        IDF: IdfAlgorithm
+    {
         for extractor in &self.0 {
             // Require that both are either true or false
             if FALLBACK_MODE ^ extractor.is_fallback() {
@@ -69,16 +77,21 @@ impl Extractor {
     }
 
     /// Extracts the data this the set extractors
-    pub async fn extract(&self, context: &impl Context, response: &ResponseData, identified_type: &AtraFileInformation, decoded: &DecodedData<String, Utf8PathBuf>) -> ExtractorResult {
+    pub async fn extract<C, TF, IDF>(&self, context: &C, response: &ResponseData, identified_type: &AtraFileInformation, decoded: &DecodedData<String, Utf8PathBuf>, lang: Option<&IdentifiedLanguage>) -> ExtractorResult
+    where
+        C: Context + SupportsGdbrIdentifier<TF, IDF>,
+        TF: TfAlgorithm,
+        IDF: IdfAlgorithm
+    {
         log::trace!("Extractor: {:?} - {}", identified_type.format, response.url);
         let mut result = ExtractorResult::default();
-        let holder = ProcessedData(response, identified_type, decoded);
-        self.apply_extractors::<false>(context, holder, &mut result).await;
+        let holder = ProcessedData(response, identified_type, decoded, lang);
+        self.apply_extractors::<false, _, _, _>(context, holder, &mut result).await;
         if result.no_extractor_applied() || result.is_empty() {
             if !result.no_extractor_applied() {
                 log::debug!("Extractor: Unsupported type: {:?}", identified_type.format);
             }
-            self.apply_extractors::<true>(context, holder, &mut result).await;
+            self.apply_extractors::<true, _, _, _>(context, holder, &mut result).await;
         }
         result
     }
@@ -100,6 +113,7 @@ pub(crate) struct ProcessedData<'a>(
     pub &'a ResponseData,
     pub &'a AtraFileInformation,
     pub &'a DecodedData<String, Utf8PathBuf>,
+    pub Option<&'a IdentifiedLanguage>
 );
 
 
@@ -233,6 +247,7 @@ mod test {
     use crate::core::extraction::extractor::Extractor;
     use crate::core::fetching::{FetchedRequestData};
     use crate::core::format::AtraFileInformation;
+    use crate::core::language_detection::IdentifiedLanguage;
     use crate::core::UrlWithDepth;
 
     #[tokio::test]
@@ -261,7 +276,7 @@ mod test {
 
 
 
-        let extracted = Extractor::default().extract(&context, &page, &identified_type, &preprocessed).await.to_optional_links().unwrap();
+        let extracted = Extractor::default().extract(&context, &page, &identified_type, &preprocessed, Some(&IdentifiedLanguage::ENG)).await.to_optional_links().unwrap();
 
         println!("{}", extracted.len());
 

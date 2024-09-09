@@ -15,16 +15,17 @@
 use std::sync::Arc;
 use strum::{Display, EnumString};
 use tokio::task::yield_now;
-use crate::core::contexts::{Context, SlimCrawlTaskContext};
+use crate::core::contexts::{Context, CrawlTaskContext, SlimCrawlTaskContext};
 use crate::core::contexts::worker_context::WorkerContext;
 use crate::core::crawl::website_crawler::{WebsiteCrawlerBuilder};
 use crate::core::database_error::DatabaseError;
-use crate::core::origin::OriginManagerError;
 use crate::core::link_state::LinkStateDBError;
+use crate::core::origin::errors::OriginManagerError;
 use crate::core::seed_provider::{AbortCause, get_seed_from_context, QueueExtractionError, RetrieveProviderResult};
 use crate::core::shutdown::{ShutdownReceiver};
 use crate::core::sync::barrier::{ContinueOrStop, WorkerBarrier};
-
+use crate::features::gdbr_identifiert::SupportsGdbrIdentifier;
+use crate::features::text_processing::tf_idf::{IdfAlgorithm, TfAlgorithm};
 
 /// The exit state of the crawl task
 #[derive(Debug, Copy, Clone, Eq, PartialEq, EnumString, Display)]
@@ -36,11 +37,12 @@ pub enum ExitState {
 
 
 /// The core method for crawling data.
-pub async fn work<C: SlimCrawlTaskContext, S: ShutdownReceiver>(
-    context: WorkerContext<C>,
-    shutdown: S,
-    worker_barrier: Arc<WorkerBarrier>
-) -> Result<ExitState, ()>
+pub async fn work<C, TF, IDF, S>(context: WorkerContext<C>, shutdown: S, worker_barrier: Arc<WorkerBarrier>) -> Result<ExitState, ()>
+where
+    C: SlimCrawlTaskContext + Context + SupportsGdbrIdentifier<TF, IDF>,
+    TF: TfAlgorithm,
+    IDF: IdfAlgorithm,
+    S: ShutdownReceiver
 {
     const PATIENCE: i32 = 150;
 

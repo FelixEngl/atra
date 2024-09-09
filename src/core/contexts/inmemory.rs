@@ -17,6 +17,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use itertools::Itertools;
+use liblinear::solver::L2R_L2LOSS_SVR;
 use time::{Duration, OffsetDateTime};
 use tokio::sync::{Mutex};
 use tokio::sync::broadcast::Receiver;
@@ -40,7 +41,7 @@ use crate::core::io::root::RootSetter;
 use crate::core::origin::AtraOriginProvider;
 use crate::core::origin::managers::InMemoryOriginManager;
 use crate::core::url::atra_uri::AtraUri;
-use crate::features::gdbr_identifiert::{GdbrIdentifierRegistryConfig, SupportsGdbrIdentifier};
+use crate::features::gdbr_identifiert::{GdbrIdentifierRegistry, GdbrIdentifierRegistryConfig, SupportsGdbrIdentifier};
 use crate::features::text_processing::tf_idf::{Idf, Tf};
 use crate::features::tokenizing::stopwords::StopWordRegistry;
 
@@ -58,7 +59,8 @@ pub struct InMemoryContext {
     started_at: OffsetDateTime,
     links_queue: InMemoryLinkQueue,
     link_net_manager: InMemoryLinkNetManager,
-    stop_word_registry: StopWordRegistry
+    stop_word_registry: StopWordRegistry,
+    gdbr_registry: Option<GdbrIdentifierRegistry<Tf, Idf, L2R_L2LOSS_SVR>>
 }
 
 
@@ -79,6 +81,7 @@ impl InMemoryContext {
             host_manager: Default::default(),
             started_at: OffsetDateTime::now_utc(),
             link_net_manager: InMemoryLinkNetManager::default(),
+            gdbr_registry: None
         }
     }
 

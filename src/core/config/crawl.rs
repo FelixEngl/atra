@@ -55,7 +55,7 @@ pub struct CrawlConfig {
     /// Only store html-files in the warc
     pub store_only_html_in_warc: bool,
 
-    /// The maximum size to download.
+    /// The maximum size to download. (in byte)
     pub max_file_size: Option<NonZeroU64>,
 
     /// The maximum age of a cached robots.txt. If None, it never gets too old.

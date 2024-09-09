@@ -23,7 +23,31 @@ use crate::features::svm::config::SvmRecognizerConfig;
 use crate::features::svm::{create_document_classifier};
 use crate::features::svm::error::SvmCreationError;
 use crate::features::text_processing::tf_idf::{IdfAlgorithm, TfAlgorithm};
+use crate::features::tokenizing::stopwords::StopWordRegistry;
 use crate::features::tokenizing::SupportsStopwords;
+
+
+pub struct InitHelper<'a, TF: TfAlgorithm, IDF: IdfAlgorithm, R: RootSetter> {
+    pub gdbr_config: Option<&'a GdbrIdentifierRegistryConfig<TF, IDF>>,
+    pub root_setter: Option<&'a R>,
+    pub stop_word_registry: Option<&'a StopWordRegistry>,
+}
+
+impl<'a, TF: TfAlgorithm, IDF: IdfAlgorithm, R: RootSetter> SupportsGdbrIdentifier<TF, IDF> for InitHelper<'a, TF, IDF, R> {
+    fn gdbr_config(&self) -> Option<&GdbrIdentifierRegistryConfig<TF, IDF>> {
+        self.gdbr_config
+    }
+
+    fn root_setter(&self) -> Option<&impl RootSetter> {
+        self.root_setter
+    }
+}
+
+impl<'a, TF: TfAlgorithm, IDF: IdfAlgorithm, R: RootSetter> SupportsStopwords for InitHelper<'a, TF, IDF, R> {
+    fn stopword_registry(&self) -> Option<&StopWordRegistry> {
+        self.stop_word_registry
+    }
+}
 
 // L2R_L2LOSS_SVR
 

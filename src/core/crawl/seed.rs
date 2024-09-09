@@ -14,8 +14,9 @@
 
 use crate::core::crawl::errors::SeedCreationError;
 use crate::core::crawl::errors::SeedCreationError::*;
-use crate::core::origin::{AtraOriginProvider, OriginGuard, OriginManager};
+use crate::core::origin::{AtraOriginProvider, OriginManager};
 use crate::core::origin::AtraUrlOrigin;
+use crate::core::origin::guard::OriginGuard;
 use crate::core::UrlWithDepth;
 
 

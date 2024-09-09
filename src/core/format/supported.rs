@@ -16,7 +16,7 @@ use std::cmp::max;
 use std::io::Read;
 use std::str::FromStr;
 use file_format::{FileFormat, Kind};
-use mime::{Mime, Name};
+use mime::{Mime};
 use serde::{Deserialize, Serialize};
 use crate::core::contexts::Context;
 use crate::core::format::file_format_detection::DetectedFileFormat;
@@ -169,7 +169,10 @@ macro_rules! supports_method {
         $typ: ident: $pattern:pat $(if $guard:expr)? $(,)?
     )+) => {
         fn mime_2_supported_file_format(mime: &Mime) -> Option<InterpretedProcessibleFileFormat> {
-            match (mime.type_().as_str().to_lowercase().as_str(), mime.subtype().as_str().to_lowercase().as_str(), mime.suffix().map(|value| value.as_str().to_lowercase().as_str())) {
+            let typ = mime.type_().as_str().to_lowercase();
+            let sub_typ = mime.subtype().as_str().to_lowercase();
+            let suffix = mime.suffix().map(|value| value.as_str().to_lowercase());
+            match (typ.as_str(), sub_typ.as_str(), suffix.as_deref()) {
                 $($pattern $(if $guard)? => return Some(InterpretedProcessibleFileFormat::$typ),)+
                 _ => None
             }

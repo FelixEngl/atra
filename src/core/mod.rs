@@ -50,6 +50,7 @@ pub mod stores;
 pub mod format;
 pub mod isolang_ext;
 pub mod toolkit;
+mod language_detection;
 
 pub use url::url_with_depth::UrlWithDepth;
 pub use data_holder::*;

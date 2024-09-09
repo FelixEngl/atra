@@ -52,8 +52,11 @@ use crate::core::shutdown::ShutdownReceiver;
 use crate::core::database_error::DatabaseError;
 use crate::core::format::AtraFileInformation;
 use crate::core::format::supported::InterpretedProcessibleFileFormat;
+use crate::core::language_detection::detect_language;
 use crate::core::sitemaps::parse::retrieve_and_parse;
 use crate::core::origin::{AtraOriginProvider, AtraUrlOrigin};
+use crate::features::gdbr_identifiert::SupportsGdbrIdentifier;
+use crate::features::text_processing::tf_idf::{IdfAlgorithm, TfAlgorithm};
 
 /// Get the domain name from the [url] as [CaseInsensitiveString].
 /// Returns None if there is no domain
@@ -446,11 +449,17 @@ impl<S: CrawlSeed> WebsiteCrawler<S> {
     }
 
     /// The crawl method.
-    pub async fn crawl<C: CrawlTaskContext, T: ShutdownReceiver>(
+    pub async fn crawl<Cont, TF, IDF, Shutdown>(
         &mut self,
-        context: &C,
-        shutdown: T
-    ) -> Result<(), Vec<WebsiteCrawlerError>>  {
+        context: &Cont,
+        shutdown: Shutdown
+    ) -> Result<(), Vec<WebsiteCrawlerError>>
+    where
+        Cont: CrawlTaskContext + Context + SupportsGdbrIdentifier<TF, IDF>,
+        TF: TfAlgorithm,
+        IDF: IdfAlgorithm,
+        Shutdown: ShutdownReceiver
+    {
 
         let configuration = context.configs().crawl();
 
@@ -619,16 +628,24 @@ impl<S: CrawlSeed> WebsiteCrawler<S> {
 
                     let file_information = AtraFileInformation::determine(context, &response_data);
 
-                    let (analyzed, links) = match data_processing::process(context, &response_data, &file_information).await {
-                        Ok(analyzed) => {
+                    let (language, analyzed, links) = match data_processing::process(context, &response_data, &file_information).await {
+                        Ok(decoded) => {
+
+                            let lang = detect_language(
+                                context,
+                                &response_data,
+                                &file_information,
+                                &decoded,
+                            ).ok().flatten();
+
                             let result = context
                                 .configs()
                                 .crawl()
                                 .link_extractors
-                                .extract(context, &response_data, &file_information, &analyzed)
+                                .extract(context, &response_data, &file_information, &decoded, lang.as_ref())
                                 .await;
 
-                            (analyzed, result)
+                            (lang, decoded, result)
                         }
                         Err(err) => {
                             log::error!("Failed to extract links for {} with {err}", &response_data.url);
@@ -653,7 +670,6 @@ impl<S: CrawlSeed> WebsiteCrawler<S> {
                                                     VecDataHolder::InMemory { data }
                                                 }
                                             }
-
                                         }
                                         Err(err) => {
                                             log::error!("Failed to store {} as file {} with {err}. Keep in memory.", url_str, path);
@@ -728,7 +744,8 @@ impl<S: CrawlSeed> WebsiteCrawler<S> {
                         response_data,
                         links,
                         recognized_encoding,
-                        file_information
+                        file_information,
+                        language
                     );
                     log::debug!("Store {}", result.meta.url);
                     match context.store_crawled_website(&result).await {

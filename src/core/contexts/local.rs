@@ -15,6 +15,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use liblinear::solver::L2R_L2LOSS_SVR;
 use rocksdb::DB;
 use time::{Duration, OffsetDateTime};
 use tokio::sync::{RwLock};
@@ -39,7 +40,7 @@ use crate::core::queue::file::RawAgingQueueFile;
 use crate::core::shutdown::UnsafeShutdownGuard;
 use crate::core::url::queue::{UrlQueue, UrlQueueElement, UrlQueueWrapper};
 use crate::core::UrlWithDepth;
-use crate::features::gdbr_identifiert::{GdbrIdentifierRegistryConfig, SupportsGdbrIdentifier};
+use crate::features::gdbr_identifiert::{GdbrIdentifierRegistry, GdbrIdentifierRegistryConfig, InitHelper, SupportsGdbrIdentifier};
 use crate::features::text_processing::tf_idf::{Idf, Tf};
 use crate::features::tokenizing::stopwords::StopWordRegistry;
 use crate::util::RuntimeContext;
@@ -63,6 +64,7 @@ pub struct LocalContext {
     last_scan_over_link_states: RwLock<Option<(bool, OffsetDateTime)>>,
     ct_discovered_websites: AtomicUsize,
     stop_word_registry: Option<StopWordRegistry>,
+    gdbr_filer_registry: Option<GdbrIdentifierRegistry<Tf, Idf, L2R_L2LOSS_SVR>>,
     _graceful_shutdown_guard: UnsafeShutdownGuard
 }
 
@@ -106,6 +108,17 @@ impl LocalContext {
             runtime_context.shutdown_guard().clone()
         )?;
 
+        let gdbr_filer_registry = if let Some(ref cfg) = configs.crawl.gbdr {
+            let helper = InitHelper {
+                gdbr_config: Some(cfg),
+                root_setter: Some(&configs.paths),
+                stop_word_registry: stop_word_registry.as_ref()
+            };
+            GdbrIdentifierRegistry::new_from_config(&helper)?
+        } else {
+            None
+        };
+
         Ok(
             LocalContext {
                 _db: db,
@@ -122,6 +135,7 @@ impl LocalContext {
                 ct_discovered_websites: AtomicUsize::new(0),
                 links_net_manager: Arc::new(web_graph_manager),
                 stop_word_registry,
+                gdbr_filer_registry,
                 _graceful_shutdown_guard: runtime_context.shutdown_guard().clone()
             }
         )

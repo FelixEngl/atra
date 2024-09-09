@@ -13,8 +13,10 @@
 //limitations under the License.
 
 use std::fmt::Debug;
-use crate::core::origin::{OriginEntry, OriginGuard, OriginManagerError, GuardPoisonedError};
 use crate::core::origin::AtraUrlOrigin;
+use crate::core::origin::entry::OriginEntry;
+use crate::core::origin::errors::{GuardPoisonedError, OriginManagerError};
+use crate::core::origin::guard::OriginGuard;
 use crate::core::UrlWithDepth;
 
 /// Basic api that is not public to the rest of the code

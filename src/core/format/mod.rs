@@ -65,7 +65,7 @@ impl AtraFileInformation {
         }
 
         if let Some(ref detected) = self.detected {
-            if let Some(mime) = detected.most_probable_file_format().media_type().parse() {
+            if let Ok(mime) = detected.most_probable_file_format().media_type().parse() {
                 return MediaType::from_mime(&mime)
             }
         }

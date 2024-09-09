@@ -282,7 +282,9 @@ dependencies = [
  "rio_api",
  "rio_turtle",
  "rocksdb",
+ "rtf-parser",
  "rust-stemmers",
+ "rustc_version",
  "ryu",
  "scopeguard",
  "scraper",
@@ -314,7 +316,9 @@ dependencies = [
  "url",
  "uuid",
  "whatlang",
+ "xml-rs",
  "yada",
+ "zip",
 ]
 
 [[package]]
@@ -388,7 +392,7 @@ dependencies = [
  "bitflags 2.6.0",
  "cexpr",
  "clang-sys",
- "itertools 0.12.1",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "regex",
@@ -5172,9 +5176,9 @@ dependencies = [
 
 [[package]]
 name = "xml-rs"
-version = "0.8.20"
+version = "0.8.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "791978798f0597cfc70478424c2b4fdc2b7a8024aaff78497ef00f24ef674193"
+checksum = "af4e2e2f7cba5a093896c1e150fbfe177d1883e7448200efb81d40b9d339ef26"
 
 [[package]]
 name = "xxhash-rust"

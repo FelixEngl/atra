@@ -12,6 +12,7 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::sync::Arc;
 use thiserror::Error;
@@ -144,6 +145,10 @@ impl<T: SlimCrawlTaskContext> Context for WorkerContext<T> {
         }
     }
 }
+
+
+impl Borrow<>
+
 
 #[derive(Debug, Error)]
 pub enum WorkerError {

@@ -16,8 +16,10 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::time::SystemTime;
 use crate::core::depth::DepthDescriptor;
-use crate::core::origin::{OriginEntry, OriginManager, GuardPoisonedError, AtraOriginProvider};
+use crate::core::origin::{OriginManager, AtraOriginProvider};
 use crate::core::origin::AtraUrlOrigin;
+use crate::core::origin::entry::OriginEntry;
+use crate::core::origin::errors::GuardPoisonedError;
 use crate::core::UrlWithDepth;
 
 /// A guard that works basically like a Mutex or RwLock guard.

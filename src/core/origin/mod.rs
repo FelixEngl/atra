@@ -19,9 +19,6 @@ pub mod entry;
 pub mod managers;
 
 
-pub use guard::OriginGuard;
-pub use errors::*;
-pub use entry::OriginEntry;
 pub use manager::OriginManager;
 use std::convert::Infallible;
 use std::fmt::{Display, Formatter};

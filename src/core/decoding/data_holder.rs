@@ -31,12 +31,12 @@ use encoding_rs::Encoding;
 #[derive(Debug)]
 pub enum DecodedData<A, B> where A: AsRef<str>, B: AsRef<Path> {
     InMemory {
-        result: A,
+        data: A,
         encoding: &'static Encoding,
         had_errors: bool
     },
     OffMemory {
-        result: B,
+        reference: B,
         encoding: &'static Encoding,
         had_errors: bool
     },
@@ -48,7 +48,7 @@ impl<A, B> DecodedData<A, B> where A: AsRef<str>, B: AsRef<Path> {
     #[inline]
     #[allow(dead_code)] pub fn new_in_memory(result: A, encoding: &'static Encoding, had_errors: bool) -> Self {
         Self::InMemory {
-            result,
+            data: result,
             encoding,
             had_errors
         }
@@ -57,7 +57,7 @@ impl<A, B> DecodedData<A, B> where A: AsRef<str>, B: AsRef<Path> {
     #[inline]
     #[allow(dead_code)] pub fn new_off_memory(result: B, encoding: &'static Encoding, had_errors: bool) -> Self {
         Self::OffMemory {
-            result,
+            reference: result,
             encoding,
             had_errors
         }
@@ -66,7 +66,7 @@ impl<A, B> DecodedData<A, B> where A: AsRef<str>, B: AsRef<Path> {
     #[cfg(test)]
     pub fn as_in_memory(&self) -> Option<&A> {
         match self {
-            DecodedData::InMemory { result, .. } => {Some(result)}
+            DecodedData::InMemory { data: result, .. } => {Some(result)}
             DecodedData::OffMemory { .. } => {None}
             DecodedData::None => {None}
         }
@@ -91,15 +91,15 @@ impl<A, B> DecodedData<A, B> where A: AsRef<str>, B: AsRef<Path> {
 
     pub fn map_in_memory<R: AsRef<str>, F>(self, block: F) -> DecodedData<R, B> where F: FnOnce(A) -> R {
         match self {
-            DecodedData::InMemory { result, encoding, had_errors } => {
+            DecodedData::InMemory { data: result, encoding, had_errors } => {
                 DecodedData::InMemory {
-                    result: block(result),
+                    data: block(result),
                     encoding,
                     had_errors
                 }
             }
-            DecodedData::OffMemory {result, encoding, had_errors} => {
-                DecodedData::OffMemory {result, encoding, had_errors}
+            DecodedData::OffMemory { reference: result, encoding, had_errors} => {
+                DecodedData::OffMemory { reference: result, encoding, had_errors }
             }
             DecodedData::None => DecodedData::None
         }
@@ -109,7 +109,7 @@ impl<A, B> DecodedData<A, B> where A: AsRef<str>, B: AsRef<Path> {
 impl<A, B> From<(A, &'static Encoding, bool)> for DecodedData<A, B> where A: AsRef<str>, B: AsRef<Path>  {
     fn from(value: (A, &'static Encoding, bool)) -> Self {
         Self::InMemory {
-            result: value.0,
+            data: value.0,
             encoding: value.1,
             had_errors: value.2
         }
@@ -120,16 +120,16 @@ impl<A, B> From<(A, &'static Encoding, bool)> for DecodedData<A, B> where A: AsR
 impl<A, B> Clone for DecodedData<A, B> where A: AsRef<str> + Clone, B: AsRef<Path> + Clone {
     fn clone(&self) -> Self {
         match self {
-            DecodedData::InMemory { result, encoding, had_errors } => {
+            DecodedData::InMemory { data: result, encoding, had_errors } => {
                 DecodedData::InMemory {
-                    result: result.clone(),
+                    data: result.clone(),
                     encoding: *encoding,
                     had_errors: *had_errors
                 }
             }
-            DecodedData::OffMemory { result, encoding, had_errors } => {
+            DecodedData::OffMemory { reference: result, encoding, had_errors } => {
                 DecodedData::OffMemory {
-                    result: result.clone(),
+                    reference: result.clone(),
                     encoding: *encoding,
                     had_errors: *had_errors
                 }

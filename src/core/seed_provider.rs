@@ -17,13 +17,15 @@ use thiserror::Error;
 use crate::core::contexts::{Context};
 use crate::core::crawl::errors::SeedCreationError;
 use crate::core::crawl::seed::{GuardedSeed, UnguardedSeed};
-use crate::core::origin::{AtraOriginProvider, OriginGuard, OriginManager, OriginManagerError};
+use crate::core::origin::{AtraOriginProvider, OriginManager};
 use crate::core::link_state::{LinkState, LinkStateDBError, LinkStateType};
 use crate::core::queue::QueueError;
 use crate::core::shutdown::{ShutdownReceiver};
 use crate::core::url::queue::{UrlQueue, UrlQueueElement};
 use crate::core::UrlWithDepth;
 use crate::core::link_state::LinkStateType::Discovered;
+use crate::core::origin::errors::OriginManagerError;
+use crate::core::origin::guard::OriginGuard;
 
 /// A guard with an associated seed url
 pub struct GuardedSeedUrlProvider<'a, T: OriginManager> {

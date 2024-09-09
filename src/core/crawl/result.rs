@@ -14,6 +14,7 @@
 
 use std::collections::HashSet;
 use encoding_rs::Encoding;
+use isolang::Language;
 use reqwest::header::HeaderMap;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -24,6 +25,7 @@ use crate::core::format::AtraFileInformation;
 use crate::core::response::{ResponseData};
 use crate::core::UrlWithDepth;
 use crate::core::header_map_extensions::optional_header_map;
+use crate::core::language_detection::IdentifiedLanguage;
 use crate::core::serde_util::status_code;
 
 /// A container for the meta data
@@ -47,11 +49,23 @@ pub struct CrawlResultMeta {
     pub final_redirect_destination: Option<String>,
     /// The outgoing links found, they are guaranteed to be unique.
     pub links: Option<Vec<ExtractedLink>>,
+    /// The language identified by atra.
+    pub language: Option<IdentifiedLanguage>
 }
 
 impl CrawlResultMeta {
-    pub fn new(created_at: OffsetDateTime, url: UrlWithDepth, status_code: StatusCode, file_information: AtraFileInformation, recognized_encoding: Option<&'static Encoding>, headers: Option<HeaderMap>, final_redirect_destination: Option<String>, links: Option<Vec<ExtractedLink>>) -> Self {
-        Self { created_at, url, status_code, file_information, recognized_encoding, headers, final_redirect_destination, links }
+    pub fn new(
+        created_at: OffsetDateTime,
+        url: UrlWithDepth,
+        status_code: StatusCode,
+        file_information: AtraFileInformation,
+        recognized_encoding: Option<&'static Encoding>,
+        headers: Option<HeaderMap>,
+        final_redirect_destination: Option<String>,
+        links: Option<Vec<ExtractedLink>>,
+        language: Option<IdentifiedLanguage>
+    ) -> Self {
+        Self { created_at, url, status_code, file_information, recognized_encoding, headers, final_redirect_destination, links, language }
     }
 }
 
@@ -74,6 +88,7 @@ impl CrawlResult {
         links: Option<HashSet<ExtractedLink>>,
         recognized_encoding: Option<&'static Encoding>,
         file_information: AtraFileInformation,
+        language: Option<IdentifiedLanguage>
     ) -> Self {
         let links = links.map(|value| {
             let mut result = Vec::from_iter(value);
@@ -89,7 +104,8 @@ impl CrawlResult {
                 recognized_encoding,
                 page.headers,
                 page.final_redirect_destination,
-                links
+                links,
+                language
             ),
             content: page.content,
         }
@@ -111,6 +127,7 @@ pub(crate) mod test {
     use crate::core::extraction::marker::{ExtractorMethodHint};
     use crate::core::format::AtraFileInformation;
     use crate::core::format::supported::InterpretedProcessibleFileFormat;
+    use crate::core::language_detection::IdentifiedLanguage;
 
     pub fn create_testdata_with_on_seed(content: Option<VecDataHolder>) -> CrawlResult {
         create_test_data(
@@ -158,7 +175,8 @@ pub(crate) mod test {
                 InterpretedProcessibleFileFormat::HTML,
                 None,
                 None
-            )
+            ),
+            Some(IdentifiedLanguage::DEU)
         )
     }
 
@@ -193,7 +211,8 @@ pub(crate) mod test {
                 InterpretedProcessibleFileFormat::HTML,
                 None,
                 None
-            )
+            ),
+            Some(IdentifiedLanguage::ENG)
         )
     }
 }

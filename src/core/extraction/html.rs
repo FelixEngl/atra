@@ -18,7 +18,11 @@ use std::hash::Hash;
 use compact_str::{CompactString, ToCompactString};
 use scraper::Html;
 use serde::{Deserialize, Serialize};
+use crate::core::contexts::Context;
+use crate::core::language_detection::IdentifiedLanguage;
 use crate::core::UrlWithDepth;
+use crate::features::gdbr_identifiert::SupportsGdbrIdentifier;
+use crate::features::text_processing::tf_idf::{IdfAlgorithm, TfAlgorithm};
 
 /// Describes the origin of the extracted link
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
@@ -31,15 +35,22 @@ pub enum LinkOrigin {
 }
 
 /// Extracts links from an html
-pub fn extract_links<'a>(
+pub fn extract_links<'a, C: SupportsGdbrIdentifier<TF, IDF>, TF: TfAlgorithm, IDF: IdfAlgorithm>(
     root_url: &'a UrlWithDepth,
     html: &str,
     respect_nofollow: bool,
     crawl_embedded_data: bool,
     crawl_javascript: bool,
     crawl_onclick_by_heuristic: bool,
+    ignore_gdbr: bool,
+    context: &C,
+    language: Option<&IdentifiedLanguage>
 ) -> Option<(Cow<'a, UrlWithDepth>, HashSet<(LinkOrigin, CompactString)>, Vec<Cow<'static, str>>)> {
-    let html = Html::parse_document(html);
+    let mut html = Html::parse_document(html);
+
+    if ignore_gdbr {
+
+    }
 
     if respect_nofollow {
         if html.select(&selectors::META_NO_FOLLOW).next().is_some() {

@@ -37,7 +37,11 @@ use crate::static_selectors;
 #[derive(Debug, Error)]
 pub enum DecodingError {
     #[error(transparent)]
-    IO(#[from] io::Error)
+    IO(#[from] io::Error),
+    #[error("Decoding the big file failed somehow!")]
+    DecodingFileFailed,
+    #[error("Out of disc memory!")]
+    OutOfMemory
 }
 
 /// Decode complete input to `Cow<'a, str>` _with BOM sniffing_ and with
@@ -69,7 +73,6 @@ pub async fn decode<'a>(context: &impl Context, page: &'a ResponseData, identifi
                     log::info!("Skip decoding for {} because the file has {size} bytes but the maximum is {max_size}", page.url);
                     return Ok(DecodedData::None)
                 }
-
             }
         }
         _ => {}
@@ -93,9 +96,6 @@ pub async fn decode<'a>(context: &impl Context, page: &'a ResponseData, identifi
                     .filter_map(|value| value.attr("charset").map(|value| Encoding::for_label_no_replacement(value.as_bytes())))
                     .collect();
 
-
-
-
             if let Some(found) = found_in_html {
                 decodings.extend(found);
             }
@@ -112,7 +112,7 @@ pub async fn decode<'a>(context: &impl Context, page: &'a ResponseData, identifi
                     continue;
                 }
             }
-            DecodedData::OffMemory { result, encoding, had_errors } => {
+            DecodedData::OffMemory { reference: result, encoding, had_errors } => {
                 if *had_errors {
                     log::debug!("Failed to decode {} with {}.", page.url, encoding.name());
                     context.fs().cleanup_data_file(result.as_str())?;
@@ -128,8 +128,8 @@ pub async fn decode<'a>(context: &impl Context, page: &'a ResponseData, identifi
 
 
     yield_now().await;
-    decode_by_bom(context, page)
 
+    decode_by_bom(context, page)
 }
 
 
@@ -209,14 +209,14 @@ fn decode_by_bom<'a>(context: &impl Context, page: &'a ResponseData) -> Result<D
 }
 
 /// Decodes the content of [page] with [encoding]
-pub fn do_decode<'a>(page: &'a ResponseData, encoding: &'static Encoding) -> Result<DecodedData<Cow<'a, str>, Utf8PathBuf>, DecodingError> {
+fn do_decode<'a>(page: &'a ResponseData, encoding: &'static Encoding) -> Result<DecodedData<Cow<'a, str>, Utf8PathBuf>, DecodingError> {
     match &page.content {
         DataHolder::InMemory { data } => {
             let decoded = encoding.decode(data.as_slice());
             if decoded.2 {
                 log::info!("The page for {} had an error while decoding with {}. ", page.url, encoding.name());
             }
-            return Ok(decoded.into());
+            Ok(decoded.into())
         }
         DataHolder::ExternalFile { file } => {
             let mut decoder = encoding.new_decoder_with_bom_removal();
@@ -256,13 +256,11 @@ pub fn do_decode<'a>(page: &'a ResponseData, encoding: &'static Encoding) -> Res
                 }
 
                 match result {
-                    DecoderResult::InputEmpty => {
-                        panic!("The decoding of big file failed somehow!")
-                    }
+                    DecoderResult::InputEmpty => return Err(DecodingError::DecodingFileFailed),
+                    DecoderResult::OutputFull => return Err(DecodingError::OutOfMemory),
                     DecoderResult::Malformed(..) => {
                         had_error = true;
                     }
-                    DecoderResult::OutputFull => {}
                 }
 
 
