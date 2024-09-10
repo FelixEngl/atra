@@ -25,9 +25,9 @@ as possible, while ensuring ease of use and accessibility.
 ## Tenets
 
 Atra follows some simple but powerful tenets: 
-- If you can not embed it, you don't need it.
-- Services are short-lived, but a monolith are for eternity.
-- One config file to rule them all.
+- If you can't embed it, you don't need it.
+- Services are short-lived, but a monolith is for eternity.
+- One config to rule them all.
 
 ## Your first crawl
 Download the precompiled executable (coming soon) and run the following command:
