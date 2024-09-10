@@ -357,12 +357,16 @@ This parameters proved very robust for german gdbr recognition.
 
 #### SVM Data Formats
 ##### TF-IDF-Data
+A plain textfile with line wise traindata.
+
 ````text
 <document 1>
 <document 2>
 <document 3>
 ````
 ##### TRAIN-Data
+A csv textfile with line wise traindata.
+The first value is a boolean indication if it is in the class "has_gdbr" or not. The second is an escaped document.
 ````csv
 is_gdbr,text
 true, "<document 1>"
