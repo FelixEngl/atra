@@ -221,12 +221,20 @@ Example:
 
 #### Link Extractor Method
 
-| Name      | Value                                         | Explanation                                                                                                                    |
-|-----------|-----------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------|
-| HtmlV1    | "HtmlV1"/"HTML_v1"                            | Extracts links from an HTML. Can respect NO_FOLLOW and is capable of resolving must of the common references of HTML.          |
-| JSV1      | "JSV1"/"js_v1"/"JavaScript_v1"/"JS_v1"        | Extracts links from JavaScript by searching for href identifiers.                                                              |
-| PlainText | "PlainText"/"PlainText_v1"/"PT_v1"/"Plain_v1" | Extracts links from a plaintext by using linkify. [link](https://crates.io/crates/linkify)                                     |
-| RawV1     | "RawV1"/"RAW_v1"                              | Tries to extract links from raw bytes by searching for http:// and https:// and then recovering following texts heuristically. |
+| Name      | Value                                         | Explanation                                                                                                                                                                    |
+|-----------|-----------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| HtmlV1    | "HtmlV1"/"HTML_v1"                            | Extracts links from an HTML. Can respect NO_FOLLOW and is capable of resolving must of the common references of HTML.                                                          |
+| JSV1      | "JSV1"/"js_v1"/"JavaScript_v1"/"JS_v1"        | Extracts links from JavaScript by searching for href identifiers.                                                                                                              |
+| PlainText | "PlainText"/"PlainText_v1"/"PT_v1"/"Plain_v1" | Extracts links from a plaintext by using linkify. [link](https://crates.io/crates/linkify)                                                                                     |
+| RawV1     | "RawV1"/"RAW_v1"                              | Tries to extract links from raw bytes by using a modified linkify version for raw data. Relatively robust.<br/>Can theoretically process anything that can be decoded by atra. |
+| Rtf       | "rtf_v1"                                      | Extracts links from an RTF.                                                                                                                                                    |
+| Ooxml     | "ooxml"                                       | Extracts links from Office Open XMLs.                                                                                                                                          |
+| Odf       | "odf"                                         | Extracts links from Open Document Formats.                                                                                                                                     |
+| Exif      | "image"                                       | Extracts links from any kind of image, as long as there exists EXIF data.                                                                                                      |
+| Xml       | "xml"                                         | Extracts links from an XML.                                                                                                                                                    |
+| Svg       | "svg"                                         | Extracts links from an SVG.                                                                                                                                                    |
+| Xlink     | "xlink"                                       | Extracts links from an XML with XLINK.                                                                                                                                         |
+| PDF       | "pdf_v1"                                      | Extracts links from an HTML. (Currently linux only due to a compiler bug with windows.)                                                                                        |
 
 
 #### Apply When
