@@ -311,21 +311,28 @@ The SVM can be configured in three ways:
 
 #### TF
 See https://en.wikipedia.org/wiki/Tf%E2%80%93idf for the explanations:
-- Binary | $`{0,1}`$
-- RawCount | $`f_{t,d}`$
-- TermFrequency | $`f_{t,d} \Bigg/ {\sum_{t' \in d}{f_{t',d}}}`$
-- LogNormalization | $`\log (1 + f_{t,d})`$
-- DoubleNormalization | $`0.5 + 0.5 \cdot \frac { f_{t,d} }{\max_{\{t' \in d\}} {f_{t',d}}}`$
+
+| Name                | Value                 | Explanation                                                           |
+|---------------------|-----------------------|-----------------------------------------------------------------------|
+| Binary              | "Binary"              | $`{0,1}`$                                                             |
+| RawCount            | "RawCount"            | $`f_{t,d}`$                                                           |
+| TermFrequency       | "TermFrequency"       | $`f_{t,d} \Bigg/ {\sum_{t' \in d}{f_{t',d}}}`$                        |
+| LogNormalization    | "LogNormalization"    | $`\log (1 + f_{t,d})`$                                                |
+| DoubleNormalization | "DoubleNormalization" | $`0.5 + 0.5 \cdot \frac { f_{t,d} }{\max_{\{t' \in d\}} {f_{t',d}}}`$ |
+
 
 #### IDF
 See https://en.wikipedia.org/wiki/Tf%E2%80%93idf for the explanations:
-$`n_t = |\{d \in D: t \in d\}|`$
 
-- Unary | 1
-- InverseDocumentFrequency | $`\log \frac {N} {n_t} = - \log \frac {n_t} {N}`$
-- InverseDocumentFrequencySmooth | $`\log \left( \frac {N} {1 + n_t}\right)+ 1`$
-- InverseDocumentFrequencyMax | $`\log \left(\frac {\max_{\{t' \in d\}} n_{t'}} {1 + n_t}\right)`$
-- ProbabilisticInverseDocumentFrequency | $`\log  \frac {N - n_t} {n_t}`$
+| Name                                  | Value                                   | Explanation                                                        |
+|---------------------------------------|-----------------------------------------|--------------------------------------------------------------------|
+| Unary                                 | "Unary"                                 | $`1`$                                                              |
+| InverseDocumentFrequency              | "InverseDocumentFrequency"              | $`\log \frac {N} {n_t} = - \log \frac {n_t} {N}`$                  |
+| InverseDocumentFrequencySmooth        | "InverseDocumentFrequencySmooth"        | $`\log \left( \frac {N} {1 + n_t}\right)+ 1`$                      |
+| InverseDocumentFrequencyMax           | "InverseDocumentFrequencyMax"           | $`\log \left(\frac {\max_{\{t' \in d\}} n_{t'}} {1 + n_t}\right)`$ |
+| ProbabilisticInverseDocumentFrequency | "ProbabilisticInverseDocumentFrequency" | $`\log  \frac {N - n_t} {n_t}`$                                    |
+
+
 
 ##### German GDBR SVM Config
 This parameters proved very robust for german gdbr recognition.
