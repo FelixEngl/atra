@@ -12,10 +12,6 @@ pub enum ContinueOrStop<T> {
     Cancelled(T)
 }
 
-/// The command send if it can continue
-#[derive(Debug, Copy, Clone)]
-struct ContinueCommand;
-
 
 /// A trait for a context that supports worker ID
 pub trait SupportsWorkerId {

@@ -45,11 +45,11 @@ pub mod digest;
 pub mod runtime;
 pub mod worker;
 pub mod sync;
-pub mod stores;
 pub mod format;
 pub mod isolang_ext;
 pub mod toolkit;
 pub mod language_detection;
+pub mod stores;
 
 pub use url::url_with_depth::UrlWithDepth;
 pub use data_holder::*;

@@ -36,13 +36,13 @@ pub trait OriginManager: InternalOriginManager + Debug + Clone {
 
     /// Returns true if there is an entry.
     /// Returns none if there is no host.
-    async fn knows_origin(&self, url: &UrlWithDepth) -> Option<bool>;
+    #[allow(dead_code)] async fn knows_origin(&self, url: &UrlWithDepth) -> Option<bool>;
 
     /// Returns something if there is a host and an entry
     async fn current_origin_state(&self, url: &UrlWithDepth) -> Option<OriginEntry>;
 
     /// Returns the currently reserved hosts
-    async fn currently_reserved_origins(&self) -> Vec<AtraUrlOrigin>;
+    #[allow(dead_code)] async fn currently_reserved_origins(&self) -> Vec<AtraUrlOrigin>;
 
     /// Returns an error if the host is poisoned
     async fn check_if_poisoned<'a>(&self, guard: &OriginGuard<'a, Self>) -> Result<(), GuardPoisonedError>;

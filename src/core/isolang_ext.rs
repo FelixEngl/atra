@@ -7,6 +7,7 @@ pub trait ToIsoLang {
     fn to_isolang(self) -> Language;
 }
 
+#[allow(dead_code)]
 pub trait TryToIsoLang {
     type Error: StdError;
 

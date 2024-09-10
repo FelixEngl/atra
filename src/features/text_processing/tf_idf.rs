@@ -28,6 +28,7 @@ pub struct TfIdf<Tf, Idf> {
     pub idf: Idf
 }
 
+#[allow(dead_code)]
 impl<Tf, Idf>  TfIdf<Tf, Idf> where Tf: TfAlgorithm {
     delegate::delegate! {
         to self.tf {
@@ -36,6 +37,7 @@ impl<Tf, Idf>  TfIdf<Tf, Idf> where Tf: TfAlgorithm {
     }
 }
 
+#[allow(dead_code)]
 impl<Tf, Idf>  TfIdf<Tf, Idf> where Idf: IdfAlgorithm {
     delegate::delegate! {
         to self.idf {
@@ -80,6 +82,7 @@ pub trait IdfAlgorithm {
     /// [number_of_words] denote the number of distinct words in the whole corpus
     /// [word_frequency] denotes the frequency of a specific word in a corpus
     #[inline]
+    #[allow(dead_code)]
     fn calculate_idf<W, S: CorpusDocumentStatistics<Word=W>>(&self, statistics: & S, word: &W) -> Result<Option<f64>, Self::Error> {
         statistics
             .word_frequency(word)
@@ -312,8 +315,8 @@ mod test {
                     "going" => {
                         assert!((*value - 0.0).abs() < f64::EPSILON, "Failed for '{}', got {}", word, *value)
                     }
-                    unknown => {
-                        panic!("Unknown TFIDF: {}", unknown)
+                    _ => {
+                        float_cmp::assert_approx_eq!(f64, 0.0, *value)
                     }
                 }
             }

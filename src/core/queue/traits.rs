@@ -52,6 +52,7 @@ pub trait RawAgingQueue {
 }
 
 /// A typed version of the [RawAgingQueue]
+#[allow(dead_code)]
 pub trait AgingQueue<T: AgingQueueElement + Serialize + DeserializeOwned + Debug>: RawAgingQueue {
     /// Enqueue a value of type [T].
     #[inline] async fn enqueue(&self, entry: T) -> Result<(), QueueError> {

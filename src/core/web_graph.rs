@@ -61,15 +61,6 @@ impl WebGraphEntry {
         }
     }
 
-
-    fn to_turtle_entry(self) -> String {
-        let mut s = String::new();
-        self.collect(&mut s);
-        return s
-    }
-
-
-
     fn collect(&self, out: &mut impl EntryLineConsumer) {
         fn recognize_atra_uri(uri: &AtraUri, out: &mut impl EntryLineConsumer) -> String {
             let result = match uri.try_as_str() {

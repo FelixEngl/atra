@@ -21,6 +21,7 @@ use mockall::{automock};
 use crate::core::io::errors::ErrorWithPath;
 
 /// A writer for WARC files
+#[allow(dead_code)]
 #[cfg_attr(test, automock)]
 pub trait SpecialWarcWriter {
     /// Returns the pointer with the current file and position as tuple, may fail is some kind of error occurs.

@@ -1,16 +1,13 @@
 use std::fmt::Debug;
-use std::sync::Arc;
 use camino::{Utf8Path, Utf8PathBuf};
 use isolang::Language;
 use itertools::Itertools;
 use liblinear::parameter::serde::GenericParameters;
-use liblinear::solver::L2R_L2LOSS_SVR;
 use rust_stemmers::Algorithm;
 use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 use crate::core::toolkit::comp_opt;
-use crate::features::svm::classifier::DocumentClassifier;
 use crate::features::text_processing::tf_idf::{Idf, IdfAlgorithm, Tf, TfAlgorithm};
 
 

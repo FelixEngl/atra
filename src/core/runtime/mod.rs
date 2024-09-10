@@ -120,6 +120,7 @@ impl Deref for AtraHandle {
 /// An optional Atra handle
 pub type OptionalAtraHandle = Option<AtraHandle>;
 
+#[allow(dead_code)]
 pub trait AtraHandleOption {
     /// Panics if None and not called in an async runtime.
     /// See [Handle::current] for more information.
