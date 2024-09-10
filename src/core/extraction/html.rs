@@ -45,11 +45,10 @@ pub fn extract_links<'a, C: SupportsGdbrRegistry + SupportsConfigs>(
     let crawl_embedded_data: bool = cfg.crawl.crawl_embedded_data;
     let crawl_javascript: bool = cfg.crawl.crawl_javascript;
     let crawl_onclick_by_heuristic: bool = cfg.crawl.crawl_onclick_by_heuristic;
-    let ignore_gdbr: bool = cfg.crawl.apply_gdbr_filter_if_possible;
 
     let mut html = Html::parse_document(html);
 
-    if ignore_gdbr {
+    if cfg.crawl.apply_gdbr_filter_if_possible {
         if let Some(registry) = context.gdbr_registry() {
             if let Some(found) = registry.get_by_language_or_default(language) {
                 found.remove_gdbr(&mut html);
@@ -57,7 +56,7 @@ pub fn extract_links<'a, C: SupportsGdbrRegistry + SupportsConfigs>(
                 log::debug!("Failed to clean because there is no language.")
             }
         } else {
-            log::warn!("The flag for cleaning gdpr was set, but no registry was configured!")
+            log::debug!("The flag for cleaning gdpr was set, but no registry was configured!")
         }
     }
 

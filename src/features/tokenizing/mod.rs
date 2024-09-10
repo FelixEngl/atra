@@ -13,7 +13,7 @@ use crate::features::tokenizing::stopwords::StopWordRegistry;
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, Default)]
 #[serde(transparent)]
 pub struct StopwordRegistryConfig {
-    pub(super) registries: Vec<StopWordRepository>
+    pub registries: Vec<StopWordRepository>
 }
 
 impl PartialEq for StopwordRegistryConfig {

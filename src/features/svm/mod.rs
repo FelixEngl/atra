@@ -296,6 +296,7 @@ pub(crate) mod test {
             5,
             5
         );
+
         train::<_, _, L2R_L2LOSS_SVR>(
             &Language::Deu,
             &cfg,

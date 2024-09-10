@@ -44,14 +44,18 @@ impl TryFrom<StopWordRepositoryDev> for StopWordRepository {
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(default)]
 struct StopWordRepositoryDev {
-    #[serde(skip_serializing_if = "std::ops::Not::not", rename = "iso_default")]
+    #[serde(skip_serializing_if = "std::ops::Not::not", rename = "iso_default", default = "_default_with_iso_default")]
     with_iso_default: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", alias = "directory")]
     dir: Option<Utf8PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
     file: Option<Utf8PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
     language: Option<Language>,
+}
+
+fn _default_with_iso_default() -> bool {
+    false
 }
 
 impl From<StopWordRepository> for StopWordRepositoryDev {

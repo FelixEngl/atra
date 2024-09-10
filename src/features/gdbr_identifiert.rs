@@ -311,10 +311,23 @@ impl FilterMode {
 ))]
 pub struct GdbrIdentifier<TF, IDF, SOLVER> where SOLVER: Solver {
     solver: DocumentClassifier<TF, IDF, SOLVER>,
+    #[serde(default = "_threshold_default")]
     threshold: f64,
+    #[serde(default = "_filter_threshold_default")]
     filter_threshold: f64,
+    #[serde(default = "FilterMode::default")]
     filter_by: FilterMode
 }
+
+fn _threshold_default() -> f64 {
+    0.1
+}
+
+fn _filter_threshold_default() -> f64 {
+    0.5
+}
+
+
 
 unsafe impl<TF, IDF, SOLVER> Sync for GdbrIdentifier<TF, IDF, SOLVER> where SOLVER: Solver{}
 unsafe impl<TF, IDF, SOLVER> Send for GdbrIdentifier<TF, IDF, SOLVER> where SOLVER: Solver{}

@@ -103,10 +103,6 @@ pub struct CrawlConfig {
     /// blob but do not overstep this provided size. (in Bytes) (default: None/Off)
     pub decode_big_files_up_to: Option<u64>,
 
-
-    /// If this is set all stopwords inclide the default stopwords known to atra (drfault: true)
-    pub use_default_stopwords: bool,
-
     /// Used to configure the stopword registry if needed.
     pub stopword_registry: Option<StopwordRegistryConfig>,
 
@@ -148,7 +144,6 @@ impl Default for CrawlConfig {
             max_queue_age: 20,
             link_extractors: Extractor::default(),
             decode_big_files_up_to: None,
-            use_default_stopwords: true,
             stopword_registry: None,
             gbdr: None,
             #[cfg(feature = "chrome")]
