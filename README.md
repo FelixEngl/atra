@@ -1,11 +1,33 @@
 # Atra - The smaller way to crawl
 
-**!!This read me will we reworked in a few days. Currently I am working on a better version and a wiki for the 
-config files.!!**
+```text
+_________________
+        |
+|       |       |
+|  |    |    |  |
+ \ |  /°°°\  | /
+  \| /  A  \ |/
+   \ \  T  / /
+   /\/  R  \/\
+  / /\  A  /\ \
+ / /  Oo_oO  \ \
+| |   ´` ´`   | |
+|               |
+
+       ???
+/TTTTTTTTTTTTTTT\
+```
 
 Atra is a novel web crawling solution, implemented in Rust, designed with
 the primary goal of scraping websites as comprehensively
 as possible, while ensuring ease of use and accessibility.
+
+## Tenets
+
+Atra follows some simple but important tenets: 
+- If you can not embed it, you don't need it.
+- Services are short-lived, but a monolith are for eternity.
+- One config file to rule them all.
 
 ## Your first crawl
 Download the precompiled executable (coming soon) and run the following command:
@@ -96,7 +118,7 @@ The following table shows the configs written as qualified paths for a json.
 | crawl.redirect_limit                | uInt                                                                                           | The max redirections allowed for request. (default: 5 like Google-Bot)                                                                                                                  |
 | crawl.redirect_policy               | String; Enum (see [Redirection Policy](#Redirection-Policy))                                   | The redirect policy type to use. (default: Loose)                                                                                                                                       |
 | crawl.accept_invalid_certs          | boolean                                                                                        | Dangerously accept invalid certficates (default: false)                                                                                                                                 |
-| crawl.link_extractors               | JSON; ``[- Command -, - Command -]`` (see [Link Extractor Settings](#Link-Extractor-Settings)) | A custom configuration of extractors. (default: see [Extractor Settings](#Extractor-Settings))                                                                                          |
+| crawl.link_extractors               | JSON; ``[- Command -, - Command -]`` (see [Link Extractor Settings](#Link-Extractor-Settings)) | A custom configuration of extractors. (default: see [Extractor Settings](#Link-Extractor-Settings))                                                                                     |
 | crawl.decode_big_files_up_to        | uInt/null; in Byte                                                                             | If this value is set Atra tries to decode and process files that are only downloaded as<br/>blob but do not overstep this provided size (in Bytes).<br/>Null means off. (default: null) |
 | crawl.use_default_stopwords         | boolean                                                                                        | If this is set all stopwords inclide the default stopwords known to atra (drfault: true)                                                                                                |
 | crawl.stopword_registry             | JSON/null; (see [Stopword Registry](#Stopword-Registry))                                       | Used to configure the global registry for stopwords.                                                                                                                                    |
