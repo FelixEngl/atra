@@ -279,35 +279,35 @@ The SVM can be configured in three ways:
 - Train: Tries to train a model
 - All: Tries to load a model, if it fails it tries to train one.
 
-| Sub-Path            | used in          | Value                                                      | Explanation                                                                   |
-|---------------------|------------------|------------------------------------------------------------|-------------------------------------------------------------------------------|
-| language            | Load, Train, All | String; Iso Language                                       | Sets the minimum score needed for a sucessfull SVM prediction. (default: 0.1) | 
-| retrain_if_possible | All              | bool/Null                                                  | Sets the score needed for a high confident SVM prediction. (default: 0.5)     |
-| tf                  | Train, All       | String/Null;TF; see [TF](#TF)                              | Configures what score is used to identify the correct node in the html.       |
-| idf                 | Train, All       | String/Null;IDF; see [IDF](#IDF)                           | Configures the SVM                                                            |
-| tf_idf_data         | Train, All       | Path/Null; see [SVM Data Formats](#SVM-Data-Formats)       | Configures the SVM                                                            |
-| train_data          | Train, All       | Path/Null; see [SVM Data Formats](#SVM-Data-Formats)       | Configures the SVM                                                            |
-| test_data           | Load, Train, All | Path/Null; see [SVM Data Formats](#SVM-Data-Formats)       | Configures the SVM                                                            |
-| trained_svm         | Load, All        | Path/Null                                                  | Configures the SVM                                                            |
-| normalize_tokens    | Train, All       | bool/null                                                  | Configures the SVM                                                            |
-| filter_stopwords    | Train, All       | bool/null                                                  | Configures the SVM                                                            |
-| stemmer             | Train, All       | String; StemmerName; see [Stemmer Names](#Stemmer-Names)   | Configures the SVM                                                            |
-| parameters          | Train, All       | JSON; SvmParameters; see [SVM Parameters](#SVM-Parameters) | Configures the SVM                                                            |
-| min_doc_length      | Load, Train, All | uInt/null                                                  | Configures the SVM                                                            |
-| min_vector_length   | Load, Train, All | uInt/null                                                  | Configures the SVM                                                            |
+| Sub-Path            | used in          | Value                                                             | Explanation                                                                                            |
+|---------------------|------------------|-------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------|
+| language            | Load, Train, All | String; Iso Language                                              | Sets the language for the svm                                                                          | 
+| retrain_if_possible | All              | bool/Null                                                         | Retrains even if there is something to load.                                                           |
+| tf                  | Train, All       | String/Null;TF; see [TF](#TF)                                     | The TF used for the vectorisation.                                                                     |
+| idf                 | Train, All       | String/Null;IDF; see [IDF](#IDF)                                  | The IDF used for the vectorisation.                                                                    |
+| tf_idf_data         | Train, All       | Path/Null; TF-IDF-Data; see [SVM Data Formats](#SVM-Data-Formats) | A path to some train data for the tf-idf-vectorizer.                                                   |
+| train_data          | Train, All       | Path/Null; TRAIN-DATA; see [SVM Data Formats](#SVM-Data-Formats)  | A path to some train data for the svm.                                                                 |
+| test_data           | Load, Train, All | Path/Null; -undefined-                                            | - unused -                                                                                             |
+| trained_svm         | Load, All        | Path/Null                                                         | Path to a stored svm. Will be in the atra root, if a relative path is provided.                        |
+| normalize_tokens    | Train, All       | bool/null                                                         | Normalizes the tokens according to [Unicode Standard Annex #15](https://www.unicode.org/reports/tr15/) |
+| filter_stopwords    | Train, All       | bool/null                                                         | Filters the tokens by a stopword filter.                                                               |
+| stemmer             | Train, All       | String; StemmerName; see [Stemmer Names](#Stemmer-Names)          | Stemms the tokens with a provided snowball stemmer.                                                    |
+| parameters          | Train, All       | JSON; SvmParameters; see [SVM Parameters](#SVM-Parameters)        | The parameters used to configue the Liblinear SVM.                                                     |
+| min_doc_length      | Load, Train, All | uInt/null                                                         | The minimum length of a document needed to be used for training/production.                            |
+| min_vector_length   | Load, Train, All | uInt/null                                                         | The minimum length of a vector needed to be used for training/production.                              |
 
 #### SVM Parameters
 
-| Sub-Path          | used in        | Value                                                                     | Explanation                                                                   |
-|-------------------|----------------|---------------------------------------------------------------------------|-------------------------------------------------------------------------------|
-| epsilon           | L2R_L2LOSS_SVR | f64/null                                                                  | Sets the minimum score needed for a sucessfull SVM prediction. (default: 0.1) | 
-| cost              | L2R_L2LOSS_SVR | f64/null                                                                  | Sets the score needed for a high confident SVM prediction. (default: 0.5)     |
-| p                 | L2R_L2LOSS_SVR | f64/null                                                                  | regression loss sensitivity                                                   |
-| nu                |                | f64/null                                                                  | Configures the SVM                                                            |
-| cost_penalty      | L2R_L2LOSS_SVR | Array<[Int, f64]>/null; ```json {"cost_penalty": [[1, 0.5], [2, 3.4]]}``` | Configures the SVM                                                            |
-| initial_solutions | L2R_L2LOSS_SVR | Array<f64>/null                                                           | Configures the SVM                                                            |
-| bias              | L2R_L2LOSS_SVR | f64/null                                                                  | Configures the SVM                                                            |
-| regularize_bias   | L2R_L2LOSS_SVR | bool                                                                      | Configures the SVM                                                            |
+| Sub-Path          | used in        | Value                                                                     | Explanation                                                                                                                                                                                                                                                                                                         |
+|-------------------|----------------|---------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| epsilon           | L2R_L2LOSS_SVR | f64/null                                                                  | Set tolerance of termination criterion for optimization (parameter `e`). (default: 0.01)                                                                                                                                                                                                                            | 
+| cost              | L2R_L2LOSS_SVR | f64/null                                                                  | Set cost of constraints violation (parameter `C`). <br/> Rules the trade-off between regularization and correct classification on data. It can be seen as the inverse of a regularization constant. (default: 1.0)                                                                                                  |
+| p                 | L2R_L2LOSS_SVR | f64/null                                                                  | Set the tolerance margin/loss sensitivity of support vector regression (parameter `p`). (default: 0.1)                                                                                                                                                                                                              |
+| nu                |                | f64/null                                                                  | Set the fraction of data that is to be classified as outliers (parameter `nu`). (default: 0.5)                                                                                                                                                                                                                      |
+| cost_penalty      | L2R_L2LOSS_SVR | Array<[Int, f64]>/null; ```json {"cost_penalty": [[1, 0.5], [2, 3.4]]}``` | Set weights to adjust the cost of constraints violation for specific classes. Each element is a tuple where the first value is the label and the second its corresponding weight penalty.<br/>Useful when training classifiers on unbalanced input data or with asymmetric mis-classification cost. (default: null) |
+| initial_solutions | L2R_L2LOSS_SVR | Array<f64>/null                                                           | Set the initial solution specification. (default: null)                                                                                                                                                                                                                                                             |
+| bias              | L2R_L2LOSS_SVR | f64/null                                                                  | Set the bias of the training data. If `bias >= 0`, it's appended to the feature vector of each training data instance. (default: -1.0)                                                                                                                                                                              |
+| regularize_bias   | L2R_L2LOSS_SVR | bool                                                                      | Toggle bias regularization during training.<br/>f set to `false`, the bias value will automatically be set to `1`. (default: true)                                                                                                                                                                                  |
 
 #### TF
 See https://en.wikipedia.org/wiki/Tf%E2%80%93idf for the explanations:
@@ -349,6 +349,19 @@ This parameters proved very robust for german gdbr recognition.
 ````
 
 #### SVM Data Formats
+##### TF-IDF-Data
+````text
+<document 1>
+<document 2>
+<document 3>
+````
+##### TRAIN-Data
+````csv
+is_gdbr,text
+true, "<document 1>"
+false, "<document 2>"
+true, "<document 3>"
+````
 
 ### Stemmer Names
 Stemmers are available in the following languages, the name for the parameters are the same:
