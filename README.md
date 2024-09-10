@@ -24,7 +24,7 @@ as possible, while ensuring ease of use and accessibility.
 
 ## Tenets
 
-Atra follows some simple but important tenets: 
+Atra follows some simple but powerful tenets: 
 - If you can not embed it, you don't need it.
 - Services are short-lived, but a monolith are for eternity.
 - One config file to rule them all.
