@@ -18,34 +18,35 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use itertools::Itertools;
 use liblinear::solver::L2R_L2LOSS_SVR;
-use time::{Duration, OffsetDateTime};
+use time::{OffsetDateTime};
 use tokio::sync::{Mutex};
 use tokio::sync::broadcast::Receiver;
 use crate::core::blacklist::PolyBlackList;
 use crate::core::config::Configs;
-use crate::core::contexts::{Context, RecoveryCommand, SlimCrawlTaskContext};
+use crate::core::contexts::{Context};
 use crate::core::crawl::result::CrawlResult;
 use crate::core::crawl::seed::CrawlSeed;
 use crate::core::crawl::slim::{SlimCrawlResult, StoredDataHint};
-use crate::core::extraction::ExtractedLink;
 use crate::core::link_state::{LinkState, LinkStateDBError, LinkStateType};
 use crate::core::database_error::DatabaseError;
-use crate::core::io::fs::FileSystemAccess;
 use crate::core::web_graph::{WebGraphEntry, LinkNetError, WebGraphManager};
 use crate::core::queue::QueueError;
 use crate::core::robots::{InMemoryRobotsManager, ShareableRobotsManager};
 use crate::core::url::queue::{EnqueueCalled, UrlQueue, UrlQueueElement, UrlQueueElementWeak};
 use crate::core::{UrlWithDepth, VecDataHolder};
-use crate::core::contexts::errors::{LinkHandlingError, RecoveryError};
-use crate::core::io::root::RootSetter;
+use crate::core::contexts::errors::LinkHandlingError;
+use crate::core::contexts::traits::*;
+use crate::core::extraction::ExtractedLink;
+use crate::core::io::fs::FileSystemAccess;
 use crate::core::origin::AtraOriginProvider;
 use crate::core::origin::managers::InMemoryOriginManager;
 use crate::core::url::atra_uri::AtraUri;
-use crate::features::gdbr_identifiert::{GdbrIdentifierRegistry, GdbrIdentifierRegistryConfig, SupportsGdbrIdentifier};
+use crate::features::gdbr_identifiert::{GdbrIdentifierRegistry};
 use crate::features::text_processing::tf_idf::{Idf, Tf};
 use crate::features::tokenizing::stopwords::StopWordRegistry;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct InMemoryContext {
     ct_crawled_websites: AtomicUsize,
     ct_found_websites: AtomicUsize,
@@ -106,75 +107,13 @@ impl Default for InMemoryContext {
     }
 }
 
+impl AsyncContext for InMemoryContext {}
 
+impl Context for InMemoryContext {}
 
-impl super::Context for InMemoryContext {
-    type RobotsManager = ShareableRobotsManager;
-    type UrlQueue = InMemoryLinkQueue;
-    type HostManager = InMemoryOriginManager;
-    type WebGraphManager = InMemoryLinkNetManager;
-    type Solver = L2R_L2LOSS_SVR;
-    type TF = Tf;
-    type IDF = Idf;
-
-    async fn can_poll(&self) -> bool {
-        !self.links_queue.is_empty().await
-    }
-
-
-    fn fs(&self) -> &FileSystemAccess {
-        panic!("Not supported by in memory actions!")
-    }
-
+impl SupportsLinkState for InMemoryContext {
     fn crawled_websites(&self) -> Result<u64, LinkStateDBError> {
         Ok(self.ct_crawled_websites.load(Ordering::Relaxed) as u64)
-    }
-
-    fn discovered_websites(&self) -> usize {
-        self.ct_found_websites.load(Ordering::Relaxed)
-    }
-
-    fn url_queue(&self) -> &Self::UrlQueue {
-        &self.links_queue
-    }
-
-    fn configs(&self) -> &Configs {
-        &self.configs
-    }
-
-    fn gdbr_registry(&self) -> Option<&GdbrIdentifierRegistry<Self::TF, Self::IDF, Self::Solver>> {
-        self.gdbr_registry.as_ref()
-    }
-
-    fn crawl_started_at(&self) -> OffsetDateTime {
-        self.started_at
-    }
-
-    fn web_graph_manager(&self) -> &Self::WebGraphManager {
-        &self.link_net_manager
-    }
-
-    async fn get_blacklist(&self) -> PolyBlackList {
-        self.blacklist.clone()
-    }
-
-    async fn get_robots_instance(&self) -> Self::RobotsManager {
-        self.robots_manager.clone()
-    }
-
-    fn get_host_manager(&self) -> &InMemoryOriginManager {
-        &self.host_manager
-    }
-
-
-
-    async fn retrieve_slim_crawled_website(&self, url: &UrlWithDepth) -> Result<Option<SlimCrawlResult>, DatabaseError> {
-        let crawled = self.crawled_websites.read().await;
-        if let Some(found) = crawled.get(url.url()) {
-            Ok(Some(found.clone()))
-        } else {
-            Ok(None)
-        }
     }
 
     async fn register_seed(&self, seed: &impl CrawlSeed) -> Result<(), LinkHandlingError> {
@@ -246,25 +185,104 @@ impl super::Context for InMemoryContext {
         Ok(lock.get(url.url()).map(|value| value.clone()))
     }
 
-    async fn check_if_there_are_any_crawlable_links(&self, max_age: Duration) -> bool {
+    async fn check_if_there_are_any_crawlable_links(&self, max_age: std::time::Duration) -> bool {
         let lock = self.state.read().await;
         lock.iter().any(|value | value.1.typ < LinkStateType::ProcessedAndStored || OffsetDateTime::now_utc() - value.1.timestamp > max_age)
     }
+}
 
-    async fn recover<'a>(&self, _: RecoveryCommand<'a>) -> Result<(), RecoveryError> {
-        todo!("Recovery not supported in this version.")
+impl SupportsHostManagement for InMemoryContext {
+    type HostManager = InMemoryOriginManager;
+
+    fn get_host_manager(&self) -> &InMemoryOriginManager {
+        &self.host_manager
+    }
+}
+
+impl SupportsRobotsManager for InMemoryContext {
+    type RobotsManager = ShareableRobotsManager;
+
+    async fn get_robots_instance(&self) -> Self::RobotsManager {
+        self.robots_manager.clone()
+    }
+}
+
+impl SupportsBlackList for InMemoryContext {
+    async fn get_blacklist(&self) -> PolyBlackList {
+        self.blacklist.clone()
+    }
+}
+
+impl SupportsMetaInfo for InMemoryContext {
+    fn crawl_started_at(&self) -> OffsetDateTime {
+        self.started_at
     }
 
+    fn discovered_websites(&self) -> usize {
+        self.ct_found_websites.load(Ordering::Relaxed)
+    }
+}
+
+impl SupportsConfigs for InMemoryContext {
+    fn configs(&self) -> &Configs {
+        &self.configs
+    }
 
 }
 
-impl crate::features::tokenizing::SupportsStopwords for InMemoryContext {
+impl SupportsUrlQueue for InMemoryContext {
+    type UrlQueue = InMemoryLinkQueue;
+
+    async fn can_poll(&self) -> bool {
+        !self.links_queue.is_empty().await
+    }
+
+    fn url_queue(&self) -> &Self::UrlQueue {
+        &self.links_queue
+    }
+}
+
+impl SupportsFileSystemAccess for InMemoryContext {
+    fn fs(&self) -> &FileSystemAccess {
+        panic!("Not supported by in memory actions!")
+    }
+}
+
+
+impl SupportsWebGraph for InMemoryContext {
+    type WebGraphManager = InMemoryLinkNetManager;
+
+    fn web_graph_manager(&self) -> &Self::WebGraphManager {
+        &self.link_net_manager
+    }
+}
+
+impl SupportsStopwordsRegistry for InMemoryContext {
     fn stopword_registry(&self) -> Option<&StopWordRegistry> {
         Some(&self.stop_word_registry)
     }
 }
 
-impl super::SlimCrawlTaskContext for InMemoryContext {
+impl SupportsGdbrRegistry for InMemoryContext {
+    type Solver = L2R_L2LOSS_SVR;
+    type TF = Tf;
+    type IDF = Idf;
+
+    fn gdbr_registry(&self) -> Option<&GdbrIdentifierRegistry<Self::TF, Self::IDF, Self::Solver>> {
+        self.gdbr_registry.as_ref()
+    }
+}
+
+impl SupportsSlimCrawlResults for InMemoryContext {
+    async fn retrieve_slim_crawled_website(&self, url: &UrlWithDepth) -> Result<Option<SlimCrawlResult>, DatabaseError> {
+        let crawled = self.crawled_websites.read().await;
+        if let Some(found) = crawled.get(url.url()) {
+            Ok(Some(found.clone()))
+        } else {
+            Ok(None)
+        }
+    }
+
     async fn store_slim_crawled_website(&self, result: SlimCrawlResult) -> Result<(), DatabaseError> {
         self.ct_crawled_websites.fetch_add(1, Ordering::Relaxed);
         let mut crawled = self.crawled_websites.write().await;
@@ -273,8 +291,7 @@ impl super::SlimCrawlTaskContext for InMemoryContext {
     }
 }
 
-impl super::CrawlTaskContext for InMemoryContext {
-
+impl SupportsCrawlResults for InMemoryContext {
     async fn retrieve_crawled_website(&self, url: &UrlWithDepth) -> Result<Option<CrawlResult>, DatabaseError> {
         self.retrieve_slim_crawled_website(url).await.map(|value| value.map(|value| value.inflate(None)))
     }
@@ -297,21 +314,12 @@ pub struct InMemoryLinkNetManager {
     link_net: Arc<Mutex<Vec<WebGraphEntry>>>
 }
 
-// impl InMemoryLinkNetManager {
-//     pub fn new() -> Self {
-//         Self {
-//             link_net: Arc::new(Mutex::new(Vec::new()))
-//         }
-//     }
-// }
-
 impl WebGraphManager for InMemoryLinkNetManager {
     async fn add(&self, link_net_entry: WebGraphEntry) -> Result<(), LinkNetError> {
         self.link_net.lock().await.push(link_net_entry);
         Ok(())
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub struct InMemoryLinkQueue {
@@ -327,7 +335,6 @@ impl Default for InMemoryLinkQueue {
         }
     }
 }
-
 
 impl UrlQueue for InMemoryLinkQueue {
 

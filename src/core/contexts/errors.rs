@@ -24,6 +24,4 @@ pub enum RecoveryError {
     UrlQueue(#[from] QueueError),
     #[error(transparent)]
     Database(#[from] DatabaseError),
-    #[error("Failed for an unknown reason.")]
-    UnknownReason
 }

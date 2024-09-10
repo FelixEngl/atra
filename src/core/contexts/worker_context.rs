@@ -12,57 +12,47 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::sync::Arc;
-use thiserror::Error;
-use time::Duration;
-use crate::core::blacklist::PolyBlackList;
-use crate::core::config::Configs;
-use crate::core::contexts::{Context, CrawlTaskContext, RecoveryCommand, SlimCrawlTaskContext};
+use std::time::Duration;
 use crate::core::crawl::result::CrawlResult;
 use crate::core::crawl::seed::CrawlSeed;
 use crate::core::crawl::slim::{SlimCrawlResult, StoredDataHint};
 use crate::core::database_error::DatabaseError;
-use crate::core::extraction::ExtractedLink;
 use crate::core::io::fs::{WorkerFileSystemAccess};
-use crate::core::link_state::{LinkState, LinkStateDBError, LinkStateType};
 use crate::core::{UrlWithDepth, VecDataHolder};
-use crate::core::contexts::errors::{LinkHandlingError, RecoveryError};
+use crate::core::blacklist::PolyBlackList;
+use crate::core::config::Configs;
+use crate::core::contexts::traits::*;
+use crate::core::contexts::errors::LinkHandlingError;
+use crate::core::extraction::ExtractedLink;
 use crate::core::io::errors::{ErrorWithPath};
-use crate::core::io::root::RootSetter;
+use crate::core::link_state::{LinkState, LinkStateDBError, LinkStateType};
 use crate::core::stores::warc::ThreadsafeMultiFileWarcWriter;
+use crate::core::sync::barrier::SupportsWorkerId;
 use crate::core::warc::{write_warc};
-use crate::features::gdbr_identifiert::{GdbrIdentifierRegistry, GdbrIdentifierRegistryConfig, SupportsGdbrIdentifier};
-use crate::features::text_processing::tf_idf::{Idf, Tf};
+use crate::features::gdbr_identifiert::GdbrIdentifierRegistry;
 use crate::features::tokenizing::stopwords::StopWordRegistry;
-use crate::features::tokenizing::SupportsStopwords;
 
 /// A context for a specific worker
 #[derive(Debug)]
-pub struct WorkerContext<T: SlimCrawlTaskContext> {
+pub struct WorkerContext<T> {
     worker_id: usize,
     inner: Arc<T>,
     worker_file_provider: Arc<WorkerFileSystemAccess>,
     worker_warc_writer: ThreadsafeMultiFileWarcWriter
 }
 
-impl<T: SlimCrawlTaskContext> Clone for WorkerContext<T> {
-    fn clone(&self) -> Self {
-        Self {
-            worker_id: self.worker_id,
-            inner: self.inner.clone(),
-            worker_file_provider: self.worker_file_provider.clone(),
-            worker_warc_writer: self.worker_warc_writer.clone()
-        }
+impl<T> AsyncContext for WorkerContext<T> where T: AsyncContext {}
+impl<T> ContextDelegate for WorkerContext<T> {}
+
+impl<T> SupportsWorkerId for WorkerContext<T> {
+    fn worker_id(&self) -> usize {
+        self.worker_id
     }
 }
 
-impl<T: SlimCrawlTaskContext> WorkerContext<T> {
-    pub fn worker_id(&self) -> usize {
-        self.worker_id
-    }
-
+impl<T> WorkerContext<T> where T: SupportsFileSystemAccess {
     pub async fn create(worker_id: usize, inner: Arc<T>) -> Result<Self, ErrorWithPath> {
         let worker_warc_system = inner.fs().create_worker_file_provider(worker_id).await?;
         Ok(Self::new(worker_id, inner, worker_warc_system)?)
@@ -82,7 +72,115 @@ impl<T: SlimCrawlTaskContext> WorkerContext<T> {
     }
 }
 
-impl<T: SlimCrawlTaskContext> SupportsStopwords for WorkerContext<T> {
+impl<T> Clone for WorkerContext<T> {
+    fn clone(&self) -> Self {
+        Self {
+            worker_id: self.worker_id,
+            inner: self.inner.clone(),
+            worker_file_provider: self.worker_file_provider.clone(),
+            worker_warc_writer: self.worker_warc_writer.clone()
+        }
+    }
+}
+
+impl<T> SupportsLinkState for WorkerContext<T> where T: SupportsLinkState  {
+    delegate::delegate! {
+        to self.inner {
+            fn crawled_websites(&self) -> Result<u64, LinkStateDBError>;
+
+            async fn register_seed(&self, seed: &impl CrawlSeed) -> Result<(), LinkHandlingError>;
+
+            async fn handle_links(&self, from: &UrlWithDepth, links: &HashSet<ExtractedLink>) -> Result<Vec<UrlWithDepth>, LinkHandlingError>;
+
+            async fn update_link_state(&self, url: &UrlWithDepth, state: LinkStateType) -> Result<(), LinkStateDBError>;
+
+            async fn update_link_state_with_payload(&self, url: &UrlWithDepth, state: LinkStateType, payload: Vec<u8>) -> Result<(), LinkStateDBError>;
+
+            async fn get_link_state(&self, url: &UrlWithDepth) -> Result<Option<LinkState>, LinkStateDBError>;
+
+            async fn check_if_there_are_any_crawlable_links(&self, max_age: Duration) -> bool;
+        }
+    }
+}
+
+impl<T> SupportsHostManagement for WorkerContext<T> where T: SupportsHostManagement  {
+    type HostManager = T::HostManager;
+
+    delegate::delegate! {
+        to self.inner {
+            fn get_host_manager(&self) -> &Self::HostManager;
+        }
+    }
+}
+
+impl<T> SupportsRobotsManager for WorkerContext<T> where T: SupportsRobotsManager  {
+    type RobotsManager = T::RobotsManager;
+
+    delegate::delegate! {
+        to self.inner {
+            async fn get_robots_instance(&self) -> Self::RobotsManager;
+        }
+    }
+}
+
+impl<T> SupportsBlackList for WorkerContext<T> where T: SupportsBlackList  {
+    delegate::delegate! {
+        to self.inner {
+            async fn get_blacklist(&self) -> PolyBlackList;
+        }
+    }
+}
+
+impl<T> SupportsMetaInfo for WorkerContext<T> where T: SupportsMetaInfo {
+    delegate::delegate! {
+        to self.inner {
+            fn crawl_started_at(&self) -> time::OffsetDateTime;
+
+            fn discovered_websites(&self) -> usize;
+        }
+    }
+}
+
+impl<T> SupportsConfigs for WorkerContext<T> where T: SupportsConfigs {
+    delegate::delegate! {
+        to self.inner {
+            fn configs(&self) -> &Configs;
+        }
+    }
+}
+
+impl<T> SupportsUrlQueue for WorkerContext<T> where T: SupportsUrlQueue {
+    type UrlQueue = T::UrlQueue;
+
+    delegate::delegate! {
+        to self.inner {
+            async fn can_poll(&self) -> bool;
+
+            fn url_queue(&self) -> &Self::UrlQueue;
+        }
+    }
+}
+
+impl<T> SupportsFileSystemAccess for WorkerContext<T> where T: SupportsFileSystemAccess {
+    delegate::delegate! {
+        to self.inner {
+            fn fs(&self) -> &crate::core::io::fs::FileSystemAccess;
+        }
+    }
+}
+
+impl<T> SupportsWebGraph for WorkerContext<T> where T: SupportsWebGraph {
+    type WebGraphManager = T::WebGraphManager;
+
+    delegate::delegate! {
+        to self.inner {
+            fn web_graph_manager(&self) -> &Self::WebGraphManager;
+        }
+    }
+}
+
+impl<T> SupportsStopwordsRegistry for WorkerContext<T> where T: SupportsStopwordsRegistry
+{
     delegate::delegate! {
         to self.inner {
             fn stopword_registry(&self) -> Option<&StopWordRegistry>;
@@ -90,96 +188,31 @@ impl<T: SlimCrawlTaskContext> SupportsStopwords for WorkerContext<T> {
     }
 }
 
-impl<T: SlimCrawlTaskContext> Context for WorkerContext<T> {
-    type RobotsManager = T::RobotsManager;
-    type UrlQueue = T::UrlQueue;
-    type HostManager = T::HostManager;
-    type WebGraphManager = T::WebGraphManager;
+impl<T> SupportsGdbrRegistry for WorkerContext<T> where T: SupportsGdbrRegistry
+{
     type Solver = T::Solver;
+
     type TF = T::TF;
+
     type IDF = T::IDF;
 
     delegate::delegate! {
         to self.inner {
-            async fn can_poll(&self) -> bool;
-
-            /// Provides access to the filesystem
-            fn fs(&self) -> &crate::core::io::fs::FileSystemAccess;
-
-            /// The number of crawled websites
-            fn crawled_websites(&self) -> Result<u64, LinkStateDBError>;
-
-            /// The amount of discovered websites.
-            fn discovered_websites(&self) -> usize;
-
-            /// Get the instance of the url queue.
-            fn url_queue(&self) -> &Self::UrlQueue;
-
-            /// Returns a reference to the config
-            fn configs(&self) -> &Configs;
-
-            /// When did the crawl officially start?
-            fn crawl_started_at(&self) -> time::OffsetDateTime;
-
-            /// Returns the link net manager
-            fn web_graph_manager(&self) -> &Self::WebGraphManager;
-
-            /// Get some kind of blacklist
-            async fn get_blacklist(&self) -> PolyBlackList;
-
-            /// Get an instance of the robots manager.
-            async fn get_robots_instance(&self) -> Self::RobotsManager;
-
-            /// Returns a reference to a [GuardedDomainManager]
-            fn get_host_manager(&self) -> &Self::HostManager;
-
-            /// Retrieve a single crawled website but without the body
+           fn gdbr_registry(&self) -> Option<&GdbrIdentifierRegistry<Self::TF, Self::IDF, Self::Solver>>;
+        }
+    }
+}
+impl<T> SupportsSlimCrawlResults for WorkerContext<T> where T: SupportsSlimCrawlResults {
+    delegate::delegate! {
+        to self.inner {
             async fn retrieve_slim_crawled_website(&self, url: &UrlWithDepth) -> Result<Option<SlimCrawlResult>, DatabaseError>;
 
-            /// Registers a seed in the context as beeing crawled.
-            async fn register_seed(&self, seed: &impl CrawlSeed) -> Result<(), LinkHandlingError>;
-
-            /// Register outgoing & data links.
-            /// Also returns a list of all urls existing on the seed, that can be registered.
-            async fn handle_links(&self, from: &UrlWithDepth, links: &HashSet<ExtractedLink>) -> Result<Vec<UrlWithDepth>, LinkHandlingError>;
-
-            /// Sets the state of the link
-            async fn update_link_state(&self, url: &UrlWithDepth, state: LinkStateType) -> Result<(), LinkStateDBError>;
-
-            /// Sets the state of the link with a payload
-            async fn update_link_state_with_payload(&self, url: &UrlWithDepth, state: LinkStateType, payload: Vec<u8>) -> Result<(), LinkStateDBError>;
-
-            /// Gets the state of the current url
-            async fn get_link_state(&self, url: &UrlWithDepth) -> Result<Option<LinkState>, LinkStateDBError>;
-
-            /// Checks if there are any crawable links. [max_age] denotes the maximum amount of time since
-            /// the last search
-            async fn check_if_there_are_any_crawlable_links(&self, max_age: Duration) -> bool;
-
-            /// Recover the
-            async fn recover<'a>(&self, command: RecoveryCommand<'a>) -> Result<(), RecoveryError>;
-
-            fn gdbr_registry(&self) -> Option<&GdbrIdentifierRegistry<Self::TF, Self::IDF, Self::Solver>>;
-
+            async fn store_slim_crawled_website(&self, result: SlimCrawlResult) -> Result<(), DatabaseError>;
         }
     }
 }
 
-
-#[derive(Debug, Error)]
-pub enum WorkerError {
-    #[error(transparent)]
-    Database(#[from] DatabaseError)
-}
-
-impl<T: SlimCrawlTaskContext> SlimCrawlTaskContext for WorkerContext<T> {
-    async fn store_slim_crawled_website(&self, slim: SlimCrawlResult) -> Result<(), DatabaseError> {
-        self.inner.store_slim_crawled_website(slim).await
-    }
-}
-
-impl<T: SlimCrawlTaskContext> CrawlTaskContext for WorkerContext<T> {
-
+impl<T> SupportsCrawlResults for WorkerContext<T> where T: AsyncContext + SupportsSlimCrawlResults {
     async fn store_crawled_website(&self, result: &CrawlResult) -> Result<(), DatabaseError> {
         let hint = match &result.content {
             VecDataHolder::None => {StoredDataHint::None}
@@ -218,7 +251,6 @@ impl<T: SlimCrawlTaskContext> CrawlTaskContext for WorkerContext<T> {
     }
 }
 
-
 #[cfg(test)]
 pub(crate) mod test {
     use std::path::Path;
@@ -226,11 +258,12 @@ pub(crate) mod test {
     use camino::Utf8PathBuf;
     use ubyte::ByteUnit;
     use crate::core::config::Configs;
-    use crate::core::contexts::{Context, CrawlTaskContext, LocalContext};
+    use crate::core::contexts::{LocalContext};
     use crate::core::contexts::worker_context::{WorkerContext};
     use crate::core::crawl::result::test::{create_test_data, create_test_data_unknown, create_testdata_with_on_seed};
     use crate::core::io::fs::{FileSystemAccess};
     use crate::core::{UrlWithDepth, VecDataHolder};
+    use crate::core::contexts::traits::{SupportsCrawlResults, SupportsSlimCrawlResults};
     use crate::core::stores::warc::ThreadsafeMultiFileWarcWriter;
     use crate::core::warc::SpecialWarcWriter;
     use crate::util::RuntimeContext;

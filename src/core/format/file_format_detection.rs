@@ -4,7 +4,7 @@ use file_format::FileFormat;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
-use crate::core::contexts::Context;
+use crate::core::contexts::traits::SupportsFileSystemAccess;
 use crate::core::format::mime::MimeType;
 use crate::core::response::ResponseData;
 
@@ -27,7 +27,7 @@ impl DetectedFileFormat {
 pub(crate) fn infer_file_formats(
     page: &ResponseData,
     mime: Option<&MimeType>,
-    context: &impl Context
+    context: &impl SupportsFileSystemAccess
 ) -> Option<DetectedFileFormat> {
 
     let mut formats = HashMap::new();

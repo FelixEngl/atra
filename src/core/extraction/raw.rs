@@ -1,8 +1,6 @@
 use std::cmp::max;
 use std::io::{Error, Read};
-use byteorder::ReadBytesExt;
 use linkify::{LinkKind};
-use serde::{Deserialize, Serialize};
 use crate::core::toolkit::utf8::{DecodedChar, RobustUtf8Reader};
 
 
@@ -16,7 +14,7 @@ enum Action {
 type Result<T> = std::result::Result<T, Error>;
 
 
-pub fn extract_possible_urls<R: Read>(mut reader: RobustUtf8Reader<R>) -> Result<Vec<(String, Option<LinkKind>)>> {
+pub fn extract_possible_urls<R: Read>(reader: RobustUtf8Reader<R>) -> Result<Vec<(String, Option<LinkKind>)>> {
     let mut reader = reader.peekable();
     let mut memory: String = String::new();
 
@@ -30,7 +28,7 @@ pub fn extract_possible_urls<R: Read>(mut reader: RobustUtf8Reader<R>) -> Result
     while find_url_start(&mut reader, &mut memory)? {
         while let Some(value) = reader.peek() {
             match value {
-                Ok(DecodedChar{ch: _, encountered_only_valid: true}) => {
+                Ok(DecodedChar{ch: _, invalid_encounters: 0}) => {
                     let next = reader.next().unwrap().unwrap();
                     if matches!(determine_action(next), Action::Push) {
                         memory.push(next.ch);
@@ -38,7 +36,7 @@ pub fn extract_possible_urls<R: Read>(mut reader: RobustUtf8Reader<R>) -> Result
                         break;
                     }
                 }
-                Ok(DecodedChar{ch: _, encountered_only_valid: false}) => {
+                Ok(DecodedChar{..}) => {
                     break;
                 }
                 Err(_) => {
@@ -63,7 +61,7 @@ pub fn extract_possible_urls<R: Read>(mut reader: RobustUtf8Reader<R>) -> Result
 const fn determine_action(c: DecodedChar) -> Action {
     if c.ch.is_ascii_whitespace() || c.ch.is_ascii_control() {
         Action::ClearSkip
-    } else if !c.encountered_only_valid {
+    } else if !c.encountered_only_valid() {
         Action::ClearPush
     } else {
         Action::Push

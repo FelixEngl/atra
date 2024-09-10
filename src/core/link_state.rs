@@ -24,7 +24,7 @@ use crate::core::depth::DepthDescriptor;
 use crate::core::UrlWithDepth;
 use num_enum::IntoPrimitive;
 use num_enum::FromPrimitive;
-use strum::Display;
+use strum::{Display, EnumIs};
 use strum::AsRefStr;
 use tokio::task::yield_now;
 use crate::{db_health_check, declare_column_families};
@@ -106,7 +106,7 @@ impl LinkState {
 }
 
 /// Describes the current state of an url.
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, IntoPrimitive, Eq, PartialEq, Ord, PartialOrd, FromPrimitive, Display, AsRefStr, Hash)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, IntoPrimitive, Eq, PartialEq, Ord, PartialOrd, FromPrimitive, Display, AsRefStr, Hash, EnumIs)]
 #[repr(u8)]
 pub enum LinkStateType {
     /// An url was discovered
@@ -285,12 +285,14 @@ pub trait LinkStateManager {
     fn count_state(&self, link_state_type: LinkStateType) -> Result<u64, LinkStateDBError>;
 
     /// Basically an [upsert_state] but the update is automatically generated
+    #[allow(dead_code)]
     fn update_state_with_payload(&self, url: &UrlWithDepth, new_state: LinkStateType, payload: Vec<u8>) -> Result<(), LinkStateDBError> {
         self.upsert_state(url, &new_state.into_update(url, Some(payload)))
     }
 
     /// Scans for any [states] in the underlying structure.
     /// This method is async due to its expensive nature.
+    #[allow(dead_code)]
     async fn scan_for_any_link_state<T: RangeBounds<LinkStateType>>(&self, states: T) -> bool;
 }
 
@@ -358,6 +360,7 @@ impl LinkStateDB {
         )
     }
 
+    #[allow(dead_code)]
     async fn scan_for_any_link_state_internal<T: RangeBounds<LinkStateType>>(&self, states: T) -> bool {
         let mut options = ReadOptions::default();
         options.fill_cache(false);

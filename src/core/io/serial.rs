@@ -2,15 +2,12 @@ use std::fmt::Display;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-use data_encoding::BASE64_NOPAD;
 
 /// Provides a serial
 pub trait SerialProvider: Sync + Send {
     type Serial: Display;
 
     fn provide_serial(&self) -> Option<Self::Serial>;
-
-    fn provide_serial64(&self) -> Option<String>;
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -26,11 +23,6 @@ impl<S> SerialProvider for NoSerial<S> where S: Display {
 
     #[inline(always)]
     fn provide_serial(&self) -> Option<Self::Serial> {
-        None
-    }
-
-    #[inline(always)]
-    fn provide_serial64(&self) -> Option<String> {
         None
     }
 }
@@ -61,10 +53,6 @@ impl<S> SerialProvider for StaticSerialProvider<S> where S: Display + Clone {
     fn provide_serial(&self) -> Option<Self::Serial> {
         Some(self.value.clone())
     }
-
-    fn provide_serial64(&self) -> Option<String> {
-        Some(self.value.to_string())
-    }
 }
 
 
@@ -89,9 +77,5 @@ impl SerialProvider for DefaultSerialProvider {
     type Serial = u32;
     fn provide_serial(&self) -> Option<Self::Serial> {
         Some(self.get_next_serial())
-    }
-
-    fn provide_serial64(&self) -> Option<String> {
-        self.provide_serial().map(|value| BASE64_NOPAD.encode(&value.to_be_bytes()))
     }
 }

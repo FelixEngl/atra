@@ -32,7 +32,7 @@ pub trait OriginManager: InternalOriginManager + Debug + Clone {
     async fn try_reserve<'a>(&'a self, url: &UrlWithDepth) -> Result<OriginGuard<'a, Self>, OriginManagerError>;
 
     /// Returns true if crawling this [url] provides an additional value for the host in general
-    async fn can_provide_additional_value(&self, url: &UrlWithDepth) -> bool;
+    #[allow(dead_code)] async fn can_provide_additional_value(&self, url: &UrlWithDepth) -> bool;
 
     /// Returns true if there is an entry.
     /// Returns none if there is no host.

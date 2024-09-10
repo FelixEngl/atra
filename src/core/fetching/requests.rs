@@ -23,12 +23,13 @@ use tokio_stream::StreamExt;
 use ubyte::ToByteUnit;
 use crate::client::Client;
 use crate::client::Result;
-use crate::core::contexts::Context;
+use crate::core::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
 use crate::core::DataHolder;
 use crate::core::VecDataHolder;
 
 /// The response of a fetch.
 #[derive(Debug, Default)]
+#[allow(dead_code)]
 pub struct FetchedRequestData {
     /// A dataholder with the body of a fetched request.
     pub content: VecDataHolder,
@@ -68,7 +69,9 @@ impl FetchedRequestData {
 
 
 /// Perform a network request to a resource extracting all content
-pub async fn fetch_request<U: IntoUrl>(context: &impl Context, client: &Client, target_url: U) -> Result<FetchedRequestData> {
+pub async fn fetch_request<C, U: IntoUrl>(context: &C, client: &Client, target_url: U) -> Result<FetchedRequestData>
+where C: SupportsConfigs + SupportsFileSystemAccess,
+      U: IntoUrl{
     let target_url_str = target_url.as_str();
     match client.get(target_url_str).send().await {
         Ok(res) => {

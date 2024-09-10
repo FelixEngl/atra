@@ -14,7 +14,7 @@
 
 use smallvec::SmallVec;
 use thiserror::Error;
-use crate::core::contexts::{Context};
+use crate::core::contexts::traits::{SupportsConfigs, SupportsHostManagement, SupportsLinkState, SupportsUrlQueue};
 use crate::core::crawl::errors::SeedCreationError;
 use crate::core::crawl::seed::{GuardedSeed, UnguardedSeed};
 use crate::core::origin::{AtraOriginProvider, OriginManager};
@@ -23,7 +23,6 @@ use crate::core::queue::QueueError;
 use crate::core::shutdown::{ShutdownReceiver};
 use crate::core::url::queue::{UrlQueue, UrlQueueElement};
 use crate::core::UrlWithDepth;
-use crate::core::link_state::LinkStateType::Discovered;
 use crate::core::origin::errors::OriginManagerError;
 use crate::core::origin::guard::OriginGuard;
 
@@ -124,21 +123,21 @@ pub enum QueueExtractionError {
 
 
 /// Creates with the given context and the max misses a guarded seed provider.
-pub async fn get_seed_from_context<'a, C: Context>(context_ref: &'a C, shutdown_handle: impl ShutdownReceiver, max_miss: Option<u64>) -> RetrieveProviderResult<GuardedSeedUrlProvider<'a, C::HostManager>> {
-    if context_ref.url_queue().is_empty().await {
-        return RetrieveProviderResult::Abort(AbortCause::QueueIsEmpty);
+pub async fn get_seed_from_context<'a, C: SupportsUrlQueue + SupportsConfigs + SupportsHostManagement + SupportsLinkState>(context: &'a C, shutdown_handle: impl ShutdownReceiver, max_miss: Option<u64>) -> RetrieveProviderResult<GuardedSeedUrlProvider<'a, C::HostManager>> {
+    if context.url_queue().is_empty().await {
+        RetrieveProviderResult::Abort(AbortCause::QueueIsEmpty)
     } else {
         const MISSED_KEEPER_CACHE: usize = 8;
 
-        let max_age = context_ref.configs().crawl().max_queue_age;
-        let manager = context_ref.get_host_manager();
+        let max_age = context.configs().crawl().max_queue_age;
+        let manager = context.get_host_manager();
         let mut missed_hosts = 0;
         let mut missed_host_cache = SmallVec::<[UrlQueueElement; MISSED_KEEPER_CACHE]>::new();
-        let mut retries = context_ref.url_queue().len().await;
-        return loop {
+        let mut retries = context.url_queue().len().await;
+        loop {
             if shutdown_handle.is_shutdown(){
                 if !missed_host_cache.is_empty() {
-                    match context_ref.url_queue().enqueue_all(missed_host_cache).await {
+                    match context.url_queue().enqueue_all(missed_host_cache).await {
                         Err(err) => break RetrieveProviderResult::Err(
                             QueueExtractionError::QueueError(err)
                         ),
@@ -147,26 +146,26 @@ pub async fn get_seed_from_context<'a, C: Context>(context_ref: &'a C, shutdown_
                 }
                 break RetrieveProviderResult::Abort(AbortCause::Shutdown);
             }
-            match context_ref.url_queue().dequeue().await {
+            match context.url_queue().dequeue().await {
                 Ok(Some(entry)) => {
                     retries = retries.saturating_sub(1);
                     if max_age != 0 && entry.age > max_age {
                         log::debug!("Drop {:?} from queue due to age.", entry);
                         continue;
                     }
-                    match context_ref.get_link_state(&entry.target).await {
+                    match context.get_link_state(&entry.target).await {
                         Ok(found) => {
                             if let Some(found) = found {
-                                if drop_from_queue(context_ref, &entry, &found).await {
+                                if drop_from_queue(context, &entry, &found).await {
                                     missed_hosts += 1;
                                     log::debug!("Drop {:?} from queue.", entry);
                                     continue;
                                 }
-                                if found.typ != Discovered {
+                                if !found.typ.is_discovered() {
                                     missed_host_cache.push(entry);
                                     missed_hosts += 1;
                                     match push_logic_1(
-                                        context_ref,
+                                        context,
                                         missed_hosts,
                                         missed_host_cache,
                                         &max_miss,
@@ -193,7 +192,7 @@ pub async fn get_seed_from_context<'a, C: Context>(context_ref: &'a C, shutdown_
                     match manager.try_reserve(&entry.target).await {
                         Ok(guard) => {
                             if !missed_host_cache.is_empty() {
-                                match context_ref.url_queue().enqueue_all(missed_host_cache).await {
+                                match context.url_queue().enqueue_all(missed_host_cache).await {
                                     Err(err) => break RetrieveProviderResult::Err(
                                         QueueExtractionError::QueueError(err)
                                     ),
@@ -205,7 +204,7 @@ pub async fn get_seed_from_context<'a, C: Context>(context_ref: &'a C, shutdown_
                             );
                         }
                         Err(OriginManagerError::NoOriginError(_)) => {
-                            break match context_ref.url_queue().enqueue_all(missed_host_cache).await {
+                            break match context.url_queue().enqueue_all(missed_host_cache).await {
                                 Ok(_) => RetrieveProviderResult::Abort(AbortCause::NoHost(entry)),
                                 Err(err) => RetrieveProviderResult::Err(
                                     QueueExtractionError::QueueError(err)
@@ -216,7 +215,7 @@ pub async fn get_seed_from_context<'a, C: Context>(context_ref: &'a C, shutdown_
                             missed_host_cache.push(entry);
                             missed_hosts += 1;
                             match push_logic_2(
-                                context_ref,
+                                context,
                                 missed_hosts,
                                 missed_host_cache,
                                 &max_miss
@@ -242,14 +241,12 @@ pub async fn get_seed_from_context<'a, C: Context>(context_ref: &'a C, shutdown_
                     break RetrieveProviderResult::Err(QueueExtractionError::QueueError(err));
                 }
             }
-        };
-
-
+        }
     }
 }
 
 
-async fn drop_from_queue<C: Context>(context: &C, entry: &UrlQueueElement, state: &LinkState) -> bool {
+async fn drop_from_queue<C: SupportsConfigs>(context: &C, entry: &UrlQueueElement, state: &LinkState) -> bool {
     match state.typ {
         LinkStateType::Discovered => {false}
         LinkStateType::ProcessedAndStored => {
@@ -272,7 +269,7 @@ async fn drop_from_queue<C: Context>(context: &C, entry: &UrlQueueElement, state
 
 
 /// Some private push logic for the macro retrieve_seed, does also check if the retries fail.
-async fn push_logic_1<C: Context, T: PartialOrd, const N: usize>(
+async fn push_logic_1<C: SupportsUrlQueue, T: PartialOrd, const N: usize>(
     context: &C,
     missed_hosts: T,
     missed_host_cache: SmallVec::<[UrlQueueElement; N]>,
@@ -280,21 +277,22 @@ async fn push_logic_1<C: Context, T: PartialOrd, const N: usize>(
     retries: usize,
 ) -> RetrieveProviderResult<SmallVec::<[UrlQueueElement; N]>> {
     if retries == 0 {
-        return match context.url_queue().enqueue_all(missed_host_cache).await {
+        match context.url_queue().enqueue_all(missed_host_cache).await {
             Ok(_) => RetrieveProviderResult::Abort(AbortCause::OutOfPullRetries),
             Err(err) => RetrieveProviderResult::Err(QueueExtractionError::QueueError(err))
-        };
+        }
+    } else {
+        push_logic_2(
+            context,
+            missed_hosts,
+            missed_host_cache,
+            max_miss
+        ).await
     }
-    push_logic_2(
-        context,
-        missed_hosts,
-        missed_host_cache,
-        max_miss
-    ).await
 }
 
 /// Some private push logic for the macro retrieve_seed, but does not check for retries
-async fn push_logic_2<C: Context, T: PartialOrd, const N: usize>(
+async fn push_logic_2<C: SupportsUrlQueue, T: PartialOrd, const N: usize>(
     context: &C,
     missed_hosts: T,
     missed_host_cache: SmallVec::<[UrlQueueElement; N]>,

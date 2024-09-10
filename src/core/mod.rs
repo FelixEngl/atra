@@ -13,7 +13,6 @@
 //limitations under the License.
 
 pub mod link_state;
-pub mod page_writers;
 pub mod data_processing;
 pub mod util_selectors;
 pub mod decoding;
@@ -50,7 +49,7 @@ pub mod stores;
 pub mod format;
 pub mod isolang_ext;
 pub mod toolkit;
-mod language_detection;
+pub mod language_detection;
 
 pub use url::url_with_depth::UrlWithDepth;
 pub use data_holder::*;

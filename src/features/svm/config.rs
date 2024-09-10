@@ -521,10 +521,3 @@ impl<TF, IDF> TryFrom<SvmRecognizerConfigSer<TF, IDF>> for SvmRecognizerConfig<T
         }
     }
 }
-
-
-
-pub trait GdbrContext {
-    fn get_gdbr_classifier(&self, lang: &isolang::Language) -> Arc<DocumentClassifier<Tf, Idf, L2R_L2LOSS_SVR>>;
-}
-

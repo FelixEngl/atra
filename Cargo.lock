@@ -289,6 +289,7 @@ dependencies = [
  "scopeguard",
  "scraper",
  "sealed",
+ "selectors",
  "serde",
  "serde_bytes",
  "serde_json",
@@ -316,7 +317,7 @@ dependencies = [
  "url",
  "uuid",
  "whatlang",
- "xml-rs",
+ "xml",
  "yada",
  "zip",
 ]
@@ -5172,6 +5173,15 @@ dependencies = [
  "libc",
  "linux-raw-sys",
  "rustix",
+]
+
+[[package]]
+name = "xml"
+version = "0.8.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ede1c99c55b4b3ad0349018ef0eccbe954ce9c342334410707ee87177fcf2ab4"
+dependencies = [
+ "xml-rs",
 ]
 
 [[package]]

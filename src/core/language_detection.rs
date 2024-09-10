@@ -1,42 +1,36 @@
-use std::borrow::Cow;
-use std::cmp::{max, min};
-use std::collections::VecDeque;
-use std::fs::{File, Metadata};
-use std::io::{BufReader, Read};
-use std::ops::AddAssign;
-use std::path::{Path, PathBuf};
+use crate::core::decoding::DecodedData;
+use crate::core::format::supported::InterpretedProcessibleFileFormat;
+use crate::core::format::AtraFileInformation;
+use crate::core::isolang_ext::ToIsoLang;
+use crate::core::response::ResponseData;
 use camino::Utf8PathBuf;
 use isolang::Language;
 use isolang::Language::Deu;
-use nom::combinator::value;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::fs::read_to_string;
-use ubyte::{ByteUnit, ToByteUnit};
-use whatlang::{Info, Lang, Script};
+use std::cmp::min;
+use std::collections::VecDeque;
+use std::fs::File;
+use std::io::{BufReader, Read};
+use std::path::Path;
+use ubyte::ByteUnit;
 use whatlang::Script::Latin;
-use xml::EventReader;
+use whatlang::{Info, Script};
 use xml::reader::{ParserConfig2, XmlEvent};
-use crate::core::contexts::Context;
-use crate::core::decoding::DecodedData;
-use crate::core::format::AtraFileInformation;
-use crate::core::format::supported::InterpretedProcessibleFileFormat;
-use crate::core::isolang_ext::ToIsoLang;
-use crate::core::response::ResponseData;
-
-const RELIABLE_CONFIDENCE_THRESHOLD: f64 = 0.9;
+use xml::EventReader;
+use crate::core::contexts::traits::SupportsConfigs;
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone)]
-pub struct IdentifiedLanguage {
+pub struct LanguageInformation {
     script: Script,
     lang: Language,
     confidence: f64,
 }
 
-impl IdentifiedLanguage {
+impl LanguageInformation {
 
-    pub const DEU: IdentifiedLanguage = IdentifiedLanguage::with_confidence(Latin, Deu);
-    pub const ENG: IdentifiedLanguage = IdentifiedLanguage::with_confidence(Latin, Language::Eng);
+    pub const DEU: LanguageInformation = LanguageInformation::with_confidence(Latin, Deu);
+    pub const ENG: LanguageInformation = LanguageInformation::with_confidence(Latin, Language::Eng);
 
     pub fn script(&self) -> Script {
         self.script
@@ -48,10 +42,6 @@ impl IdentifiedLanguage {
 
     pub fn confidence(&self) -> f64 {
         self.confidence
-    }
-
-    pub fn is_reliable(&self) -> bool {
-        self.confidence > RELIABLE_CONFIDENCE_THRESHOLD
     }
 
     pub const fn new(script: Script, lang: Language, confidence: f64) -> Self {
@@ -66,15 +56,15 @@ impl IdentifiedLanguage {
     }
 }
 
-impl Eq for IdentifiedLanguage {}
+impl Eq for LanguageInformation {}
 
-impl PartialEq for IdentifiedLanguage {
+impl PartialEq for LanguageInformation {
     fn eq(&self, other: &Self) -> bool {
         self.lang == other.lang && self.script == other.script
     }
 }
 
-impl From<Info> for IdentifiedLanguage {
+impl From<Info> for LanguageInformation {
     fn from(value: Info) -> Self {
         Self {
             script: value.script(),
@@ -85,14 +75,14 @@ impl From<Info> for IdentifiedLanguage {
 }
 
 pub fn detect_language<'a>(
-    context: &impl Context,
+    context: &impl SupportsConfigs,
     _page: &'a ResponseData,
     file_type: &AtraFileInformation,
     decoded: &DecodedData<String, Utf8PathBuf>
-) -> Result<Option<IdentifiedLanguage>, std::io::Error> {
+) -> Result<Option<LanguageInformation>, std::io::Error> {
     const MAX_IN_MEMORY_FOR_LANG: u64 = 1u64 * ByteUnit::MB.as_u64();
 
-    fn create_limited_sample_file_reader(context: &impl Context, path: impl AsRef<Path>) -> std::io::Result<impl Read> {
+    fn create_limited_sample_file_reader(context: &impl SupportsConfigs, path: impl AsRef<Path>) -> std::io::Result<impl Read> {
         let max_bytes = if let Some(mfs) = context.configs().crawl.max_file_size {
             min(mfs.get(), MAX_IN_MEMORY_FOR_LANG)
         } else {
@@ -101,7 +91,7 @@ pub fn detect_language<'a>(
         Ok(BufReader::new(File::options().read(true).open(path)?.take(max_bytes)))
     }
 
-    fn read_sample_file(context: &impl Context, path: impl AsRef<Path>) -> std::io::Result<Vec<u8>> {
+    fn read_sample_file(context: &impl SupportsConfigs, path: impl AsRef<Path>) -> std::io::Result<Vec<u8>> {
         let mut reader = create_limited_sample_file_reader(context, path)?;
         let mut v = Vec::new();
         reader.read_to_end(&mut v)?;
@@ -177,7 +167,7 @@ pub fn detect_language<'a>(
             }
         }
         InterpretedProcessibleFileFormat::XML => {
-            fn analyze_xml<R: Read>(s: EventReader<R>) -> Option<IdentifiedLanguage> {
+            fn analyze_xml<R: Read>(s: EventReader<R>) -> Option<LanguageInformation> {
                 let mut collected = String::with_capacity(MAX_IN_MEMORY_FOR_LANG as usize);
                 for event in s {
                     if let Ok(event) = event {
@@ -210,7 +200,7 @@ pub fn detect_language<'a>(
         }
         InterpretedProcessibleFileFormat::RTF => {
 
-            fn analyze_rdf(s: &str) -> Option<IdentifiedLanguage> {
+            fn analyze_rdf(s: &str) -> Option<LanguageInformation> {
                 if let Ok(value) = rtf_parser::document::RtfDocument::try_from(s) {
                     whatlang::detect(&value.get_text()).map(From::from)
                 } else {

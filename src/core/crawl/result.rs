@@ -14,7 +14,6 @@
 
 use std::collections::HashSet;
 use encoding_rs::Encoding;
-use isolang::Language;
 use reqwest::header::HeaderMap;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -25,7 +24,7 @@ use crate::core::format::AtraFileInformation;
 use crate::core::response::{ResponseData};
 use crate::core::UrlWithDepth;
 use crate::core::header_map_extensions::optional_header_map;
-use crate::core::language_detection::IdentifiedLanguage;
+use crate::core::language_detection::LanguageInformation;
 use crate::core::serde_util::status_code;
 
 /// A container for the meta data
@@ -50,7 +49,7 @@ pub struct CrawlResultMeta {
     /// The outgoing links found, they are guaranteed to be unique.
     pub links: Option<Vec<ExtractedLink>>,
     /// The language identified by atra.
-    pub language: Option<IdentifiedLanguage>
+    pub language: Option<LanguageInformation>
 }
 
 impl CrawlResultMeta {
@@ -63,7 +62,7 @@ impl CrawlResultMeta {
         headers: Option<HeaderMap>,
         final_redirect_destination: Option<String>,
         links: Option<Vec<ExtractedLink>>,
-        language: Option<IdentifiedLanguage>
+        language: Option<LanguageInformation>
     ) -> Self {
         Self { created_at, url, status_code, file_information, recognized_encoding, headers, final_redirect_destination, links, language }
     }
@@ -88,7 +87,7 @@ impl CrawlResult {
         links: Option<HashSet<ExtractedLink>>,
         recognized_encoding: Option<&'static Encoding>,
         file_information: AtraFileInformation,
-        language: Option<IdentifiedLanguage>
+        language: Option<LanguageInformation>
     ) -> Self {
         let links = links.map(|value| {
             let mut result = Vec::from_iter(value);
@@ -127,7 +126,7 @@ pub(crate) mod test {
     use crate::core::extraction::marker::{ExtractorMethodHint};
     use crate::core::format::AtraFileInformation;
     use crate::core::format::supported::InterpretedProcessibleFileFormat;
-    use crate::core::language_detection::IdentifiedLanguage;
+    use crate::core::language_detection::LanguageInformation;
 
     pub fn create_testdata_with_on_seed(content: Option<VecDataHolder>) -> CrawlResult {
         create_test_data(
@@ -176,7 +175,7 @@ pub(crate) mod test {
                 None,
                 None
             ),
-            Some(IdentifiedLanguage::DEU)
+            Some(LanguageInformation::DEU)
         )
     }
 
@@ -212,7 +211,7 @@ pub(crate) mod test {
                 None,
                 None
             ),
-            Some(IdentifiedLanguage::ENG)
+            Some(LanguageInformation::ENG)
         )
     }
 }

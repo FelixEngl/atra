@@ -1,6 +1,5 @@
-use std::io::{BufRead, ErrorKind, Read};
+use std::io::{ErrorKind, Read};
 use std::marker::PhantomData;
-use byteorder::ReadBytesExt;
 
 #[cfg(RUSTC_IS_NIGHTLY)]
 #[feature(str_internals)]
@@ -11,6 +10,28 @@ pub use core::str::next_code_point;
 use std::collections::VecDeque;
 use std::str::Utf8Error;
 use thiserror::Error;
+
+
+/// A decoded character with some meta information about its context.
+#[derive(Debug, Copy, Clone)]
+pub struct DecodedChar{
+    /// The decoded utf8 character
+    pub ch: char,
+    /// Is zero when no errors occur between the characters.
+    pub invalid_encounters: usize
+}
+
+impl DecodedChar {
+    #[inline(always)]
+    pub const fn new(c: char, invalid_encounters: usize) -> Self {
+        Self { ch: c, invalid_encounters }
+    }
+
+    #[inline(always)]
+    pub const fn encountered_only_valid(&self) -> bool {
+        self.invalid_encounters == 0
+    }
+}
 
 #[cfg(not(RUSTC_IS_NIGHTLY))]
 mod char_ct {
@@ -56,13 +77,6 @@ mod char_ct {
     #[inline]
     const fn utf8_acc_cont_byte(ch: u32, byte: u8) -> u32 {
         (ch << 6) | (byte & CONT_MASK) as u32
-    }
-
-    /// Checks whether the byte is a UTF-8 continuation byte (i.e., starts with the
-    /// bits `10`).
-    #[inline]
-    const fn utf8_is_cont_byte(byte: u8) -> bool {
-        (byte as i8) < -64
     }
 
     /// Reads the next code point out of a byte iterator (assuming a
@@ -125,7 +139,7 @@ pub enum Utf8ReaderError {
 
 
 
-
+/// Tries to read something as an utf8, stops when failing
 pub struct Utf8Reader<'a, I> {
     inner: RobustUtf8Reader<'a, I>,
     invalid_seq_error: bool,
@@ -172,13 +186,13 @@ impl<'a, I> Iterator for Utf8Reader<'a, I> where I: Read  {
             }
             Some(next) => {
                 match next {
-                    Ok(DecodedChar{ ch: value, encountered_only_valid: false}) => {
+                    Ok(DecodedChar{ ch: value, invalid_encounters: 0}) => {
+                        Some(Ok(value))
+                    }
+                    Ok(DecodedChar{ ch: value, ..}) => {
                         self.invalid_seq_error = true;
                         Some(Ok(value))
                     },
-                    Ok(DecodedChar{ ch: value, encountered_only_valid: true}) => {
-                        Some(Ok(value))
-                    }
                     Err(value) => {
                         Some(Err(value.into()))
                     }
@@ -189,6 +203,8 @@ impl<'a, I> Iterator for Utf8Reader<'a, I> where I: Read  {
 }
 
 
+/// Tries to read a reader as utf8. Iff it is not capable to read something as character it skips
+/// to the next
 pub struct RobustUtf8Reader<'a, R> {
     input: R,
     stopped: bool,
@@ -196,12 +212,14 @@ pub struct RobustUtf8Reader<'a, R> {
     _lifeline: PhantomData<&'a ()>
 }
 
-impl<'a, R> RobustUtf8Reader<'a, R> {
-    const MEMORY_CAPACITY: usize = 7;
-    const MIN_MEMORY_SIZE: usize = 4;
+const MEMORY_CAPACITY: usize = 7;
+const MIN_MEMORY_SIZE: usize = 4;
 
+impl<'a, R> RobustUtf8Reader<'a, R> {
+    
+    
     pub fn new(input: R) -> Self {
-        Self { input, stopped: false, memory: VecDeque::with_capacity(Self::MEMORY_CAPACITY), _lifeline: PhantomData }
+        Self { input, stopped: false, memory: VecDeque::with_capacity(MEMORY_CAPACITY), _lifeline: PhantomData }
     }
 
     pub fn stopped(&self) -> bool {
@@ -211,11 +229,11 @@ impl<'a, R> RobustUtf8Reader<'a, R> {
 
 impl<'a, R> RobustUtf8Reader<'a, R> where R: Read  {
     fn fill_memory(&mut self) -> Result<(), std::io::Error>{
-        if Self::MIN_MEMORY_SIZE <= self.memory.len() {
+        if MIN_MEMORY_SIZE <= self.memory.len() {
             Ok(())
         } else {
-            let mut buf = [0u8; Self::MEMORY_CAPACITY];
-            match self.input.read(&mut buf[0..Self::MEMORY_CAPACITY - self.memory.len()]) {
+            let mut buf = [0u8; MEMORY_CAPACITY];
+            match self.input.read(&mut buf[0..MEMORY_CAPACITY - self.memory.len()]) {
                 Ok(read) => {
                     if read != 0 {
                         for value in buf.iter().take(read) {
@@ -275,18 +293,6 @@ impl<'a, R> RobustUtf8Reader<'a, R> where R: Read  {
     }
 }
 
-/// The boolean is false if the sequence before this character contained illegal codepoints.
-#[derive(Debug, Copy, Clone)]
-pub struct DecodedChar{
-    pub ch: char,
-    pub encountered_only_valid: bool
-}
-
-impl DecodedChar {
-    pub const fn new(c: char, encountered_only_valid: bool) -> Self {
-        Self { ch: c, encountered_only_valid }
-    }
-}
 
 impl<'a, R> Iterator for RobustUtf8Reader<'a, R> where R: Read  {
     type Item = Result<DecodedChar, std::io::Error>;
@@ -301,13 +307,13 @@ impl<'a, R> Iterator for RobustUtf8Reader<'a, R> where R: Read  {
                     self.stopped = true;
                     return None
                 }
-                let mut encountered_only_valid = true;
+                let mut invalid_encounters: usize = 0;
                 while let Some(byte0) = self.pop_front_safe().transpose() {
                     match byte0 {
                         Ok(byte0) => {
                             if byte0 < 128 {
                                 let c = unsafe { char::from_u32_unchecked(byte0 as u32) };
-                                return Some(Ok(DecodedChar::new(c, encountered_only_valid)))
+                                return Some(Ok(DecodedChar::new(c, invalid_encounters)))
                             }
                             let mut buf = [byte0, 0u8, 0u8, 0u8];
                             let expected_char_width = utf8_char_width(byte0);
@@ -320,9 +326,7 @@ impl<'a, R> Iterator for RobustUtf8Reader<'a, R> where R: Read  {
                                             self.stopped = true;
                                             return None
                                         }
-                                        Ok(1) => {
-                                            debug_assert_eq!(expected_char_width, 2)
-                                        }
+                                        Ok(1) => {}
                                         Err(err) => {
                                             return Some(Err(err))
                                         }
@@ -338,12 +342,10 @@ impl<'a, R> Iterator for RobustUtf8Reader<'a, R> where R: Read  {
                                         }
                                         Ok(1) => {
                                             self.push_back_to_front(&buf[1..=1]);
-                                            encountered_only_valid = false;
+                                            invalid_encounters += 1;
                                             continue
                                         },
-                                        Ok(2) => {
-                                            debug_assert_eq!(expected_char_width, 3)
-                                        }
+                                        Ok(2) => {}
                                         Err(err) => {
                                             return Some(Err(err))
                                         }
@@ -359,17 +361,15 @@ impl<'a, R> Iterator for RobustUtf8Reader<'a, R> where R: Read  {
                                         }
                                         Ok(1) => {
                                             self.push_back_to_front(&buf[1..=1]);
-                                            encountered_only_valid = false;
+                                            invalid_encounters += 1;
                                             continue
                                         }
                                         Ok(2) => {
                                             self.push_back_to_front(&buf[1..=2]);
-                                            encountered_only_valid = false;
+                                            invalid_encounters += 1;
                                             continue
                                         }
-                                        Ok(3) => {
-                                            debug_assert_eq!(expected_char_width, 4)
-                                        }
+                                        Ok(3) => {}
                                         Err(err) => {
                                             return Some(Err(err))
                                         }
@@ -377,7 +377,7 @@ impl<'a, R> Iterator for RobustUtf8Reader<'a, R> where R: Read  {
                                     }
                                 }
                                 _ => {
-                                    encountered_only_valid = false;
+                                    invalid_encounters += 1;
                                     continue
                                 },
                             }
@@ -385,11 +385,11 @@ impl<'a, R> Iterator for RobustUtf8Reader<'a, R> where R: Read  {
                                 match next_code_point(&mut buf.iter()).map(char::from_u32).flatten() {
                                     None => {
                                         self.push_back_to_front(&buf[1..expected_char_width]);
-                                        encountered_only_valid = false;
+                                        invalid_encounters += 1;
                                         continue
                                     }
                                     Some(value) => {
-                                        return Some(Ok(DecodedChar::new(value, encountered_only_valid)))
+                                        return Some(Ok(DecodedChar::new(value, invalid_encounters)))
                                     }
                                 }
                             }
@@ -436,13 +436,13 @@ mod test {
         let mut v = s.clone().into_bytes();
         v.insert(1, 0b1000_0000);
         v.insert(1, 0b1000_0000);
-        v.insert(1, 0b1000_0000);
-        v.insert(1, 0b1000_0000);
+        v.insert(4, 0b1000_0000);
+        v.insert(5, 0b1000_0000);
         v.insert(1, 0b1000_0000);
         v.push(0b1000_0000);
         let cursor = RobustUtf8Reader::new(Cursor::new(v));
         for (value, c_original) in cursor.zip_eq(s.chars()) {
-            let DecodedChar{ ch: value, encountered_only_valid: err } = value.unwrap();
+            let DecodedChar{ ch: value, invalid_encounters: err } = value.unwrap();
             println!("{c_original}: {value} - {err}");
             assert_eq!(c_original, value);
         }

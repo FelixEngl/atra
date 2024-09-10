@@ -6,7 +6,7 @@ pub mod mime_ext;
 
 use serde::{Deserialize, Serialize};
 use crate::core::format::supported::InterpretedProcessibleFileFormat;
-use crate::core::contexts::Context;
+use crate::core::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
 use crate::core::format::file_format_detection::{DetectedFileFormat, infer_file_formats};
 use crate::core::response::ResponseData;
 use crate::core::format::mime::{determine_mime_information, MimeType};
@@ -30,7 +30,7 @@ impl AtraFileInformation {
         Self { format, mime, detected }
     }
 
-    pub fn determine(context: &impl Context, page: &ResponseData) -> Self {
+    pub fn determine<C: SupportsConfigs + SupportsFileSystemAccess>(context: &C, page: &ResponseData) -> Self {
         let mime = determine_mime_information(page);
 
         let detected = infer_file_formats(

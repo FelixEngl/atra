@@ -5,6 +5,7 @@ use std::ops::Deref;
 use isolang::Language;
 use rust_stemmers::Algorithm;
 use serde::{Deserialize, Serialize};
+use crate::core::contexts::traits::SupportsStopwordsRegistry;
 use crate::features::tokenizing::stopwords::StopWordRepository;
 use crate::features::tokenizing::stopwords::StopWordRegistry;
 
@@ -40,18 +41,14 @@ pub struct TokenizerConfig {
     pub stemmer: Option<Algorithm>
 }
 
-/// The context needed for tokenizing to work
-pub trait SupportsStopwords {
-    fn stopword_registry(&self) -> Option<&StopWordRegistry>;
-}
 
-impl SupportsStopwords for Option<StopWordRegistry> {
+impl SupportsStopwordsRegistry for Option<StopWordRegistry> {
     fn stopword_registry(&self) -> Option<&StopWordRegistry> {
         self.as_ref()
     }
 }
 
-impl SupportsStopwords for Option<&StopWordRegistry> {
+impl SupportsStopwordsRegistry for Option<&StopWordRegistry> {
     fn stopword_registry(&self) -> Option<&StopWordRegistry> {
         self.clone()
     }

@@ -2,8 +2,7 @@ use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::select;
 use tokio_util::sync::CancellationToken;
-use crate::core::contexts::{Context, SlimCrawlTaskContext};
-use crate::core::contexts::worker_context::WorkerContext;
+use crate::core::contexts::traits::SupportsUrlQueue;
 use crate::core::url::queue::UrlQueue;
 
 /// The result of the [WorkerBarrier]
@@ -16,6 +15,12 @@ pub enum ContinueOrStop<T> {
 /// The command send if it can continue
 #[derive(Debug, Copy, Clone)]
 struct ContinueCommand;
+
+
+/// A trait for a context that supports worker ID
+pub trait SupportsWorkerId {
+    fn worker_id(&self) -> usize;
+}
 
 
 /// A barrier to help with the synchronisation of the workers.
@@ -48,12 +53,12 @@ impl WorkerBarrier {
         self.cancellation_token.cancel()
     }
 
-    pub async fn wait_for_is_cancelled<C: SlimCrawlTaskContext, T>(&self, context: &WorkerContext<C>, cause: T) -> ContinueOrStop<T> {
+    pub async fn wait_for_is_cancelled<C, T>(&self, context: &C, cause: T) -> ContinueOrStop<T> where C: SupportsWorkerId + SupportsUrlQueue {
         self.wait_for_is_cancelled_with(context, || cause).await
     }
 
     /// Waits for a specific context until either all decide to stop orthe queue has some kind of change
-    pub async fn wait_for_is_cancelled_with<C: SlimCrawlTaskContext, T, F: FnOnce() -> T>(&self, context: &WorkerContext<C>, cause_provider: F) -> ContinueOrStop<T> {
+    pub async fn wait_for_is_cancelled_with<C, T, F: FnOnce() -> T>(&self, context: &C, cause_provider: F) -> ContinueOrStop<T> where C: SupportsWorkerId + SupportsUrlQueue {
         if self.cancellation_token.is_cancelled() {
             return ContinueOrStop::Cancelled(cause_provider())
         }

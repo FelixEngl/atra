@@ -13,7 +13,7 @@ pub trait CorpusDocumentStatistics {
     /// The number of documents in the corpus
     fn document_count(&self) -> u64;
     /// The number of distinct words in the corpus
-    fn word_count(&self) -> u64;
+    #[allow(dead_code)] fn word_count(&self) -> u64;
     /// The number of unique words in the corpus
     fn unique_word_count(&self) -> usize;
     /// The frquency of a [word] in a corpus

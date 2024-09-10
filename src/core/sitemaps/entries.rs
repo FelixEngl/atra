@@ -18,5 +18,5 @@ use sitemap::structs::{SiteMapEntry, UrlEntry};
 #[derive(Debug)]
 pub struct ParsedSiteMapEntries {
     pub urls: Vec<UrlEntry>,
-    pub sitemaps: Vec<SiteMapEntry>
+    #[allow(dead_code)] pub sitemaps: Vec<SiteMapEntry>
 }

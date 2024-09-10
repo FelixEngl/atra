@@ -85,7 +85,7 @@ pub struct StopWordList {
 pub enum ContainsKind {
     Raw,
     Normalized,
-    Both
+    #[allow(dead_code)] Both
 }
 
 impl StopWordList {

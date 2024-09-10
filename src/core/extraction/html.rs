@@ -18,11 +18,9 @@ use std::hash::Hash;
 use compact_str::{CompactString, ToCompactString};
 use scraper::Html;
 use serde::{Deserialize, Serialize};
-use crate::core::contexts::Context;
-use crate::core::language_detection::IdentifiedLanguage;
+use crate::core::contexts::traits::{SupportsConfigs, SupportsGdbrRegistry};
+use crate::core::language_detection::LanguageInformation;
 use crate::core::UrlWithDepth;
-use crate::features::gdbr_identifiert::SupportsGdbrIdentifier;
-use crate::features::text_processing::tf_idf::{IdfAlgorithm, TfAlgorithm};
 
 /// Describes the origin of the extracted link
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
@@ -35,21 +33,32 @@ pub enum LinkOrigin {
 }
 
 /// Extracts links from an html
-pub fn extract_links<'a, C: Context>(
+pub fn extract_links<'a, C: SupportsGdbrRegistry + SupportsConfigs>(
     root_url: &'a UrlWithDepth,
     html: &str,
-    respect_nofollow: bool,
-    crawl_embedded_data: bool,
-    crawl_javascript: bool,
-    crawl_onclick_by_heuristic: bool,
-    ignore_gdbr: bool,
     context: &C,
-    language: Option<&IdentifiedLanguage>
+    language: Option<&LanguageInformation>
 ) -> Option<(Cow<'a, UrlWithDepth>, HashSet<(LinkOrigin, CompactString)>, Vec<Cow<'static, str>>)> {
+    let cfg = context.configs();
+
+    let respect_nofollow: bool = cfg.crawl.respect_nofollow;
+    let crawl_embedded_data: bool = cfg.crawl.crawl_embedded_data;
+    let crawl_javascript: bool = cfg.crawl.crawl_javascript;
+    let crawl_onclick_by_heuristic: bool = cfg.crawl.crawl_onclick_by_heuristic;
+    let ignore_gdbr: bool = cfg.crawl.apply_gdbr_filter_if_possible;
+
     let mut html = Html::parse_document(html);
 
     if ignore_gdbr {
-
+        if let Some(registry) = context.gdbr_registry() {
+            if let Some(found) = registry.get_by_language_or_default(language) {
+                found.remove_gdbr(&mut html);
+            } else {
+                log::debug!("Failed to clean because there is no language.")
+            }
+        } else {
+            log::warn!("The flag for cleaning gdpr was set, but no registry was configured!")
+        }
     }
 
     if respect_nofollow {

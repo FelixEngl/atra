@@ -13,7 +13,7 @@
 //limitations under the License.
 
 use camino::Utf8PathBuf;
-use crate::core::contexts::Context;
+use crate::core::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
 use crate::core::decoding::{decode, DecodedData, DecodingError};
 use crate::core::format::AtraFileInformation;
 use crate::core::response::{ResponseData};
@@ -21,7 +21,8 @@ use crate::core::VecDataHolder;
 
 
 /// Decode the data
-pub async fn process<'a>(context: &impl Context, page: &'a ResponseData, identified_type: &AtraFileInformation) -> Result<DecodedData<String, Utf8PathBuf>, DecodingError> {
+pub async fn process<'a, C>(context: &C, page: &'a ResponseData, identified_type: &AtraFileInformation) -> Result<DecodedData<String, Utf8PathBuf>, DecodingError>
+where C: SupportsFileSystemAccess + SupportsConfigs {
     match &page.content {
         VecDataHolder::None => {
             return Ok(DecodedData::None)

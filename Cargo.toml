@@ -88,7 +88,7 @@ compact_str = { version = "0.8", features = ["serde", "bytes"] }
 case_insensitive_string = { version = "0.2", features = ["serde"] }
 
 # Data structures
-indexmap = "2.2"
+indexmap = "2"
 #lru = "0.12"
 moka = { version = "0.12", features = ["future"] }
 bytes = { version = "1.5", features = ["serde", "default"] }
@@ -129,9 +129,11 @@ anyhow = "1.0"
 # HTML Parsing
 html5ever = "0"
 ego-tree = "0"
+#tendril = "0.4"
 
 # Scraping
-scraper = "0.20"
+scraper = { version = "0.20" }
+selectors = "0.25"
 texting_robots = "0.2"
 sitemap = "0.4"
 linkify = "0.10"
@@ -168,7 +170,7 @@ isolang = { version = "2.4", features = ["serde"] }
 
 # File formats
 csv = { version = "1.3" }
-xml-rs = "0.8"
+xml = "0.8"
 rtf-parser = "0.3"
 
 # Languages

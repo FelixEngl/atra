@@ -1,5 +1,5 @@
 use std::cell::Cell;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::Entry;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
@@ -15,8 +15,9 @@ use liblinear::Model;
 use liblinear::parameter::serde::SupportsParametersCreation;
 use liblinear::solver::{GenericSolver};
 use scraper::{Html, Node};
+use crate::core::contexts::traits::SupportsStopwordsRegistry;
 use crate::core::io::root::RootSetter;
-use crate::features::html_tags::{HtmlTag, HtmlTagCategory};
+use crate::features::html::tags::{HtmlTag, HtmlTagCategory};
 use crate::features::scraper_ext::Text;
 use crate::features::svm::classifier::DocumentClassifier;
 use crate::features::svm::config::SvmRecognizerConfig;
@@ -24,8 +25,7 @@ use crate::features::svm::{create_document_classifier};
 use crate::features::svm::error::SvmCreationError;
 use crate::features::text_processing::tf_idf::{IdfAlgorithm, TfAlgorithm};
 use crate::features::tokenizing::stopwords::StopWordRegistry;
-use crate::features::tokenizing::SupportsStopwords;
-
+use crate::core::language_detection::LanguageInformation;
 
 pub struct InitHelper<'a, TF: TfAlgorithm, IDF: IdfAlgorithm, R: RootSetter> {
     pub gdbr_config: Option<&'a GdbrIdentifierRegistryConfig<TF, IDF>>,
@@ -33,7 +33,7 @@ pub struct InitHelper<'a, TF: TfAlgorithm, IDF: IdfAlgorithm, R: RootSetter> {
     pub stop_word_registry: Option<&'a StopWordRegistry>,
 }
 
-impl<'a, TF: TfAlgorithm, IDF: IdfAlgorithm, R: RootSetter> SupportsGdbrIdentifier<TF, IDF> for InitHelper<'a, TF, IDF, R> {
+impl<'a, TF: TfAlgorithm, IDF: IdfAlgorithm, R: RootSetter> GdbrIdentifierCreationContext<TF, IDF> for InitHelper<'a, TF, IDF, R> {
     fn gdbr_config(&self) -> Option<&GdbrIdentifierRegistryConfig<TF, IDF>> {
         self.gdbr_config
     }
@@ -43,7 +43,7 @@ impl<'a, TF: TfAlgorithm, IDF: IdfAlgorithm, R: RootSetter> SupportsGdbrIdentifi
     }
 }
 
-impl<'a, TF: TfAlgorithm, IDF: IdfAlgorithm, R: RootSetter> SupportsStopwords for InitHelper<'a, TF, IDF, R> {
+impl<'a, TF: TfAlgorithm, IDF: IdfAlgorithm, R: RootSetter> SupportsStopwordsRegistry for InitHelper<'a, TF, IDF, R> {
     fn stopword_registry(&self) -> Option<&StopWordRegistry> {
         self.stop_word_registry
     }
@@ -52,7 +52,7 @@ impl<'a, TF: TfAlgorithm, IDF: IdfAlgorithm, R: RootSetter> SupportsStopwords fo
 // L2R_L2LOSS_SVR
 
 /// A trait that allows a context to support the initialisation of gdbr
-pub trait SupportsGdbrIdentifier<TF: TfAlgorithm, IDF: IdfAlgorithm> {
+pub trait GdbrIdentifierCreationContext<TF: TfAlgorithm, IDF: IdfAlgorithm> {
     fn gdbr_config(&self) -> Option<&GdbrIdentifierRegistryConfig<TF, IDF>>;
 
     fn root_setter(&self) -> Option<&impl RootSetter>;
@@ -68,14 +68,26 @@ pub struct GdbrIdentifierRegistryConfig<TF: TfAlgorithm, IDF: IdfAlgorithm> {
     by_language: Option<HashMap<Language, LanguageBoundGdbrIdentifierConfig<TF, IDF>>>
 }
 
-#[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(bound(
     serialize = "TF: Clone + Serialize + Debug, IDF: Clone + Serialize + Debug",
     deserialize = "TF: Clone + DeserializeOwned + Debug, IDF: Clone + DeserializeOwned + Debug"
 ))]
 pub struct LanguageBoundGdbrIdentifierConfig<TF: TfAlgorithm, IDF: IdfAlgorithm> {
-    only_if_reliable: bool,
+    #[serde(default = "_default_required_reliability")]
+    required_reliability: f64,
     identifier: GdbrIdentifierConfig<TF, IDF>
+}
+
+fn _default_required_reliability() -> f64 {
+    0.9
+}
+
+impl<TF: TfAlgorithm, IDF: IdfAlgorithm> Eq for LanguageBoundGdbrIdentifierConfig<TF, IDF> where TF: Eq, IDF: Eq {}
+impl<TF: TfAlgorithm, IDF: IdfAlgorithm> PartialEq for LanguageBoundGdbrIdentifierConfig<TF, IDF> where TF: PartialEq, IDF: PartialEq {
+    fn eq(&self, other: &Self) -> bool {
+        self.identifier.eq(&other.identifier)
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -110,21 +122,24 @@ pub struct GdbrIdentifierRegistry<TF, IDF, SOLVER: Solver> {
 }
 
 impl<TF, IDF, SOLVER: Solver> GdbrIdentifierRegistry<TF, IDF, SOLVER> {
-    pub fn get_by_language(&self, language: &whatlang::Info) -> Option<&GdbrIdentifier<TF, IDF, SOLVER>> {
+    pub fn get_by_language(&self, language: &LanguageInformation) -> Option<&GdbrIdentifier<TF, IDF, SOLVER>> {
         let by_language = self.by_language.as_ref()?;
-        let identified = Language::from_639_3(language.lang().code())?;
-        let found = by_language.get(&identified)?;
-        found.get_with_reliability(language.is_reliable())
+        let found = by_language.get(&language.lang())?;
+        found.get_with_reliability(language.confidence())
     }
 
     pub fn get_default(&self) -> Option<&GdbrIdentifier<TF, IDF, SOLVER>> {
         self.default.as_ref()
     }
 
-    pub fn get_by_language_or_default(&self, language: &whatlang::Info) -> Option<&GdbrIdentifier<TF, IDF, SOLVER>> {
-        match self.get_by_language(language) {
-            x @ Some(_) => x,
-            None => self.get_default()
+    pub fn get_by_language_or_default(&self, language: Option<&LanguageInformation>) -> Option<&GdbrIdentifier<TF, IDF, SOLVER>> {
+        if let Some(language) = language {
+            match self.get_by_language(language) {
+                x @ Some(_) => x,
+                None => self.get_default()
+            }
+        } else {
+            self.get_default()
         }
     }
 }
@@ -137,7 +152,7 @@ where
     Model<SOLVER>: TryFrom<Model<GenericSolver>>
 {
 
-    pub fn new_from_config<C: SupportsGdbrIdentifier<TF, IDF> + SupportsStopwords>(context: &C) -> Result<Option<Self>, SvmCreationError<IDF>> {
+    pub fn new_from_config<C: GdbrIdentifierCreationContext<TF, IDF> + SupportsStopwordsRegistry>(context: &C) -> Result<Option<Self>, SvmCreationError<IDF>> {
         if let Some(config) = context.gdbr_config() {
             let default = if let Some(ref default) = config.default {
                 match create_document_classifier(&default.svm, context, context.root_setter()) {
@@ -165,7 +180,7 @@ where
                           Ok(value) => {
                               Ok(
                                   (*k, LanguageBoundGdbrIdentifier::new(
-                                      v.only_if_reliable,
+                                      v.required_reliability,
                                       GdbrIdentifier::new(
                                           value,
                                           v.identifier.threshold,
@@ -204,18 +219,18 @@ where
 
 #[derive(Debug)]
 struct LanguageBoundGdbrIdentifier<TF, IDF, SOLVER: Solver> {
-    only_if_reliable: bool,
+    reliable_threshold: f64,
     identifier: GdbrIdentifier<TF, IDF, SOLVER>
 }
 
 impl<TF, IDF, SOLVER: Solver> LanguageBoundGdbrIdentifier<TF, IDF, SOLVER> {
-    pub fn new(only_if_reliable: bool, identifier: GdbrIdentifier<TF, IDF, SOLVER>) -> Self {
-        Self { only_if_reliable, identifier }
+    pub fn new(reliable_threshold: f64, identifier: GdbrIdentifier<TF, IDF, SOLVER>) -> Self {
+        Self { reliable_threshold, identifier }
     }
 
-    pub fn get_with_reliability(&self, is_reliable: bool) -> Option<&GdbrIdentifier<TF, IDF, SOLVER>>
+    pub fn get_with_reliability(&self, reliability: f64) -> Option<&GdbrIdentifier<TF, IDF, SOLVER>>
     {
-        if !self.only_if_reliable || is_reliable {
+        if reliability < self.reliable_threshold {
             Some(self.get())
         } else {
             None
@@ -265,6 +280,26 @@ impl FilterMode {
             }
         }
     }
+
+    pub fn find_max_by<'a, T: 'a, I: IntoIterator<Item=ScoredNodeRef<'a, T>>>(&self, scores: I, threshold: f64) -> Option<I::Item> {
+        match self {
+            FilterMode::OnScore => {
+                scores.into_iter().filter(|value: &ScoredNodeRef<'a, T>| value.score() >= threshold).max_by(
+                    |a, b| a.score().total_cmp(&b.score())
+                )
+            }
+            FilterMode::OnMaxScore => {
+                scores.into_iter().filter(|value: &ScoredNodeRef<'a, T>| value.max_score() >= threshold).max_by(
+                    |a, b| a.max_score().total_cmp(&b.max_score())
+                )
+            }
+            FilterMode::OnAverageScore => {
+                scores.into_iter().filter(|value: &ScoredNodeRef<'a, T>| value.avg_score() >= threshold).max_by(
+                    |a, b| a.avg_score().total_cmp(&b.avg_score())
+                )
+            }
+        }
+    }
 }
 
 
@@ -305,8 +340,8 @@ pub struct ScoredNodeRef<'a, T> {
     inner: Rc<(f64, Cell<f64>, NodeRef<'a, T>)>
 }
 impl<'a, T>  ScoredNodeRef<'a, T> {
-    pub fn new(inner: (f64, Cell<f64>, NodeRef<'a, T>)) -> Self {
-        Self { inner: Rc::new(inner) }
+    pub fn new(score: f64, max_score: f64, node: NodeRef<'a, T>) -> Self {
+        Self { inner: Rc::new((score, Cell::new(max_score), node)) }
     }
 
     pub fn score(&self) -> f64 {
@@ -333,7 +368,7 @@ impl<'a, T>  ScoredNodeRef<'a, T> {
 }
 impl<'a, T> From<(f64, NodeRef<'a, T>)> for ScoredNodeRef<'a, T> {
     fn from((score, node): (f64, NodeRef<'a, T>)) -> Self {
-        Self::new((score, Cell::new(score), node))
+        Self{inner: Rc::new((score, Cell::new(score), node))}
     }
 }
 impl<'a, T> Eq for ScoredNodeRef<'a, T>{}
@@ -477,9 +512,8 @@ where
 
     fn get_most_probable<'a>(&self, html: &'a Html) -> Option<ScoredNodeRef<'a, Node>> {
         if let Some(gdbr_nodes) = self.identify_gdbr_elements_in_html(html) {
-            let value = VecDeque::from(gdbr_nodes).pop_back()?;
-            debug_assert!(!value.is_empty());
-            self.filter_by.find_all_above(value, self.filter_threshold).into_iter().next()
+            let value = gdbr_nodes.into_iter().rev().next()?;
+            self.filter_by.find_max_by(value, self.filter_threshold)
         } else {
             None
         }
@@ -508,7 +542,6 @@ mod test {
     use crate::features::scraper_ext::Text;
     use crate::features::svm::test::{create_german_gdbr_svm, train_data};
 
-
     #[test]
     fn test_might() {
         const DATA: &'static str = include_str!("../core/samples/Amazon.html");
@@ -519,8 +552,10 @@ mod test {
             0.5,
             FilterMode::OnMaxScore
         );
+
         let html = Html::parse_document(DATA);
         let gdbr_nodes = identifier.identify_gdbr_elements_in_html(&html).unwrap();
+
 
         for (i, v) in gdbr_nodes.into_iter().enumerate() {
             println!("Level: {i}");
@@ -544,6 +579,9 @@ mod test {
                 println!("    {} ({}) - {content} ({})\n", value.score(), value.max_score(), result);
             }
         }
+
+        println!("\n\n####\n\n");
+
     }
 
     #[test]

@@ -17,5 +17,5 @@ pub mod text_processing;
 pub mod tokenizing;
 pub mod csv;
 pub mod gdbr_identifiert;
-pub mod html_tags;
 pub mod scraper_ext;
+mod html;

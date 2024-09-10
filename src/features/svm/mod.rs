@@ -24,13 +24,13 @@ use liblinear::parameter::serde::{GenericParameters, SupportsParametersCreation}
 use liblinear::solver::{GenericSolver};
 use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
+use crate::core::contexts::traits::SupportsStopwordsRegistry;
 use crate::core::io::root::RootSetter;
 use crate::features::csv::CsvProvider;
 use crate::features::svm::classifier::{DocumentClassifier};
 use crate::features::svm::error::{LibLinearError, SvmCreationError};
 use crate::features::svm::config::{SvmRecognizerConfig, DocumentClassifierConfig};
 use crate::features::text_processing::tf_idf::{IdfAlgorithm, TfAlgorithm, TfIdf};
-use crate::features::tokenizing::SupportsStopwords;
 use crate::features::tokenizing::stopwords::StopWordList;
 use crate::features::tokenizing::tokenizer::Tokenizer;
 
@@ -56,7 +56,8 @@ pub fn create_document_classifier<C, TF, IDF, SOLVER>(
     IDF: IdfAlgorithm + Serialize + DeserializeOwned + Clone + Debug,
     SOLVER: SupportsParametersCreation,
     Model<SOLVER>: TryFrom<Model<GenericSolver>>,
-    C: SupportsStopwords, {
+    C: SupportsStopwordsRegistry,
+{
     let model = match &cfg {
         SvmRecognizerConfig::Load {
             trained_svm,
@@ -245,19 +246,20 @@ pub(crate) mod test {
     use liblinear::parameter::serde::GenericParameters;
     use liblinear::solver::L2R_L2LOSS_SVR;
     use rust_stemmers::Algorithm;
+    use crate::core::contexts::traits::SupportsStopwordsRegistry;
     use crate::features::csv::CsvProvider;
     use crate::features::svm::config::DocumentClassifierConfig;
     use crate::features::svm::{read_train_data, train, TrainModelEntry};
     use crate::features::svm::classifier::DocumentClassifier;
     use crate::features::text_processing::tf_idf::{Idf, Tf};
-    use crate::features::tokenizing::{SupportsStopwords, StopwordRegistryConfig};
+    use crate::features::tokenizing::{StopwordRegistryConfig};
     use crate::features::tokenizing::stopwords::{StopWordRegistry, StopWordRepository};
 
     struct RegistryContainer {
         stop_word_registry: StopWordRegistry
     }
 
-    impl SupportsStopwords for RegistryContainer {
+    impl SupportsStopwordsRegistry for RegistryContainer {
         fn stopword_registry(&self) -> Option<&StopWordRegistry> {
             Some(&self.stop_word_registry)
         }

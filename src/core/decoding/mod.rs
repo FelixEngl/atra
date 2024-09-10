@@ -26,8 +26,8 @@ use scraper::Html;
 use thiserror::Error;
 use tokio::task::yield_now;
 pub use data_holder::DecodedData;
-use crate::core::contexts::Context;
 use crate::core::{DataHolder, VecDataHolder};
+use crate::core::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
 use crate::core::format::AtraFileInformation;
 use crate::core::response::{ResponseData};
 use crate::core::format::supported::{InterpretedProcessibleFileFormat};
@@ -63,7 +63,8 @@ pub enum DecodingError {
 /// _Note:_ It is wrong to use this when the input buffer represents only
 /// a segment of the input instead of the whole input. Use `new_decoder()`
 /// when decoding segmented input.
-pub async fn decode<'a>(context: &impl Context, page: &'a ResponseData, identified_type: &AtraFileInformation) -> Result<DecodedData<Cow<'a, str>, Utf8PathBuf>, DecodingError> {
+pub async fn decode<'a, C>(context: &C, page: &'a ResponseData, identified_type: &AtraFileInformation) -> Result<DecodedData<Cow<'a, str>, Utf8PathBuf>, DecodingError>
+where C: SupportsConfigs + SupportsFileSystemAccess {
     match page.content() {
         VecDataHolder::None => {return Ok(DecodedData::None)}
         VecDataHolder::ExternalFile { .. } => {
@@ -147,7 +148,7 @@ fn get_decoders_by_mime<'a>(identified_type: &AtraFileInformation) -> Option<Vec
 }
 
 /// Decodes by BOM only.
-fn decode_by_bom<'a>(context: &impl Context, page: &'a ResponseData) -> Result<DecodedData<Cow<'a, str>, Utf8PathBuf>, DecodingError> {
+fn decode_by_bom<'a, C>(context: &C, page: &'a ResponseData) -> Result<DecodedData<Cow<'a, str>, Utf8PathBuf>, DecodingError> where C: SupportsFileSystemAccess {
     let bom_buf = page.content().peek_bom(context)?;
 
     if let Some((encoder, _)) = Encoding::for_bom(&bom_buf) {

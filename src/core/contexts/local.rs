@@ -17,13 +17,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use liblinear::solver::L2R_L2LOSS_SVR;
 use rocksdb::DB;
-use time::{Duration, OffsetDateTime};
+use time::{OffsetDateTime};
 use tokio::sync::{RwLock};
 use crate::core::blacklist::{PolyBlackList, BlacklistManager};
 use crate::core::link_state::{LinkStateManager, LinkState, LinkStateDB, LinkStateDBError, LinkStateType};
 use crate::core::config::configs::Configs;
-use crate::core::contexts::{RecoveryCommand};
-use crate::core::contexts::errors::{LinkHandlingError, RecoveryError};
+use crate::core::contexts::errors::{LinkHandlingError};
+use crate::core::contexts::traits::*;
 use crate::core::crawl::db::{CrawlDB};
 use crate::core::crawl::seed::CrawlSeed;
 use crate::core::crawl::slim::{SlimCrawlResult};
@@ -33,14 +33,13 @@ use crate::core::extraction::ExtractedLink;
 use crate::core::robots::{OffMemoryRobotsManager, ShareableRobotsManager};
 use crate::core::rocksdb_ext::{open_db};
 use crate::core::io::fs::FileSystemAccess;
-use crate::core::io::root::RootSetter;
 use crate::core::origin::AtraOriginProvider;
 use crate::core::web_graph::{WebGraphEntry, QueuingWebGraphManager, WebGraphManager};
 use crate::core::queue::file::RawAgingQueueFile;
 use crate::core::shutdown::UnsafeShutdownGuard;
 use crate::core::url::queue::{UrlQueue, UrlQueueElement, UrlQueueWrapper};
 use crate::core::UrlWithDepth;
-use crate::features::gdbr_identifiert::{GdbrIdentifierRegistry, GdbrIdentifierRegistryConfig, InitHelper, SupportsGdbrIdentifier};
+use crate::features::gdbr_identifiert::{GdbrIdentifierRegistry, InitHelper};
 use crate::features::text_processing::tf_idf::{Idf, Tf};
 use crate::features::tokenizing::stopwords::StopWordRegistry;
 use crate::util::RuntimeContext;
@@ -48,6 +47,7 @@ use crate::util::RuntimeContext;
 
 /// The state of the app
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct LocalContext {
     started_at: OffsetDateTime,
     _db: Arc<DB>,
@@ -148,74 +148,15 @@ impl LocalContext {
     }
 }
 
-impl crate::features::tokenizing::SupportsStopwords for LocalContext {
+impl SupportsStopwordsRegistry for LocalContext {
     fn stopword_registry(&self) -> Option<&StopWordRegistry> {
         self.stop_word_registry.as_ref()
     }
 }
-
-impl super::Context for LocalContext {
-    type RobotsManager = ShareableRobotsManager;
-    type UrlQueue = UrlQueueWrapper<RawAgingQueueFile>;
-    type HostManager = InMemoryOriginManager;
-    type WebGraphManager = QueuingWebGraphManager;
-    type Solver = L2R_L2LOSS_SVR;
-    type TF = Tf;
-    type IDF = Idf;
-
-    async fn can_poll(&self) -> bool {
-        !self.url_queue.is_empty().await
-    }
-
-    fn fs(&self) -> &FileSystemAccess {
-        &self.file_provider
-    }
-
+impl AsyncContext for LocalContext {}
+impl SupportsLinkState for LocalContext {
     fn crawled_websites(&self) -> Result<u64, LinkStateDBError> {
         self.link_states.count_state(LinkStateType::ProcessedAndStored)
-    }
-
-    fn discovered_websites(&self) -> usize {
-        self.ct_discovered_websites.load(Ordering::Relaxed)
-    }
-
-    fn url_queue(&self) -> &Self::UrlQueue {
-        &self.url_queue
-    }
-
-    fn configs(&self) -> &Configs {
-        &self.configs
-    }
-
-    fn gdbr_registry(&self) -> Option<&GdbrIdentifierRegistry<Self::TF, Self::IDF, Self::Solver>> {
-        self.gdbr_filer_registry.as_ref()
-    }
-
-    fn crawl_started_at(&self) -> OffsetDateTime {
-        self.started_at
-    }
-
-    fn web_graph_manager(&self) -> &Self::WebGraphManager {
-        &self.links_net_manager
-    }
-
-    async fn get_blacklist(&self) -> PolyBlackList {
-        self.blacklist.create_current_blacklist().await.unwrap_or_default()
-    }
-
-    async fn get_robots_instance(&self) -> ShareableRobotsManager {
-        self.robots.clone()
-    }
-
-    fn get_host_manager(&self) -> &Self::HostManager {
-        &self.host_manager
-    }
-
-    async fn retrieve_slim_crawled_website(&self, url: &UrlWithDepth) -> Result<Option<SlimCrawlResult>, DatabaseError> {
-        match self.crawled_data.get(url) {
-            Err(DatabaseError::RecoverableFailure{..}) => self.crawled_data.get(url),
-            pipe => pipe
-        }
     }
 
     async fn register_seed(&self, seed: &impl CrawlSeed) -> Result<(), LinkHandlingError> {
@@ -266,6 +207,8 @@ impl super::Context for LocalContext {
         }
     }
 
+
+
     /// Sets the state of the link with a payload
     async fn update_link_state_with_payload(&self, url: &UrlWithDepth, state: LinkStateType, payload: Vec<u8>) -> Result<(), LinkStateDBError> {
         let linkstate = state.into_update(
@@ -290,7 +233,7 @@ impl super::Context for LocalContext {
         }
     }
 
-    async fn check_if_there_are_any_crawlable_links(&self, max_age: Duration) -> bool {
+    async fn check_if_there_are_any_crawlable_links(&self, max_age: std::time::Duration) -> bool {
         let lock = self.last_scan_over_link_states.read().await;
         if let Some(value) = lock.as_ref() {
             if OffsetDateTime::now_utc() - value.1 <= max_age {
@@ -308,18 +251,80 @@ impl super::Context for LocalContext {
         lock.replace((found, OffsetDateTime::now_utc()));
         found
     }
+}
+impl SupportsHostManagement for LocalContext {
+    type HostManager = InMemoryOriginManager;
 
-    async fn recover<'a>(&self, recovery_command: RecoveryCommand<'a>) -> Result<(), RecoveryError> {
-        match recovery_command {
-            RecoveryCommand::All => {todo!("Not supported in this version.")}
-            RecoveryCommand::UpdateLinkState(_, _) => {
-                return Err(RecoveryError::UnknownReason)
-            }
-        }
+    fn get_host_manager(&self) -> &Self::HostManager {
+        &self.host_manager
     }
 }
+impl SupportsMetaInfo for LocalContext {
+    fn crawl_started_at(&self) -> OffsetDateTime {
+        self.started_at
+    }
 
-impl super::SlimCrawlTaskContext for LocalContext {
+    fn discovered_websites(&self) -> usize {
+        self.ct_discovered_websites.load(Ordering::Relaxed)
+    }
+}
+impl SupportsConfigs for LocalContext {
+    fn configs(&self) -> &Configs {
+        &self.configs
+    }
+}
+impl SupportsWebGraph for LocalContext {
+    type WebGraphManager = QueuingWebGraphManager;
+
+    fn web_graph_manager(&self) -> &Self::WebGraphManager {
+        &self.links_net_manager
+    }
+}
+impl SupportsBlackList for LocalContext {
+    async fn get_blacklist(&self) -> PolyBlackList {
+        self.blacklist.create_current_blacklist().await.unwrap_or_default()
+    }
+}
+impl SupportsUrlQueue for LocalContext {
+    type UrlQueue = UrlQueueWrapper<RawAgingQueueFile>;
+
+    async fn can_poll(&self) -> bool {
+        !self.url_queue.is_empty().await
+    }
+
+    fn url_queue(&self) -> &Self::UrlQueue {
+        &self.url_queue
+    }
+}
+impl SupportsGdbrRegistry for LocalContext {
+    type Solver = L2R_L2LOSS_SVR;
+    type TF = Tf;
+    type IDF = Idf;
+
+    fn gdbr_registry(&self) -> Option<&GdbrIdentifierRegistry<Self::TF, Self::IDF, Self::Solver>> {
+        self.gdbr_filer_registry.as_ref()
+    }
+}
+impl SupportsRobotsManager for LocalContext {
+    type RobotsManager = ShareableRobotsManager;
+
+    async fn get_robots_instance(&self) -> ShareableRobotsManager {
+        self.robots.clone()
+    }
+}
+impl SupportsFileSystemAccess for LocalContext {
+    fn fs(&self) -> &FileSystemAccess {
+        &self.file_provider
+    }
+}
+impl SupportsSlimCrawlResults for LocalContext {
+    async fn retrieve_slim_crawled_website(&self, url: &UrlWithDepth) -> Result<Option<SlimCrawlResult>, DatabaseError> {
+        match self.crawled_data.get(url) {
+            Err(DatabaseError::RecoverableFailure{..}) => self.crawled_data.get(url),
+            pipe => pipe
+        }
+    }
+
     async fn store_slim_crawled_website(&self, slim: SlimCrawlResult) -> Result<(), DatabaseError> {
         match self.crawled_data.add(&slim) {
             Err(DatabaseError::RecoverableFailure{..}) => self.crawled_data.add(&slim),
@@ -330,3 +335,4 @@ impl super::SlimCrawlTaskContext for LocalContext {
 
 unsafe impl Send for LocalContext {}
 unsafe impl Sync for LocalContext {}
+

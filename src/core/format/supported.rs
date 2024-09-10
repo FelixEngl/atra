@@ -18,7 +18,7 @@ use std::str::FromStr;
 use file_format::{FileFormat, Kind};
 use mime::{Mime};
 use serde::{Deserialize, Serialize};
-use crate::core::contexts::Context;
+use crate::core::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
 use crate::core::format::file_format_detection::DetectedFileFormat;
 use crate::core::format::mime::{MimeType};
 use crate::core::format::mime_ext;
@@ -112,15 +112,6 @@ impl InterpretedProcessibleFileFormat {
                 &mime::APPLICATION_OCTET_STREAM
             }
         }
-    }
-}
-
-fn check_file_ending(respone: &ResponseData, endings: &[&'static str]) -> bool {
-    if let Some(scheme) = respone.url.url().path() {
-        let scheme = scheme.to_lowercase();
-        endings.into_iter().any(|it| scheme.ends_with(it))
-    } else {
-        false
     }
 }
 
@@ -230,12 +221,12 @@ impl InterpretedProcessibleFileFormat {
 
 
     /// Tries to guess the supported file type.
-    pub fn guess(
+    pub fn guess<C>(
         page: &ResponseData,
         mime: Option<&MimeType>,
         file_format: Option<&DetectedFileFormat>,
-        context: &impl Context
-    ) -> InterpretedProcessibleFileFormat {
+        context: &C
+    ) -> InterpretedProcessibleFileFormat where C: SupportsFileSystemAccess + SupportsConfigs {
         let mut is_text = false;
 
         if let Some(detected) = file_format {
@@ -336,7 +327,7 @@ impl InterpretedProcessibleFileFormat {
             }
         }
 
-        fn guess_if_html<const HAYSTACK_SIZE: usize>(context: &impl Context, page: &ResponseData) -> bool {
+        fn guess_if_html<const HAYSTACK_SIZE: usize>(context: &impl SupportsFileSystemAccess, page: &ResponseData) -> bool {
             if let Ok(Some(mut reader)) = page.content.cursor(context) {
                 let mut haystack = [0u8;HAYSTACK_SIZE];
                 match reader.read(&mut haystack) {

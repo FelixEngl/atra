@@ -18,15 +18,13 @@ use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString};
 use enum_iterator::{all};
-use crate::core::contexts::Context;
+use crate::core::contexts::traits::{SupportsConfigs, SupportsGdbrRegistry};
 use crate::core::decoding::DecodedData;
 use super::ExtractedLink;
 use crate::core::extraction::extractor_method::ExtractorMethod;
 use crate::core::format::AtraFileInformation;
-use crate::core::language_detection::IdentifiedLanguage;
+use crate::core::language_detection::LanguageInformation;
 use crate::core::response::ResponseData;
-use crate::features::gdbr_identifiert::SupportsGdbrIdentifier;
-use crate::features::text_processing::tf_idf::{IdfAlgorithm, TfAlgorithm};
 /*
     To register a new extractor, create a extractor_decode_action_declaration
     and extractor_sub_extractor_declaration.
@@ -46,14 +44,15 @@ impl PartialEq for Extractor {
 impl Extractor {
 
     /// If the
-    async fn apply_extractors<const FALLBACK_MODE: bool, C>(&self, context: &C, response: ProcessedData<'_>, result: &mut ExtractorResult) where C: Context
+    async fn apply_extractors<const FALLBACK_MODE: bool, C>(&self, context: &C, response: ProcessedData<'_>, result: &mut ExtractorResult)
+    where C: SupportsConfigs + SupportsGdbrRegistry
     {
         for extractor in &self.0 {
             // Require that both are either true or false
             if FALLBACK_MODE ^ extractor.is_fallback() {
                 continue
             }
-            if extractor.can_apply(context, &response) {
+            if extractor.can_apply(&response) {
                 if result.apply_extractor(extractor.extractor_method) {
                     match extractor.extractor_method.extract_links(context, &response, result).await {
                         Ok(value) => {
@@ -73,8 +72,8 @@ impl Extractor {
     }
 
     /// Extracts the data this the set extractors
-    pub async fn extract<C, >(&self, context: &C, response: &ResponseData, identified_type: &AtraFileInformation, decoded: &DecodedData<String, Utf8PathBuf>, lang: Option<&IdentifiedLanguage>) -> ExtractorResult
-    where C: Context
+    pub async fn extract<C>(&self, context: &C, response: &ResponseData, identified_type: &AtraFileInformation, decoded: &DecodedData<String, Utf8PathBuf>, lang: Option<&LanguageInformation>) -> ExtractorResult
+    where C: SupportsConfigs + SupportsGdbrRegistry
     {
         log::trace!("Extractor: {:?} - {}", identified_type.format, response.url);
         let mut result = ExtractorResult::default();
@@ -106,7 +105,7 @@ pub(crate) struct ProcessedData<'a>(
     pub &'a ResponseData,
     pub &'a AtraFileInformation,
     pub &'a DecodedData<String, Utf8PathBuf>,
-    pub Option<&'a IdentifiedLanguage>
+    pub Option<&'a LanguageInformation>
 );
 
 
@@ -182,11 +181,11 @@ impl ExtractorCommand {
         Self::new(extractor_method, Default::default())
     }
 
-    pub fn can_apply(&self, context: &impl Context, page: &ProcessedData<'_>) -> bool {
+    pub fn can_apply(&self, page: &ProcessedData<'_>) -> bool {
         match self.apply_when {
             ApplyWhen::Always => {true}
             ApplyWhen::IfSuitable => {
-                self.extractor_method.is_compatible(context, page)
+                self.extractor_method.is_compatible(page)
             }
             ApplyWhen::Fallback => {
                 false
@@ -240,7 +239,7 @@ mod test {
     use crate::core::extraction::extractor::Extractor;
     use crate::core::fetching::{FetchedRequestData};
     use crate::core::format::AtraFileInformation;
-    use crate::core::language_detection::IdentifiedLanguage;
+    use crate::core::language_detection::LanguageInformation;
     use crate::core::UrlWithDepth;
 
     #[tokio::test]
@@ -269,7 +268,7 @@ mod test {
 
 
 
-        let extracted = Extractor::default().extract(&context, &page, &identified_type, &preprocessed, Some(&IdentifiedLanguage::ENG)).await.to_optional_links().unwrap();
+        let extracted = Extractor::default().extract(&context, &page, &identified_type, &preprocessed, Some(&LanguageInformation::ENG)).await.to_optional_links().unwrap();
 
         println!("{}", extracted.len());
 

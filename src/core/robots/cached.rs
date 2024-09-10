@@ -25,6 +25,7 @@ pub enum CachedRobots {
         retrieved_at: OffsetDateTime
     },
     NoRobots {
+        #[allow(dead_code)]
         status_code: StatusCode,
         retrieved_at: OffsetDateTime
     }

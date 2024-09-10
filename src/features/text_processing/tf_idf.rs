@@ -8,6 +8,7 @@ use thiserror::Error;
 use crate::features::text_processing::corpus::CorpusDocumentStatistics;
 use serde::de::DeserializeOwned;
 
+#[allow(dead_code)]
 pub mod defaults {
     use crate::features::text_processing::tf_idf::{Idf, Tf, TfIdf};
     pub const RAW_INVERSE: TfIdf<Tf, Idf> = TfIdf::new(Tf::RawCount, Idf::InverseDocumentFrequency);
@@ -170,7 +171,7 @@ impl IdfAlgorithm for Idf {
 pub trait TfAlgorithm {
     /// Calculates the TF value for a [doc].
     /// If a specific value can not be calculated
-    fn calculate_tf<W, D: IntoIterator<Item=W>>(&self, doc: D) -> HashMap<W, f64> where W: Hash + Eq;
+    #[allow(dead_code)] fn calculate_tf<W, D: IntoIterator<Item=W>>(&self, doc: D) -> HashMap<W, f64> where W: Hash + Eq;
 }
 
 /// Default TF Algorithms
@@ -250,6 +251,7 @@ impl TfAlgorithm for Tf {
 
 #[cfg(test)]
 mod test {
+    use std::fmt::{Debug, Display};
     use itertools::Itertools;
     use lipsum::{lipsum_words_with_rng};
     use rand::{Rng, SeedableRng};
@@ -293,14 +295,14 @@ mod test {
         statistics.add(doc2.clone());
         statistics.add(doc3.clone());
         println!("{statistics}");
-        let _vectorizer = statistics.provide_vectorizer(super::defaults::TERM_FREQUENCY_INVERSE).unwrap();
+        let vectorizer = statistics.provide_vectorizer(super::defaults::TERM_FREQUENCY_INVERSE).unwrap();
         let doc_test = "bro it is going to rain today".unicode_words().collect_vec();
-        let _tf1 = Tf::TermFrequency.calculate_tf(doc_test.clone());
+        let tf1 = Tf::TermFrequency.calculate_tf(doc_test.clone());
 
-        fn test_vectorized(vectorized: VectorizedDocument<&str>) {
+        fn test_vectorized(vectorized: VectorizedDocument<impl AsRef<str> + Debug + Display>) {
             println!("{:?}\n", vectorized);
             for TfIdfVectorEntry(word, value) in vectorized.iter() {
-                match *word {
+                match word.as_ref() {
                     "to" | "today" => {
                         assert!((*value - 0.025155894150811604).abs() < f64::EPSILON, "Failed for '{}', got {}", word, *value)
                     }
@@ -317,8 +319,7 @@ mod test {
             }
         }
 
-        // test_vectorized(unsafe{vectorizer.vectorize_tf_document(tf1.clone())});
-        // test_vectorized(vectorizer.vectorize_document(doc_test.clone()));
-        // test_vectorized(statistics.vectorize_document(doc_test.clone(), &super::defaults::TERM_FREQUENCY_INVERSE).unwrap());
+        test_vectorized(unsafe{vectorizer.vectorize_tf_document(tf1.clone(), false)});
+        test_vectorized(vectorizer.vectorize_document(doc_test.clone(), false));
     }
 }

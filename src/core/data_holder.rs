@@ -18,7 +18,7 @@ use std::io;
 use std::io::{Cursor, IoSliceMut, SeekFrom, Read};
 use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
-use crate::core::contexts::{Context};
+use crate::core::contexts::traits::SupportsFileSystemAccess;
 
 pub type VecDataHolder = DataHolder<Vec<u8>>;
 
@@ -74,7 +74,7 @@ impl<T: AsRef<[u8]>> DataHolder<T> {
         }
     }
 
-    pub fn cursor(&self, context: &impl Context) -> io::Result<Option<DataHolderCursor<&T>>> {
+    pub fn cursor(&self, context: &impl SupportsFileSystemAccess) -> io::Result<Option<DataHolderCursor<&T>>> {
         match self {
             DataHolder::None => {Ok(None)}
             DataHolder::InMemory { data } => {
@@ -94,7 +94,7 @@ impl<T: AsRef<[u8]>> DataHolder<T> {
         }
     }
 
-    pub fn peek_bom(&self, context: &impl Context) -> io::Result<[u8; 3]> {
+    pub fn peek_bom(&self, context: &impl SupportsFileSystemAccess) -> io::Result<[u8; 3]> {
         let mut peek = [0u8; 3];
         match self {
             DataHolder::None => {Ok(peek)}

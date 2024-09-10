@@ -12,134 +12,190 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::collections::HashSet;
-use std::fmt::Debug;
-use liblinear::solver::traits::Solver;
-use time::Duration;
-use crate::core::blacklist::PolyBlackList;
-use crate::core::config::Configs;
-use crate::core::contexts::errors::{LinkHandlingError, RecoveryError};
-use crate::core::crawl::result::CrawlResult;
-use crate::core::crawl::seed::CrawlSeed;
-use crate::core::crawl::slim::{SlimCrawlResult};
-use crate::core::database_error::DatabaseError;
-use crate::core::origin::OriginManager;
-use crate::core::extraction::ExtractedLink;
-use crate::core::web_graph::{WebGraphManager};
-use crate::core::robots::RobotsManager;
-use crate::core::link_state::{LinkState, LinkStateDBError, LinkStateType};
-use crate::core::url::queue::UrlQueue;
-use crate::core::UrlWithDepth;
-use crate::features::gdbr_identifiert::GdbrIdentifierRegistry;
-use crate::features::text_processing::tf_idf::{Idf, IdfAlgorithm, Tf, TfAlgorithm};
-use crate::features::tokenizing::SupportsStopwords;
+use traits::*;
 
-/// What do you want to recover?
+macro_rules! create_context_trait {
+    ($($name: ident),+ $(,)?) => {
+        /// The context for a crawl context, collecting all needed taits in one.
+        pub trait Context: AsyncContext $(+$name)+
+        {}
+
+        impl<T> Context for T where T: ContextDelegate + AsyncContext $( + $name)+ {}
+    };
+}
+
+create_context_trait! {
+    SupportsLinkState,
+    SupportsHostManagement,
+    SupportsRobotsManager,
+    SupportsBlackList,
+    SupportsMetaInfo,
+    SupportsConfigs,
+    SupportsUrlQueue,
+    SupportsFileSystemAccess,
+    SupportsWebGraph,
+    SupportsStopwordsRegistry,
+    SupportsGdbrRegistry,
+    SupportsSlimCrawlResults,
+    SupportsCrawlResults,
+}
+
+
 #[allow(dead_code)]
-pub enum RecoveryCommand<'a> {
-    All,
-    UpdateLinkState(
-        &'a UrlWithDepth,
-        LinkStateType
-    )
-}
+pub mod traits {
+    use std::collections::HashSet;
+    use std::time::Duration;
+    use liblinear::solver::traits::Solver;
+    use crate::core::blacklist::PolyBlackList;
+    use crate::core::config::Configs;
+    use crate::core::contexts::errors::LinkHandlingError;
+    use crate::core::crawl::result::CrawlResult;
+    use crate::core::crawl::seed::CrawlSeed;
+    use crate::core::crawl::slim::SlimCrawlResult;
+    use crate::core::database_error::DatabaseError;
+    use crate::core::extraction::ExtractedLink;
+    use crate::core::link_state::{LinkState, LinkStateDBError, LinkStateType};
+    use crate::core::origin::OriginManager;
+    use crate::core::robots::RobotsManager;
+    use crate::core::url::queue::UrlQueue;
+    use crate::core::UrlWithDepth;
+    use crate::core::web_graph::WebGraphManager;
+    use crate::features::gdbr_identifiert::GdbrIdentifierRegistry;
+    use crate::features::text_processing::tf_idf::{IdfAlgorithm, TfAlgorithm};
+    use crate::features::tokenizing::stopwords::StopWordRegistry;
+
+    /// A marker interface for applying the context iff apropiate
+    pub trait ContextDelegate{}
+
+    /// A context marking a context as compatible with async tasks.
+    /// Can basically do nothing alone and is only a helper interface for the
+    /// required interfaces.
+    pub trait AsyncContext: Send + Sync + 'static {}
+
+    /// Used when some kind of link management happens
+    pub trait SupportsLinkState {
+
+        /// The number of crawled websites
+        fn crawled_websites(&self) -> Result<u64, LinkStateDBError>;
+
+        /// Registers a seed in the context as beeing crawled.
+        async fn register_seed(&self, seed: &impl CrawlSeed) -> Result<(), LinkHandlingError>;
+
+        /// Register outgoing & data links.
+        /// Also returns a list of all urls existing on the seed, that can be registered.
+        async fn handle_links(&self, from: &UrlWithDepth, links: &HashSet<ExtractedLink>) -> Result<Vec<UrlWithDepth>, LinkHandlingError>;
+
+        /// Sets the state of the link
+        async fn update_link_state(&self, url: &UrlWithDepth, state: LinkStateType) -> Result<(), LinkStateDBError>;
+
+        /// Sets the state of the link with a payload
+        async fn update_link_state_with_payload(&self, url: &UrlWithDepth, state: LinkStateType, payload: Vec<u8>) -> Result<(), LinkStateDBError>;
+
+        /// Gets the state of the current url
+        async fn get_link_state(&self, url: &UrlWithDepth) -> Result<Option<LinkState>, LinkStateDBError>;
+
+        /// Checks if there are any crawable links. [max_age] denotes the maximum amount of time since
+        /// the last search
+        async fn check_if_there_are_any_crawlable_links(&self, max_age: Duration) -> bool;
+    }
+
+    /// Used when a host manager is provided
+    pub trait SupportsHostManagement {
+        /// The domain manager used by this
+        type HostManager: OriginManager;
+
+        /// Returns a reference to a [GuardedDomainManager]
+        fn get_host_manager(&self) -> &Self::HostManager;
+    }
+
+    pub trait SupportsRobotsManager {
+        /// The used robots manager
+        type RobotsManager: RobotsManager;
+
+        /// Get an instance of the robots manager.
+        async fn get_robots_instance(&self) -> Self::RobotsManager;
+    }
+
+    pub trait SupportsBlackList {
+        /// Get some kind of blacklist
+        async fn get_blacklist(&self) -> PolyBlackList;
+    }
+
+    pub trait SupportsMetaInfo {
+        /// When did the crawl officially start?
+        fn crawl_started_at(&self) -> time::OffsetDateTime;
+
+        /// The amount of discovered websites.
+        fn discovered_websites(&self) -> usize;
+    }
+
+    pub trait SupportsConfigs {
+
+        /// Returns a reference to the config
+        fn configs(&self) -> &Configs;
+    }
+
+    pub trait SupportsUrlQueue {
+        /// The url queue used by this
+        type UrlQueue: UrlQueue;
+
+        /// Returns true if poll possible
+        async fn can_poll(&self) -> bool;
+
+        /// Get the instance of the url queue.
+        fn url_queue(&self) -> &Self::UrlQueue;
+    }
+
+    pub trait SupportsFileSystemAccess {
+        /// Provides access to the filesystem
+        fn fs(&self) -> &crate::core::io::fs::FileSystemAccess;
+    }
 
 
+    /// The context supports webgraphs
+    pub trait SupportsWebGraph {
+        /// The manager for the link net
+        type WebGraphManager: WebGraphManager;
 
-/// The context for a crawl
-pub trait Context: SupportsStopwords + Debug +  Send + Sync + 'static {
-    /// The used robots manager
-    type RobotsManager: RobotsManager;
 
-    /// The url queue used by this
-    type UrlQueue: UrlQueue;
+        /// Returns the link net manager
+        fn web_graph_manager(&self) -> &Self::WebGraphManager;
+    }
 
-    /// The domain manager used by this
-    type HostManager: OriginManager;
 
-    /// The manager for the link net
-    type WebGraphManager: WebGraphManager;
+    /// The context needed for tokenizing to work
+    pub trait SupportsStopwordsRegistry {
 
-    type Solver: Solver;
+        /// Returns the sopword registry
+        fn stopword_registry(&self) -> Option<&StopWordRegistry>;
+    }
 
-    type TF: TfAlgorithm;
 
-    type IDF: IdfAlgorithm;
+    pub trait SupportsGdbrRegistry {
 
-    /// Returns true if poll possible
-    async fn can_poll(&self) -> bool;
+        type Solver: Solver;
 
-    /// Provides access to the filesystem
-    fn fs(&self) -> &crate::core::io::fs::FileSystemAccess;
+        type TF: TfAlgorithm;
 
-    /// The number of crawled websites
-    fn crawled_websites(&self) -> Result<u64, LinkStateDBError>;
+        type IDF: IdfAlgorithm;
 
-    /// The amount of discovered websites.
-    fn discovered_websites(&self) -> usize;
+        /// Gdbr Registry
+        fn gdbr_registry(&self) -> Option<&GdbrIdentifierRegistry<Self::TF, Self::IDF, Self::Solver>>;
+    }
 
-    /// Get the instance of the url queue.
-    fn url_queue(&self) -> &Self::UrlQueue;
+    pub trait SupportsSlimCrawlResults {
+        /// Retrieve a single crawled website but without the body
+        async fn retrieve_slim_crawled_website(&self, url: &UrlWithDepth) -> Result<Option<SlimCrawlResult>, DatabaseError>;
 
-    /// Returns a reference to the config
-    fn configs(&self) -> &Configs;
+        /// Store a crawl result
+        async fn store_slim_crawled_website(&self, result: SlimCrawlResult) -> Result<(), DatabaseError>;
+    }
 
-    /// Gdbr Registry
-    fn gdbr_registry(&self) -> Option<&GdbrIdentifierRegistry<Self::TF, Self::IDF, Self::Solver>>;
+    pub trait SupportsCrawlResults {
+        /// Store a crawl result
+        async fn store_crawled_website(&self, result: &CrawlResult) -> Result<(), DatabaseError>;
 
-    /// When did the crawl officially start?
-    fn crawl_started_at(&self) -> time::OffsetDateTime;
-
-    /// Returns the link net manager
-    fn web_graph_manager(&self) -> &Self::WebGraphManager;
-
-    /// Get some kind of blacklist
-    async fn get_blacklist(&self) -> PolyBlackList;
-
-    /// Get an instance of the robots manager.
-    async fn get_robots_instance(&self) -> Self::RobotsManager;
-
-    /// Returns a reference to a [GuardedDomainManager]
-    fn get_host_manager(&self) -> &Self::HostManager;
-
-    /// Retrieve a single crawled website but without the body
-    async fn retrieve_slim_crawled_website(&self, url: &UrlWithDepth) -> Result<Option<SlimCrawlResult>, DatabaseError>;
-
-    /// Registers a seed in the context as beeing crawled.
-    async fn register_seed(&self, seed: &impl CrawlSeed) -> Result<(), LinkHandlingError>;
-
-    /// Register outgoing & data links.
-    /// Also returns a list of all urls existing on the seed, that can be registered.
-    async fn handle_links(&self, from: &UrlWithDepth, links: &HashSet<ExtractedLink>) -> Result<Vec<UrlWithDepth>, LinkHandlingError>;
-
-    /// Sets the state of the link
-    async fn update_link_state(&self, url: &UrlWithDepth, state: LinkStateType) -> Result<(), LinkStateDBError>;
-
-    /// Sets the state of the link with a payload
-    async fn update_link_state_with_payload(&self, url: &UrlWithDepth, state: LinkStateType, payload: Vec<u8>) -> Result<(), LinkStateDBError>;
-
-    /// Gets the state of the current url
-    async fn get_link_state(&self, url: &UrlWithDepth) -> Result<Option<LinkState>, LinkStateDBError>;
-
-    /// Checks if there are any crawable links. [max_age] denotes the maximum amount of time since
-    /// the last search
-    async fn check_if_there_are_any_crawlable_links(&self, max_age: Duration) -> bool;
-
-    /// Recover the
-    async fn recover<'a>(&self, command: RecoveryCommand<'a>) -> Result<(), RecoveryError>;
-}
-
-pub trait SlimCrawlTaskContext: Context {
-    /// Store a crawl result
-    async fn store_slim_crawled_website(&self, result: SlimCrawlResult) -> Result<(), DatabaseError>;
-}
-
-/// A context that in addition to normal context actions allows to store and retrieve cralwed besites as a whole.
-pub trait CrawlTaskContext: SlimCrawlTaskContext {
-    /// Store a crawl result
-    async fn store_crawled_website(&self, result: &CrawlResult) -> Result<(), DatabaseError>;
-
-    /// Get the complete crawled website
-    async fn retrieve_crawled_website(&self, url: &UrlWithDepth) -> Result<Option<CrawlResult>, DatabaseError>;
-
+        /// Get the complete crawled website
+        async fn retrieve_crawled_website(&self, url: &UrlWithDepth) -> Result<Option<CrawlResult>, DatabaseError>;
+    }
 }

@@ -27,10 +27,10 @@ pub trait ToErrorWithPath<T> where Self: Sized {
     /// Converts a normal IO error to an error with a path
     fn to_error_with_path<P: AsRef<Utf8Path>>(self, path: P) -> Result<T>;
 
-    /// Maps a normal IO error to an error with a path
-    fn map_to_error_with_path<P: AsRef<Utf8Path>, F: FnOnce() -> P>(self, path_provider: F) -> Result<T> {
-        self.to_error_with_path(path_provider())
-    }
+    // /// Maps a normal IO error to an error with a path
+    // fn map_to_error_with_path<P: AsRef<Utf8Path>, F: FnOnce() -> P>(self, path_provider: F) -> Result<T> {
+    //     self.to_error_with_path(path_provider())
+    // }
 }
 
 #[sealed]
@@ -39,7 +39,7 @@ impl<T> ToErrorWithPath<T> for std::result::Result<T, std::io::Error> {
         self.map_err(|e| ErrorWithPath::new(path.as_ref().to_path_buf(), e))
     }
 
-    fn map_to_error_with_path<P: AsRef<Utf8Path>, F: FnOnce() -> P>(self, path_provider: F) -> Result<T> {
-        self.map_err(|value| ErrorWithPath::new(path_provider().as_ref().to_path_buf(), value))
-    }
+    // fn map_to_error_with_path<P: AsRef<Utf8Path>, F: FnOnce() -> P>(self, path_provider: F) -> Result<T> {
+    //     self.map_err(|value| ErrorWithPath::new(path_provider().as_ref().to_path_buf(), value))
+    // }
 }

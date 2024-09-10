@@ -151,6 +151,7 @@ impl<W> MappedDocumentVectorizer<W> {
         Self{inner}
     }
 
+    #[allow(dead_code)]
     pub fn into_inner(self) -> Vec<(W, f64)> {
         self.inner
     }

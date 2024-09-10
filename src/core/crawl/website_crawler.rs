@@ -39,13 +39,13 @@ use crate::core::blacklist::lists::BlackList;
 use crate::core::blacklist::PolyBlackList;
 use crate::core::config::crawl::RedirectPolicy;
 use crate::core::config::{BudgetSetting, CrawlConfig};
-use crate::core::contexts::{Context, CrawlTaskContext};
 use crate::core::contexts::errors::{LinkHandlingError, RecoveryError};
 use crate::core::crawl::errors::SeedCreationError;
 use crate::core::crawl::intervals::InvervalManager;
 use crate::core::crawl::result::CrawlResult;
 use crate::core::crawl::seed::{CrawlSeed};
 use crate::core::{data_processing, DataHolder, UrlWithDepth, VecDataHolder};
+use crate::core::contexts::traits::{SupportsBlackList, SupportsConfigs, SupportsCrawlResults, SupportsFileSystemAccess, SupportsGdbrRegistry, SupportsLinkState, SupportsRobotsManager, SupportsSlimCrawlResults};
 use crate::core::link_state::{LinkStateDBError, LinkStateType};
 use crate::core::robots::{GeneralRobotsInformation, RobotsInformation};
 use crate::core::shutdown::ShutdownReceiver;
@@ -55,8 +55,7 @@ use crate::core::format::supported::InterpretedProcessibleFileFormat;
 use crate::core::language_detection::detect_language;
 use crate::core::sitemaps::parse::retrieve_and_parse;
 use crate::core::origin::{AtraOriginProvider, AtraUrlOrigin};
-use crate::features::gdbr_identifiert::SupportsGdbrIdentifier;
-use crate::features::text_processing::tf_idf::{IdfAlgorithm, TfAlgorithm};
+
 
 /// Get the domain name from the [url] as [CaseInsensitiveString].
 /// Returns None if there is no domain
@@ -364,7 +363,7 @@ pub struct WebsiteCrawler<S> {
     links_visited: HashSet<UrlWithDepth>,
 
     /// Set the crawl ID to track. This allows explicit targeting for shutdown, pause, and etc.
-    pub crawl_id: String,
+    #[allow(dead_code)] pub crawl_id: String,
 
     /// External sitemaps set by the builder
     #[allow(dead_code)] external_sitemaps: Option<HashMap<AtraUrlOrigin, Vec<String>>>,
@@ -428,10 +427,11 @@ pub enum WebsiteCrawlerError {
 }
 
 
+
 impl<S: CrawlSeed> WebsiteCrawler<S> {
 
 
-    async fn update_linkstate<C: Context>(
+    async fn update_linkstate<C: SupportsLinkState>(
         errors: &mut Vec<WebsiteCrawlerError>,
         context: &C,
         target: &UrlWithDepth,
@@ -451,7 +451,15 @@ impl<S: CrawlSeed> WebsiteCrawler<S> {
     /// The crawl method.
     pub async fn crawl<Cont, Shutdown>(&mut self, context: &Cont, shutdown: Shutdown) -> Result<(), Vec<WebsiteCrawlerError>>
     where
-        Cont: CrawlTaskContext + Context,
+        Cont:
+        SupportsGdbrRegistry
+        + SupportsConfigs
+        + SupportsRobotsManager
+        + SupportsBlackList
+        + SupportsLinkState
+        + SupportsSlimCrawlResults
+        + SupportsFileSystemAccess
+        + SupportsCrawlResults,
         Shutdown: ShutdownReceiver
     {
 
@@ -861,8 +869,9 @@ mod test {
     use crate::core::blacklist::lists::RegexBlackList;
     use crate::core::config::{BudgetSetting, Configs, CrawlConfig};
     use crate::core::config::crawl::UserAgent;
-    use crate::core::contexts::{Context, LocalContext};
+    use crate::core::contexts::{LocalContext};
     use crate::core::contexts::inmemory::InMemoryContext;
+    use crate::core::contexts::traits::{SupportsConfigs, SupportsUrlQueue};
     use crate::core::crawl::result::CrawlResult;
     use crate::core::crawl::seed::UnguardedSeed;
     use crate::core::crawl::website_crawler::{WebsiteCrawler, WebsiteCrawlerBuilder};
