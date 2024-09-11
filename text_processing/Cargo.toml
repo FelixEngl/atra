@@ -1,0 +1,19 @@
+[package]
+name = "text_processing"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+isolang.workspace = true
+iso_stopwords.workspace = true
+rust-stemmers.workspace = true
+compact_str.workspace = true
+serde = {workspace = true, features = ["serde_derive"]}
+unicode-normalization.workspace = true
+unicode-segmentation.workspace = true
+thiserror.workspace = true
+itertools.workspace = true
+camino = { workspace = true, features = ["serde1"] }
+log.workspace = true
+float-cmp.workspace = true
+delegate.workspace = true

@@ -1,221 +1,42 @@
-[package]
-name = "atra"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+members = ["atra", "iso_stopwords", "text_processing", "svm", "warc"]
+resolver = "2"
 
-# https://en.wikipedia.org/wiki/Erigone_atra
+[workspace.dependencies]
+# Workspace members
+iso_stopwords = { path = "iso_stopwords" }
+warc = { path = "warc" }
+text_processing = {path = "text_processing"}
+svm = {path = "svm"}
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(RUSTC_IS_NIGHTLY)'] }
-
-[dependencies]
-
-# Async
-futures = "0.3"
-tokio = { version="1.35", features = ["rt-multi-thread", "macros", "time", "fs", "io-util", "signal"] }
-tokio-stream = "0.1"
-tokio-util = "0.7"
-async-trait = "0.1"
-
-# Downloading data
-reqwest = { version = "0.12", features = ["brotli", "gzip", "deflate", "stream", "cookies"] }
-reqwest-middleware = "0.3"
-http-cache-reqwest = "0.14"
-ua_generator = "0.5"
-tempfile = "3.10"
-
-# Webdrivers
-chromiumoxide = { version = "0.7", optional = true, features = ["tokio-runtime", "bytes"], default-features = false }
-
-# Configuration and Init
-clap = { version = "4", features = ["derive"] }
-config = { version = "0.14" }
-notify = "6.1"
-
-# On disk
-queue-file = "1.4"
-rocksdb = { version = "0", features = ["multi-threaded-cf" ] }
-camino = { version = "1.1", features = ["serde1"] }
-camino-tempfile = "1.1"
-
-# Serialisation
-serde = { version = "1.0", features = ["derive", "rc"] }
-serde_json = "1.0"
-serde_bytes = "0.11"
-serde_yaml = "0.9"
-bincode = "1.3"
-#ron = "0.8"
-
-# Output formats
-rio_api = "0.8"
-rio_turtle = "0.8"
-
-# Hashing
-twox-hash = "1.6"
-fuzzyhash = "0.2"
-
-# Encoding
-flate2 = "1.0"
-data-encoding = "2.5"
-
-# Identifier
-uuid = { version = "1.7", features = ["serde", "v4", "v5", "fast-rng"] }
-time = { version = "0.3", features = ["serde", "serde-human-readable", "formatting"] }
-#chrono = "0.4"
-
-# Basics
-regex = "1.10"
-rand = "0.8"
-itertools = "0.13"
-url = { version = "2.5", features = ["serde"] }
-const_format = "0"
-#libm = "0.2"
-#bitflags = { version = "2.6", features = ["serde"] }
-
-# Special Types
-## Ranged Integers
-deranged = { version = "0.3", features = ["serde"] }
-
-# Pattern Matching
-memchr = "2"
-aho-corasick = "1"
-
-# Float
-float-cmp = "0.9.0"
-
-# Memory stuff
-smallvec = { version = "1.13", features = ["serde", "const_new", "const_generics", "write", "union"] }
-compact_str = { version = "0.8", features = ["serde", "bytes"] }
-case_insensitive_string = { version = "0.2", features = ["serde"] }
-
-# Data structures
-indexmap = "2"
-#lru = "0.12"
-moka = { version = "0.12", features = ["future"] }
-bytes = { version = "1.5", features = ["serde", "default"] }
-yada = "0.5"
-state = "0.6"
-
-# Delegating
-delegate = "0.12"
-
-# Enum extensions
-strum = { version = "0.26", features = ["derive"] }
-num_enum = "0.7"
-enum-iterator = "2.0"
-
-# Bits and bytes
-ubyte = "0.10"
-byteorder = "1"
-
-# Macros
-paste = "1"
-sealed = "0"
-
-# Logging
-log = { version = "0.4", features = ["serde"] }
-log4rs = { version = "1.3" }
-
-# Enviroment
-num_cpus = "1"
-sys-info = "0.9"
-
-# Errors
-thiserror = "1.0"
-anyhow = "1.0"
-
-# Cluster
-# https://crates.io/crates/paxakos
-
-# HTML Parsing
-html5ever = "0"
-ego-tree = "0"
-#tendril = "0.4"
-
-# Scraping
-scraper = { version = "0.20" }
-selectors = "0.25"
-texting_robots = "0.2"
-sitemap = "0.4"
-linkify = "0.10"
-ress = "0"
-#mupdf = { path= "external/mupdf" }
-psl = "2"
-
-# Type System
-mime = "0.3"
-file-format = { git = "https://github.com/FelixEngl/file-format.git", branch = "main", features = ["reader", "serde", "extended-enums", "from-all"] }
-
-
-# String Encodings
-encoding_rs = { version = "0.8", features = ["serde"] }
-chardetng = "0.1"
-
-
-# Parsing
-nom = "7"
-unescaper = "0.1"
-ryu = "1.0"
-
-# Archive
-tar = "0.4"
-zip = "2"
-
-# Text processing
-unicode-normalization = { version = "0.1" }
-unicode-segmentation = { version = "1.11" }
-
-## Stemming of data
-rust-stemmers = { version = "1" }
-isolang = { version = "2.4", features = ["serde"] }
-
-# File formats
-csv = { version = "1.3" }
-xml = "0.8"
-rtf-parser = "0.3"
-
-# Languages
-whatlang = { version = "0.16", features = ["serde"] }
-
-# SVM
-liblinear = { path= "external/liblinear/crates/liblinear", features = ["serde"] }
-
-[target.'cfg(windows)'.dependencies]
-link_scraper = { version = "0.1", features = ["plaintext", "xml", "xlink", "svg", "ooxml", "odf", "rtf", "image"] }
-
-[target.'cfg(not(windows))'.dependencies]
-link_scraper = { version = "0.1", features = ["pdf", "plaintext", "xml", "xlink", "svg", "ooxml", "odf", "rtf", "image"] }
-
-# TOR
-# libtor-sys = "47.13.0"
-# torut = "0.2.1"
-
-[dev-dependencies]
-scopeguard = "1.2"
-mockall = "0.12"
-lipsum = "0.9"
-
-
-[patch.crates-io]
-#mupdf-sys = { path= "external/mupdf/mupdf-sys" }
+# Externals
 mupdf = { path= "external/mupdf" }
+liblinear = { path= "external/liblinear/crates/liblinear" }
+file-format = { git = "https://github.com/FelixEngl/file-format.git", branch = "main" }
 
-[build-dependencies]
-#file-format = { git = "https://github.com/FelixEngl/file-format.git", branch = "main", features = ["reader", "extended-enums"] }
-#paste = "1.0"
+# Default versions for shared libs
 isolang = "2.4"
-tinyjson = "2.5"
-rustc_version = "0"
-#flate2 = "1.0"
-#cc = "1.1"
-#curl = "0.4"
-#serde = "1.0"
-#serde_json = "1.0"
-#time = { version = "0.3", features = ["serde", "serde-human-readable", "formatting"] }
-
-# cc = "1.0"
-
-[features]
-chrome = ["dep:chromiumoxide"]
+encoding_rs = "0.8"
+strum =  "0.26"
+thiserror = "1.0"
+ubyte = "0.10"
+itertools = "0.13"
+paste = "1"
+serde = "1"
+time = "0.3"
+memchr = "2"
+nom = "7"
+const_format = "0"
+mime = "0.3"
+compact_str = "0.8"
+unescaper = "0.1"
+rust-stemmers = "1"
+unicode-normalization = "0.1"
+unicode-segmentation = "1.11"
+camino = "1.1"
+camino-tempfile = "1.1"
+log = "0.4"
+float-cmp = "0.9"
+delegate = "0"
+bincode = "1.3"
+serde_json = "1.0"
