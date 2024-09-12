@@ -22,13 +22,6 @@ Atra is a novel web crawling solution, implemented in Rust, designed with
 the primary goal of scraping websites as comprehensively
 as possible, while ensuring ease of use and accessibility.
 
-## Philosophy
-
-Atra follows a simple philosophy: 
-- If you can't embed it, you don't need it.
-- Services are short-lived, but monoliths are for eternity.
-- One config to rule them all.
-
 ## Your first crawl
 Download the precompiled executable (coming soon) and run the following command:
 - Windows: `./atra.exe single -s test_crawl -d 2 --absolute https://choosealicense.com`
@@ -59,11 +52,28 @@ You can also use the docker container to build a binary.
 Due to the dynamic linking you will need `libc6`, `openssl`, 
 and `ca-certificates` installed on you system.
 
-## Why is the crawler named Atra?
+## General Informations
+
+### Philosophy
+
+Atra follows a simple philosophy:
+- If you can't embed it, you don't need it.
+- Services are short-lived, but monoliths are for eternity.
+- One config to rule them all.
+
+### Careware
+Even if licensed as MIT / Apache License Atra is also Careware, 
+when you like my work please consider to donate to the 
+[Zeehondencentrum Pietersburen](https://www.zeehondencentrum.nl/en/).
+
+Even small donations around 10€ can feed a seal for a whole day!
+
+
+### Why is the crawler named Atra?
 The name Atra comes from the Erigone atra, a dwarf spider with a body length of 1.8mm to 2.8mm.
 Not only do they play a central role in natural pest control in
 agriculture (aphids), but they are also aerial spiders that can
-travel long distances by ballooning, also known as kiting. 
+travel long distances by ballooning, also known as kiting.
 
 More fun spider facts can be found on [Wikipedia](https://en.wikipedia.org/wiki/Erigone_atra).
 
