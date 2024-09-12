@@ -12,27 +12,24 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::sync::Arc;
-use rocksdb::{DB};
 use crate::config::Configs;
 use crate::crawl::SlimCrawlResult;
-use crate::database::{DatabaseError, RawDatabaseError, RawIOError};
 use crate::database::DBActionType::{Read, Write};
-use crate::url::UrlWithDepth;
+use crate::database::{DatabaseError, RawDatabaseError, RawIOError};
 use crate::db_health_check;
 use crate::declare_column_families;
-
-
+use crate::url::UrlWithDepth;
+use rocksdb::DB;
+use std::sync::Arc;
 
 /// Manages the crawled websites in a database until it is flushed
 #[derive(Debug, Clone)]
 pub struct CrawlDB {
-    db: Arc<DB>
+    db: Arc<DB>,
 }
 
 /// Uses prefix
 impl CrawlDB {
-
     declare_column_families! {
         self.db => cf_handle(CRAWL_DB_CF)
     }
@@ -45,7 +42,7 @@ impl CrawlDB {
                 else "The head-cf for the CrawlDB is missing!"
             )
         ]);
-        Ok(Self{db})
+        Ok(Self { db })
     }
 
     /// Adds a single [value]
@@ -53,22 +50,11 @@ impl CrawlDB {
         let key = &value.meta.url;
         let serialized = match bincode::serialize(&value) {
             Ok(value) => value,
-            Err(err) => return Err(err.enrich_ser(
-                Self::CRAWL_DB_CF,
-                key,
-                value.clone()
-            ))
+            Err(err) => return Err(err.enrich_ser(Self::CRAWL_DB_CF, key, value.clone())),
         };
-        self.db.put_cf(
-            &self.cf_handle(),
-            key,
-            &serialized
-        ).enrich_with_entry(
-            Self::CRAWL_DB_CF,
-            Write,
-            key,
-            &serialized
-        )?;
+        self.db
+            .put_cf(&self.cf_handle(), key, &serialized)
+            .enrich_with_entry(Self::CRAWL_DB_CF, Write, key, &serialized)?;
 
         Ok(())
     }
@@ -83,16 +69,10 @@ impl CrawlDB {
                 Read,
                 url,
             )? {
-                Ok(
-                    Some(
-                        match bincode::deserialize(pinned.as_ref()) {
-                            Ok(value) => value,
-                            Err(err) => {
-                                return Err(err.enrich_de(Self::CRAWL_DB_CF, key, pinned.to_vec()))
-                            }
-                        }
-                    )
-                )
+                Ok(Some(match bincode::deserialize(pinned.as_ref()) {
+                    Ok(value) => value,
+                    Err(err) => return Err(err.enrich_de(Self::CRAWL_DB_CF, key, pinned.to_vec())),
+                }))
             } else {
                 Ok(None)
             }
@@ -100,7 +80,6 @@ impl CrawlDB {
             Ok(None)
         }
     }
-
 
     // pub fn contains(&self, url: &UrlWithDepth) -> Result<bool, DatabaseError> {
     //     let handle = self.cf_handle();
@@ -140,9 +119,3 @@ impl CrawlDB {
     //     })
     // }
 }
-
-
-
-
-
-

@@ -12,10 +12,10 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::time::SystemTime;
-use thiserror::Error;
 use crate::url::AtraUrlOrigin;
 use crate::url::UrlWithDepth;
+use std::time::SystemTime;
+use thiserror::Error;
 
 /// Errors of the domain manager
 #[derive(Debug, Error)]
@@ -23,9 +23,8 @@ pub enum GuardianError {
     #[error("There was no host in the url")]
     NoOriginError(UrlWithDepth),
     #[error("The host is already in use {0:?}")]
-    AlreadyOccupied(AtraUrlOrigin)
+    AlreadyOccupied(AtraUrlOrigin),
 }
-
 
 /// Returns the poison state of the guard at this specific moment.
 #[derive(Debug, Error, Clone)]
@@ -37,5 +36,5 @@ pub enum GuardPoisonedError {
     #[error("The guard timestamp of the origin {0} is not set!")]
     NoTimestampSet(AtraUrlOrigin),
     #[error("The guard timestamp of the origin {0} is set to {2:?} but should be {1:?}!")]
-    WrongTimestampSet(AtraUrlOrigin, SystemTime, SystemTime)
+    WrongTimestampSet(AtraUrlOrigin, SystemTime, SystemTime),
 }

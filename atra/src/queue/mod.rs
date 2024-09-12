@@ -12,13 +12,13 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-mod file_typed;
 mod errors;
 mod file;
-mod traits;
+mod file_typed;
 pub mod polling;
+mod traits;
 
 pub use errors::QueueError;
+pub use file::RawAgingQueueFile;
 pub use traits::AgingQueueElement;
 pub use traits::RawAgingQueue;
-pub use file::RawAgingQueueFile;

@@ -12,9 +12,9 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use liblinear::errors::{ModelError, TrainingInputError, PredictionInputError};
+use liblinear::errors::{ModelError, PredictionInputError, TrainingInputError};
+use text_processing::tf_idf::IdfAlgorithm;
 use thiserror::Error;
-use text_processing::tf_idf::{IdfAlgorithm};
 
 /// An error from liblinear
 #[derive(Debug, Error)]
@@ -24,9 +24,8 @@ pub enum LibLinearError {
     #[error(transparent)]
     Build(#[from] ModelError),
     #[error(transparent)]
-    Prediction(#[from] PredictionInputError)
+    Prediction(#[from] PredictionInputError),
 }
-
 
 /// An error from creating a svm classifier
 #[derive(Debug, Error)]

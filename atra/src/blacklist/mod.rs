@@ -12,11 +12,9 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-
-
 pub mod lists;
 pub mod manager;
 
-pub use lists::PolyBlackList;
 pub use lists::BlackListType;
+pub use lists::PolyBlackList;
 pub use manager::BlacklistManager;

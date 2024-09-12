@@ -1,18 +1,20 @@
-use std::fs::File;
-use std::io::{BufReader, Cursor, Read};
+use crate::contexts::traits::{SupportsConfigs, SupportsGdbrRegistry};
+use crate::data::{Decoded, RawVecData};
+use crate::extraction::extractor::{ExtractorResult, ProcessedData};
+use crate::extraction::extractor_method::LinkExtractionError::NotCompatible;
+use crate::extraction::links::ExtractedLink;
+use crate::extraction::marker::{
+    ExtractorMethodHint, ExtractorMethodMeta, ExtractorMethodMetaFactory,
+};
+use crate::extraction::raw::extract_possible_urls;
+use crate::format::supported::InterpretedProcessibleFileFormat;
+use crate::toolkit::utf8::RobustUtf8Reader;
 use bytes::Buf;
-use thiserror::Error;
 use enum_iterator::Sequence;
 use serde::{Deserialize, Serialize};
-use crate::extraction::marker::{ExtractorMethodHint, ExtractorMethodMeta, ExtractorMethodMetaFactory};
-use crate::extraction::extractor::{ProcessedData, ExtractorResult};
-use crate::format::supported::InterpretedProcessibleFileFormat;
-use crate::contexts::traits::{SupportsConfigs, SupportsGdbrRegistry};
-use crate::extraction::links::ExtractedLink;
-use crate::extraction::extractor_method::LinkExtractionError::NotCompatible;
-use crate::extraction::raw::extract_possible_urls;
-use crate::toolkit::utf8::RobustUtf8Reader;
-use crate::data::{Decoded, RawVecData};
+use std::fs::File;
+use std::io::{BufReader, Cursor, Read};
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum LinkExtractionError {
@@ -25,20 +27,29 @@ pub enum LinkExtractionError {
     #[error("Was able to extract {successes} links but failed with: {errors:?}")]
     ExtractionErrors {
         successes: usize,
-        errors: Vec<LinkExtractionSubError>
-    }
+        errors: Vec<LinkExtractionSubError>,
+    },
 }
 
 #[derive(Debug, Error)]
 pub enum LinkExtractionSubError {
-    #[cfg(not(windows))] #[error(transparent)] Pdf(#[from] link_scraper::formats::pdf::PdfScrapingError),
-    #[error(transparent)] Rtf(#[from] link_scraper::formats::rtf::RtfScrapingError),
-    #[error(transparent)] Ooxml(#[from] link_scraper::formats::ooxml::OoxmlScrapingError),
-    #[error(transparent)] Odf(#[from] link_scraper::formats::odf::OdfScrapingError),
-    #[error(transparent)] Exif(#[from] link_scraper::formats::image::ImageScrapingError),
-    #[error(transparent)] Xml(#[from] link_scraper::formats::xml::XmlScrapingError),
-    #[error(transparent)] Svg(#[from] link_scraper::formats::xml::svg::SvgScrapingError),
-    #[error(transparent)] Xlink(#[from] link_scraper::formats::xml::xlink::XLinkFormatError),
+    #[cfg(not(windows))]
+    #[error(transparent)]
+    Pdf(#[from] link_scraper::formats::pdf::PdfScrapingError),
+    #[error(transparent)]
+    Rtf(#[from] link_scraper::formats::rtf::RtfScrapingError),
+    #[error(transparent)]
+    Ooxml(#[from] link_scraper::formats::ooxml::OoxmlScrapingError),
+    #[error(transparent)]
+    Odf(#[from] link_scraper::formats::odf::OdfScrapingError),
+    #[error(transparent)]
+    Exif(#[from] link_scraper::formats::image::ImageScrapingError),
+    #[error(transparent)]
+    Xml(#[from] link_scraper::formats::xml::XmlScrapingError),
+    #[error(transparent)]
+    Svg(#[from] link_scraper::formats::xml::svg::SvgScrapingError),
+    #[error(transparent)]
+    Xlink(#[from] link_scraper::formats::xml::xlink::XLinkFormatError),
 }
 
 #[derive(Sequence, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Copy, Clone)]
@@ -72,12 +83,18 @@ pub enum ExtractorMethod {
     Xlink,
     #[cfg(not(windows))]
     #[serde(alias = "pdf_v1")]
-    PdfV1
+    PdfV1,
 }
 
 impl ExtractorMethod {
-    pub async fn extract_links<C>(&self, context: &C, page: &ProcessedData<'_>, output: &mut ExtractorResult) -> Result<usize, LinkExtractionError>
-    where C: SupportsConfigs + SupportsGdbrRegistry
+    pub async fn extract_links<C>(
+        &self,
+        context: &C,
+        page: &ProcessedData<'_>,
+        output: &mut ExtractorResult,
+    ) -> Result<usize, LinkExtractionError>
+    where
+        C: SupportsConfigs + SupportsGdbrRegistry,
     {
         if self.is_compatible(page) {
             return Err(NotCompatible);
@@ -94,7 +111,8 @@ impl ExtractorMethod {
             ExtractorMethod::Xml => extract_links_xml(self, page, output).await,
             ExtractorMethod::Svg => extract_links_svg(self, page, output).await,
             ExtractorMethod::Xlink => extract_links_xlink(self, page, output).await,
-            #[cfg(not(windows))] ExtractorMethod::PdfV1 => extract_links_pdf(self, page, output).await,
+            #[cfg(not(windows))]
+            ExtractorMethod::PdfV1 => extract_links_pdf(self, page, output).await,
         }
     }
 }
@@ -109,9 +127,6 @@ impl ExtractorMethodMetaFactory for ExtractorMethod {
     }
 }
 
-
-
-
 impl ExtractorMethod {
     pub fn is_compatible(&self, page: &ProcessedData<'_>) -> bool {
         match self {
@@ -125,8 +140,8 @@ impl ExtractorMethod {
                 matches!(
                     page.1.format,
                     InterpretedProcessibleFileFormat::PlainText
-                    | InterpretedProcessibleFileFormat::StructuredPlainText
-                    | InterpretedProcessibleFileFormat::ProgrammingLanguage
+                        | InterpretedProcessibleFileFormat::StructuredPlainText
+                        | InterpretedProcessibleFileFormat::ProgrammingLanguage
                 )
             }
             #[cfg(not(windows))]
@@ -154,16 +169,19 @@ impl ExtractorMethod {
             ExtractorMethod::Xlink => {
                 matches!(page.1.format, InterpretedProcessibleFileFormat::XML)
             }
-            ExtractorMethod::RawV1 => {
-                true
-            }
+            ExtractorMethod::RawV1 => true,
         }
     }
 }
 
-
-async fn extract_links_hml<C>(extractor: &impl ExtractorMethodMetaFactory, context: &C, page: &ProcessedData<'_>, output: &mut ExtractorResult) -> Result<usize, LinkExtractionError>
-where C: SupportsConfigs + SupportsGdbrRegistry
+async fn extract_links_hml<C>(
+    extractor: &impl ExtractorMethodMetaFactory,
+    context: &C,
+    page: &ProcessedData<'_>,
+    output: &mut ExtractorResult,
+) -> Result<usize, LinkExtractionError>
+where
+    C: SupportsConfigs + SupportsGdbrRegistry,
 {
     match &page.2 {
         Decoded::InMemory { data: result, .. } => {
@@ -171,7 +189,7 @@ where C: SupportsConfigs + SupportsGdbrRegistry
                 &page.0.url,
                 result.as_str(),
                 context,
-                page.3
+                page.3,
             ) {
                 None => Ok(0),
                 Some((base, extracted, errors)) => {
@@ -182,13 +200,20 @@ where C: SupportsConfigs + SupportsGdbrRegistry
                                 message.push_str(err.as_ref());
                                 message.push('\n');
                             }
-                            log::trace!("Error parsing '{}'\n---START---\n{message}\n---END---\n", page.0.url)
+                            log::trace!(
+                                "Error parsing '{}'\n---START---\n{message}\n---END---\n",
+                                page.0.url
+                            )
                         }
                     }
                     let mut ct = 0usize;
                     let base_ref = base.as_ref();
                     for (origin, link) in extracted {
-                        match ExtractedLink::pack(base_ref, &link, extractor.new_with_meta(ExtractorMethodMeta::Html(origin))) {
+                        match ExtractedLink::pack(
+                            base_ref,
+                            &link,
+                            extractor.new_with_meta(ExtractorMethodMeta::Html(origin)),
+                        ) {
                             Ok(link) => {
                                 if link.is_not(base_ref) {
                                     if output.register_link(link) {
@@ -197,7 +222,11 @@ where C: SupportsConfigs + SupportsGdbrRegistry
                                 }
                             }
                             Err(error) => {
-                                log::debug!("Was not able to parse link {} from html. Error: {}", link, error)
+                                log::debug!(
+                                    "Was not able to parse link {} from html. Error: {}",
+                                    link,
+                                    error
+                                )
                             }
                         }
                     }
@@ -205,77 +234,103 @@ where C: SupportsConfigs + SupportsGdbrRegistry
                 }
             }
         }
-        Decoded::OffMemory { .. } => { Err(LinkExtractionError::CanNotStoreInMemory) }
-        Decoded::None => { Ok(0) }
+        Decoded::OffMemory { .. } => Err(LinkExtractionError::CanNotStoreInMemory),
+        Decoded::None => Ok(0),
     }
 }
 
-async fn extract_links_javascript(extractor: &impl ExtractorMethodMetaFactory, page: &ProcessedData<'_>, output: &mut ExtractorResult) -> Result<usize, LinkExtractionError> {
+async fn extract_links_javascript(
+    extractor: &impl ExtractorMethodMetaFactory,
+    page: &ProcessedData<'_>,
+    output: &mut ExtractorResult,
+) -> Result<usize, LinkExtractionError> {
     match &page.2 {
         Decoded::InMemory { data: result, .. } => {
             let mut ct = 0usize;
             for entry in crate::extraction::js::extract_links(result.as_str()) {
-                match ExtractedLink::pack(&page.0.url, entry.as_str(), extractor.new_without_meta()) {
+                match ExtractedLink::pack(&page.0.url, entry.as_str(), extractor.new_without_meta())
+                {
                     Ok(link) => {
                         if output.register_link(link) {
                             ct += 1;
                         }
                     }
                     Err(error) => {
-                        log::debug!("Was not able to parse {} from javascript. Error: {}", entry, error)
+                        log::debug!(
+                            "Was not able to parse {} from javascript. Error: {}",
+                            entry,
+                            error
+                        )
                     }
                 }
             }
             Ok(ct)
         }
-        Decoded::OffMemory { .. } => { Err(LinkExtractionError::CanNotStoreInMemory) }
-        Decoded::None => { Ok(0) }
+        Decoded::OffMemory { .. } => Err(LinkExtractionError::CanNotStoreInMemory),
+        Decoded::None => Ok(0),
     }
 }
 
-async fn extract_links_plain_text(extractor: &impl ExtractorMethodMetaFactory, page: &ProcessedData<'_>, output: &mut ExtractorResult) -> Result<usize, LinkExtractionError> {
+async fn extract_links_plain_text(
+    extractor: &impl ExtractorMethodMetaFactory,
+    page: &ProcessedData<'_>,
+    output: &mut ExtractorResult,
+) -> Result<usize, LinkExtractionError> {
     match &page.2 {
         Decoded::InMemory { data: result, .. } => {
             let mut finder = linkify::LinkFinder::new();
             finder.kinds(&[linkify::LinkKind::Url]);
             let mut ct = 0usize;
             for entry in finder.links(result.as_str()) {
-                match ExtractedLink::pack(&page.0.url, entry.as_str(), extractor.new_without_meta()) {
+                match ExtractedLink::pack(&page.0.url, entry.as_str(), extractor.new_without_meta())
+                {
                     Ok(link) => {
                         if output.register_link(link) {
                             ct += 1;
                         }
                     }
                     Err(error) => {
-                        log::debug!("Was not able to parse {:?} from plain text. Error: {}", entry, error)
+                        log::debug!(
+                            "Was not able to parse {:?} from plain text. Error: {}",
+                            entry,
+                            error
+                        )
                     }
                 }
             }
             Ok(ct)
         }
-        Decoded::OffMemory { .. } => { Err(LinkExtractionError::CanNotStoreInMemory) }
-        Decoded::None => { Ok(0) }
+        Decoded::OffMemory { .. } => Err(LinkExtractionError::CanNotStoreInMemory),
+        Decoded::None => Ok(0),
     }
 }
 
-async fn extract_links_raw(extractor: &impl ExtractorMethodMetaFactory, page: &ProcessedData<'_>, output: &mut ExtractorResult) -> Result<usize, LinkExtractionError> {
-
-    async fn execute<'a, R: Read>(extractor: &impl ExtractorMethodMetaFactory, reader: RobustUtf8Reader<'a, R>, page: &ProcessedData<'_>, output: &mut ExtractorResult) -> Result<usize, LinkExtractionError> {
+async fn extract_links_raw(
+    extractor: &impl ExtractorMethodMetaFactory,
+    page: &ProcessedData<'_>,
+    output: &mut ExtractorResult,
+) -> Result<usize, LinkExtractionError> {
+    async fn execute<'a, R: Read>(
+        extractor: &impl ExtractorMethodMetaFactory,
+        reader: RobustUtf8Reader<'a, R>,
+        page: &ProcessedData<'_>,
+        output: &mut ExtractorResult,
+    ) -> Result<usize, LinkExtractionError> {
         let mut ct = 0usize;
         for entry in extract_possible_urls(reader)? {
-            match ExtractedLink::pack(
-                &page.0.url,
-                &entry.0,
-                extractor.new_without_meta()
-            ) {
+            match ExtractedLink::pack(&page.0.url, &entry.0, extractor.new_without_meta()) {
                 Ok(link) => {
                     if output.register_link(link) {
                         ct += 1;
                     }
-                    continue
+                    continue;
                 }
                 Err(error) => {
-                    log::debug!("Was not able to parse {:?} from raw. Error: {}", entry, error)
+                    log::debug!(
+                        "Was not able to parse {:?} from raw. Error: {}",
+                        entry,
+                        error
+                    )
                 }
             }
         }
@@ -283,45 +338,47 @@ async fn extract_links_raw(extractor: &impl ExtractorMethodMetaFactory, page: &P
     }
 
     match page.2 {
-        Decoded::InMemory { data: in_memory, .. } => {
+        Decoded::InMemory {
+            data: in_memory, ..
+        } => {
             execute(
                 extractor,
                 RobustUtf8Reader::new(Cursor::new(in_memory)),
                 page,
-                output
-            ).await
+                output,
+            )
+            .await
         }
         Decoded::OffMemory { reference, .. } => {
             execute(
                 extractor,
                 RobustUtf8Reader::new(BufReader::new(File::options().read(true).open(reference)?)),
                 page,
-                output
-            ).await
+                output,
+            )
+            .await
         }
-        Decoded::None => {
-            match &page.0.content {
-                RawVecData::None => {
-                    Ok(0)
-                }
-                RawVecData::InMemory { data, .. } => {
-                    execute(
-                        extractor,
-                        RobustUtf8Reader::new(data.reader()),
-                        page,
-                        output
-                    ).await
-                }
-                RawVecData::ExternalFile { file } => {
-                    execute(
-                        extractor,
-                        RobustUtf8Reader::new(BufReader::new(File::options().read(true).open(file)?)),
-                        page,
-                        output
-                    ).await
-                }
+        Decoded::None => match &page.0.content {
+            RawVecData::None => Ok(0),
+            RawVecData::InMemory { data, .. } => {
+                execute(
+                    extractor,
+                    RobustUtf8Reader::new(data.reader()),
+                    page,
+                    output,
+                )
+                .await
             }
-        }
+            RawVecData::ExternalFile { file } => {
+                execute(
+                    extractor,
+                    RobustUtf8Reader::new(BufReader::new(File::options().read(true).open(file)?)),
+                    page,
+                    output,
+                )
+                .await
+            }
+        },
     }
 }
 
@@ -401,12 +458,32 @@ macro_rules! create_extraction_fn {
     };
 }
 
-
 create_extraction_fn!(extract_links_rtf(raw, "rtf", link_scraper::formats::rtf));
-create_extraction_fn!(extract_links_ooxml(raw, "ooxml", link_scraper::formats::ooxml));
+create_extraction_fn!(extract_links_ooxml(
+    raw,
+    "ooxml",
+    link_scraper::formats::ooxml
+));
 create_extraction_fn!(extract_links_odf(raw, "odf", link_scraper::formats::odf));
-create_extraction_fn!(extract_links_exif(raw, "exif", link_scraper::formats::image));
-create_extraction_fn!(extract_links_xml(decoded, "xml", link_scraper::formats::xml));
-create_extraction_fn!(extract_links_svg(decoded, "svg", link_scraper::formats::xml::svg));
-create_extraction_fn!(extract_links_xlink(decoded, "xlink", link_scraper::formats::xml::xlink));
-#[cfg(not(windows))] create_extraction_fn!(extract_links_pdf(raw, "pdf", link_scraper::formats::pdf));
+create_extraction_fn!(extract_links_exif(
+    raw,
+    "exif",
+    link_scraper::formats::image
+));
+create_extraction_fn!(extract_links_xml(
+    decoded,
+    "xml",
+    link_scraper::formats::xml
+));
+create_extraction_fn!(extract_links_svg(
+    decoded,
+    "svg",
+    link_scraper::formats::xml::svg
+));
+create_extraction_fn!(extract_links_xlink(
+    decoded,
+    "xlink",
+    link_scraper::formats::xml::xlink
+));
+#[cfg(not(windows))]
+create_extraction_fn!(extract_links_pdf(raw, "pdf", link_scraper::formats::pdf));

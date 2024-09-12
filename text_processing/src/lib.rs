@@ -12,9 +12,9 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-pub mod tokenizer;
-pub mod stopword_registry;
 pub mod configs;
-pub mod tf_idf;
-pub mod vectorizer;
 pub mod corpus;
+pub mod stopword_registry;
+pub mod tf_idf;
+pub mod tokenizer;
+pub mod vectorizer;

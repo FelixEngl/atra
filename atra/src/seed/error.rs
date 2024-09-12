@@ -12,8 +12,8 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use thiserror::Error;
 use crate::url::AtraUrlOrigin;
+use thiserror::Error;
 
 /// Errors when creating a url
 #[derive(Debug, Error)]
@@ -22,9 +22,9 @@ pub enum SeedCreationError {
     #[error("The host {origin_from_guard} (Guard) is not the same as {origin_from_url} (url)!")]
     GuardAndUrlDifferInOrigin {
         origin_from_guard: AtraUrlOrigin,
-        origin_from_url: AtraUrlOrigin
+        origin_from_url: AtraUrlOrigin,
     },
 
     #[error("No origin found for the url!")]
-    NoOrigin
+    NoOrigin,
 }

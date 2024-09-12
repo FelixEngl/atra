@@ -12,23 +12,22 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-pub mod utf8;
-pub mod selectors;
-pub mod domains;
 pub mod digest;
-pub mod isolang_ext;
+pub mod domains;
 pub mod header_map_extensions;
+pub mod isolang_ext;
 mod language_detection;
+pub mod selectors;
 pub mod serde_ext;
+pub mod utf8;
 
 pub use language_detection::*;
-
 
 /// Compare two optionals by a function.
 pub fn comp_opt<T, F: FnOnce(T, T) -> bool>(a: Option<T>, b: Option<T>, f: F) -> bool {
     match (a, b) {
         (Some(a), Some(b)) => f(a, b),
         (None, None) => true,
-        _ => false
+        _ => false,
     }
 }

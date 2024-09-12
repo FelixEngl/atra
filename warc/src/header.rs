@@ -12,7 +12,6 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-
 // https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1-annotated/
 
 use std::borrow::Borrow;
@@ -35,7 +34,6 @@ use crate::truncated_reason::TruncatedReason;
 /// The supported warc version
 pub const WARC_VERSION: &[u8] = b"WARC/1.1";
 
-
 /// A simple warc record header
 #[derive(Debug, Clone)]
 pub struct WarcHeader {
@@ -56,7 +54,6 @@ pub enum WarcHeaderValueError {
     DigestIsMissingAlgorithm,
 }
 
-
 /// Errors encountered when writing a WarcHeader
 #[derive(Debug, Error)]
 pub enum WarcHeaderWriteError {
@@ -65,18 +62,14 @@ pub enum WarcHeaderWriteError {
     #[error("The mandatory values {0:?} are missing!")]
     MandatoryValuesAreMissing(Vec<WarcFieldName>),
     #[error(transparent)]
-    ValueWriterError(#[from] WarcFieldValueWriteToError)
+    ValueWriterError(#[from] WarcFieldValueWriteToError),
 }
-
-
 
 type WarcHeaderResult = Result<Option<WarcFieldValue>, WarcHeaderValueError>;
 
-
-
 macro_rules! create_setter {
     ($target: ident with $name: ident($self: ident, $var_name: ident: $typ: ty) -> $value_typ: ident) => {
-        
+
         pub fn $name(&mut $self, $var_name: $typ) -> WarcHeaderResult {
             unsafe {
                 Ok($self.unchecked_field(
@@ -87,7 +80,7 @@ macro_rules! create_setter {
         }
     };
     (general@$target: ident with $name: ident($self: ident)) => {
-        
+
         pub fn $name(&mut $self, general: GeneralFieldValue) -> WarcHeaderResult {
             unsafe {
                 Ok($self.unchecked_field(
@@ -153,12 +146,12 @@ pub enum RequiredFieldError<'a> {
     #[error("No value found for {0}!")]
     NotFound(WarcFieldName),
     #[error("Was {0} not the expected type but {1:?}.")]
-    WrongType(WarcFieldName, &'a WarcFieldValue)
+    WrongType(WarcFieldName, &'a WarcFieldValue),
 }
 
 macro_rules! create_getter {
     (optional@$target: ident with $name: ident($self: ident) -> $value_ident: ident as $typ: ty) => {
-        
+
         pub fn $name(&$self) -> Option<Result<&$typ, &WarcFieldValue>> {
             match $self.get_field(&WarcFieldName::$target) {
                 None => None,
@@ -179,7 +172,7 @@ macro_rules! create_getter {
     };
 
     (required@$target: ident with $name: ident($self: ident) -> $value_ident: ident as $typ: ty) => {
-        
+
         pub fn $name<'a>(&'a $self) -> Result<&'a $typ, RequiredFieldError<'a>> {
             match $self.get_field(&WarcFieldName::$target) {
                 None => Err(RequiredFieldError::NotFound(WarcFieldName::$target)),
@@ -246,21 +239,19 @@ macro_rules! create_setter_and_getter {
 }
 
 impl WarcHeader {
-
     pub fn new() -> Self {
         Self {
             version: None,
-            warc_headers: HashMap::default()
+            warc_headers: HashMap::default(),
         }
     }
 
     pub fn with_version(version: String) -> Self {
         Self {
             version: Some(version),
-            warc_headers: HashMap::default()
+            warc_headers: HashMap::default(),
         }
     }
-
 
     // A WARC-Record-ID is an identifier assigned to the current record that is globally unique for
     // its period of intended use. No identifier scheme is mandated by this specification,
@@ -325,36 +316,40 @@ impl WarcHeader {
         }
     }; @optional);
 
-
     create_setter_and_getter!(general@Filename with file_name(self); @optional);
 
     #[cfg(feature = "atra-fieldnames")]
     create_setter_and_getter!(general@ExternalBinFile with external_bin_file(self); @optional);
 
-
     /// Unsafe setter, allows to basically set everything with every value
-    pub unsafe fn unchecked_field(&mut self, key: WarcFieldName, value: WarcFieldValue) -> Option<WarcFieldValue> {
+    pub unsafe fn unchecked_field(
+        &mut self,
+        key: WarcFieldName,
+        value: WarcFieldValue,
+    ) -> Option<WarcFieldValue> {
         self.warc_headers.insert(key, value)
     }
 
     /// Returns the value to the field if any
     pub fn get_field<Q: ?Sized>(&self, k: &Q) -> Option<&WarcFieldValue>
-        where WarcFieldName: Borrow<Q>,
-              Q: Hash + Eq {
+    where
+        WarcFieldName: Borrow<Q>,
+        Q: Hash + Eq,
+    {
         self.warc_headers.get(k)
     }
 
     /// Returns Err if this is not valid
     pub fn is_valid(&self) -> Result<(), Vec<WarcFieldName>> {
-        let data =
-            [
-                WarcFieldName::WarcRecordId,
-                WarcFieldName::ContentLength,
-                WarcFieldName::Date,
-                WarcFieldName::WarcType
-            ].into_iter().filter(
-                |it| !self.warc_headers.contains_key(it)
-            ).collect_vec();
+        let data = [
+            WarcFieldName::WarcRecordId,
+            WarcFieldName::ContentLength,
+            WarcFieldName::Date,
+            WarcFieldName::WarcType,
+        ]
+        .into_iter()
+        .filter(|it| !self.warc_headers.contains_key(it))
+        .collect_vec();
 
         if data.is_empty() {
             Ok(())
@@ -367,17 +362,25 @@ impl WarcHeader {
     /// Checks the validity of the header.
     /// If [append_tailing_newline] is not set, the '\r\n' has to be set manually.
     /// Returns the number of bytes written
-    pub fn write_to(&self, out: &mut impl Write, append_tailing_newline: bool) -> Result<usize, WarcHeaderWriteError> {
+    pub fn write_to(
+        &self,
+        out: &mut impl Write,
+        append_tailing_newline: bool,
+    ) -> Result<usize, WarcHeaderWriteError> {
         if let Err(missing) = self.is_valid() {
-            return Err(WarcHeaderWriteError::MandatoryValuesAreMissing(missing))
+            return Err(WarcHeaderWriteError::MandatoryValuesAreMissing(missing));
         }
-        Ok(unsafe{self.write_to_unchecked(out, append_tailing_newline)?})
+        Ok(unsafe { self.write_to_unchecked(out, append_tailing_newline)? })
     }
 
     /// Writes the warc header to [out] without checking the validity of the header.
     /// If [append_tailing_newline] is not set, the '\r\n' has to be set manually.
     /// Returns the number of bytes written
-    pub unsafe fn write_to_unchecked(&self, out: &mut impl Write, append_tailing_newline: bool) -> Result<usize, WarcHeaderWriteError> {
+    pub unsafe fn write_to_unchecked(
+        &self,
+        out: &mut impl Write,
+        append_tailing_newline: bool,
+    ) -> Result<usize, WarcHeaderWriteError> {
         let mut written = 0usize;
 
         written += if let Some(ref v) = self.version {
@@ -404,8 +407,8 @@ impl Display for WarcHeader {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut s = Vec::new();
         // Never fails
-        unsafe{self.write_to_unchecked(&mut s, false).unwrap()};
-        let s = unsafe {String::from_utf8_unchecked(s)};
+        unsafe { self.write_to_unchecked(&mut s, false).unwrap() };
+        let s = unsafe { String::from_utf8_unchecked(s) };
         f.write_str(&s)
     }
 }

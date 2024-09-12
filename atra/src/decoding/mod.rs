@@ -12,24 +12,24 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::borrow::Cow;
-use std::fs::File;
-use std::io;
-use std::io::{BufRead, BufReader, Write};
+use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
+use crate::data::{Decoded, RawData, RawVecData};
+use crate::format::supported::InterpretedProcessibleFileFormat;
+use crate::format::AtraFileInformation;
+use crate::io::fs::AtraFS;
+use crate::fetching::ResponseData;
+use crate::static_selectors;
 use camino::Utf8PathBuf;
 use chardetng::EncodingDetector;
 use encoding_rs::{DecoderResult, Encoding, UTF_8};
 use itertools::Itertools;
 use scraper::Html;
+use std::borrow::Cow;
+use std::fs::File;
+use std::io;
+use std::io::{BufRead, BufReader, Write};
 use thiserror::Error;
 use tokio::task::yield_now;
-use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
-use crate::data::{Decoded, RawData, RawVecData};
-use crate::format::AtraFileInformation;
-use crate::response::{ResponseData};
-use crate::format::supported::{InterpretedProcessibleFileFormat};
-use crate::io::fs::AtraFS;
-use crate::static_selectors;
 
 /// An error while decoding
 #[derive(Debug, Error)]
@@ -39,7 +39,7 @@ pub enum DecodingError {
     #[error("Decoding the big file failed somehow!")]
     DecodingFileFailed,
     #[error("Out of disc memory!")]
-    OutOfMemory
+    OutOfMemory,
 }
 
 /// Decode complete input to `Cow<'a, str>` _with BOM sniffing_ and with
@@ -61,16 +61,22 @@ pub enum DecodingError {
 /// _Note:_ It is wrong to use this when the input buffer represents only
 /// a segment of the input instead of the whole input. Use `new_decoder()`
 /// when decoding segmented input.
-pub async fn decode<'a, C>(context: &C, page: &'a ResponseData, identified_type: &AtraFileInformation) -> Result<Decoded<Cow<'a, str>, Utf8PathBuf>, DecodingError>
-where C: SupportsConfigs + SupportsFileSystemAccess {
+pub async fn decode<'a, C>(
+    context: &C,
+    page: &'a ResponseData,
+    identified_type: &AtraFileInformation,
+) -> Result<Decoded<Cow<'a, str>, Utf8PathBuf>, DecodingError>
+where
+    C: SupportsConfigs + SupportsFileSystemAccess,
+{
     match page.content() {
-        RawVecData::None => {return Ok(Decoded::None)}
+        RawVecData::None => return Ok(Decoded::None),
         RawVecData::ExternalFile { .. } => {
             if let Some(max_size) = context.configs().crawl().decode_big_files_up_to {
                 let size = page.content().size()?;
                 if max_size < size {
                     log::info!("Skip decoding for {} because the file has {size} bytes but the maximum is {max_size}", page.url);
-                    return Ok(Decoded::None)
+                    return Ok(Decoded::None);
                 }
             }
         }
@@ -88,12 +94,16 @@ where C: SupportsConfigs + SupportsFileSystemAccess {
         }
 
         if let Some(content) = page.content.as_in_memory() {
-            let lossy_parsed = Html::parse_document(String::from_utf8_lossy(content.as_slice()).as_ref());
-            let found_in_html:Option<Vec<&'static Encoding>> =
-                lossy_parsed
-                    .select(&META_CHARSET)
-                    .filter_map(|value| value.attr("charset").map(|value| Encoding::for_label_no_replacement(value.as_bytes())))
-                    .collect();
+            let lossy_parsed =
+                Html::parse_document(String::from_utf8_lossy(content.as_slice()).as_ref());
+            let found_in_html: Option<Vec<&'static Encoding>> = lossy_parsed
+                .select(&META_CHARSET)
+                .filter_map(|value| {
+                    value
+                        .attr("charset")
+                        .map(|value| Encoding::for_label_no_replacement(value.as_bytes()))
+                })
+                .collect();
 
             if let Some(found) = found_in_html {
                 decodings.extend(found);
@@ -101,17 +111,24 @@ where C: SupportsConfigs + SupportsFileSystemAccess {
         }
     }
 
-
     for enc in decodings.iter() {
         let succ = do_decode(page, *enc)?;
         match &succ {
-            Decoded::InMemory { encoding, had_errors, .. } => {
+            Decoded::InMemory {
+                encoding,
+                had_errors,
+                ..
+            } => {
                 if *had_errors {
                     log::debug!("Failed to decode {} with {}.", page.url, encoding.name());
                     continue;
                 }
             }
-            Decoded::OffMemory { reference: result, encoding, had_errors } => {
+            Decoded::OffMemory {
+                reference: result,
+                encoding,
+                had_errors,
+            } => {
                 if *had_errors {
                     log::debug!("Failed to decode {} with {}.", page.url, encoding.name());
                     context.fs().cleanup_data_file(result.as_str())?;
@@ -122,23 +139,28 @@ where C: SupportsConfigs + SupportsFileSystemAccess {
                 continue;
             }
         }
-        return Ok(succ)
+        return Ok(succ);
     }
-
 
     yield_now().await;
 
     decode_by_bom(context, page)
 }
 
-
-fn get_decoders_by_mime<'a>(identified_type: &AtraFileInformation) -> Option<Vec<&'static Encoding>> {
+fn get_decoders_by_mime<'a>(
+    identified_type: &AtraFileInformation,
+) -> Option<Vec<&'static Encoding>> {
     let mime = identified_type.mime.as_ref()?;
     if let Some(param) = mime.get_param_values(mime::CHARSET) {
         if param.is_empty() {
             None
         } else {
-            Some(param.iter().filter_map(|value| Encoding::for_label(value.as_str().as_bytes())).collect_vec())
+            Some(
+                param
+                    .iter()
+                    .filter_map(|value| Encoding::for_label(value.as_str().as_bytes()))
+                    .collect_vec(),
+            )
         }
     } else {
         None
@@ -146,7 +168,13 @@ fn get_decoders_by_mime<'a>(identified_type: &AtraFileInformation) -> Option<Vec
 }
 
 /// Decodes by BOM only.
-fn decode_by_bom<'a, C>(context: &C, page: &'a ResponseData) -> Result<Decoded<Cow<'a, str>, Utf8PathBuf>, DecodingError> where C: SupportsFileSystemAccess {
+fn decode_by_bom<'a, C>(
+    context: &C,
+    page: &'a ResponseData,
+) -> Result<Decoded<Cow<'a, str>, Utf8PathBuf>, DecodingError>
+where
+    C: SupportsFileSystemAccess,
+{
     let bom_buf = page.content().peek_bom(context)?;
 
     if let Some((encoder, _)) = Encoding::for_bom(&bom_buf) {
@@ -155,9 +183,7 @@ fn decode_by_bom<'a, C>(context: &C, page: &'a ResponseData) -> Result<Decoded<C
         let mut enc = EncodingDetector::new();
 
         let result = match page.content() {
-            RawVecData::InMemory { data } => {
-                enc.feed(data.as_ref(), true)
-            }
+            RawVecData::InMemory { data } => enc.feed(data.as_ref(), true),
             RawVecData::ExternalFile { file } => {
                 let mut reader = BufReader::new(File::options().read(true).open(file)?);
                 let mut has_non_ascii = false;
@@ -174,18 +200,20 @@ fn decode_by_bom<'a, C>(context: &C, page: &'a ResponseData) -> Result<Decoded<C
                 }
                 has_non_ascii
             }
-            RawVecData::None => unreachable!()
+            RawVecData::None => unreachable!(),
         };
 
         if result {
             let domain = page.get_url_parsed().domain();
-            let domain = domain.as_ref().map(|value| psl::domain(value.as_bytes())).flatten();
-            let (selected_encoding, is_probably_right) =
-                if let Some(domain) = domain {
-                    enc.guess_assess(Some(domain.suffix().as_bytes()), false)
-                } else {
-                    enc.guess_assess(None, false)
-                };
+            let domain = domain
+                .as_ref()
+                .map(|value| psl::domain(value.as_bytes()))
+                .flatten();
+            let (selected_encoding, is_probably_right) = if let Some(domain) = domain {
+                enc.guess_assess(Some(domain.suffix().as_bytes()), false)
+            } else {
+                enc.guess_assess(None, false)
+            };
             if is_probably_right {
                 let result = do_decode(page, selected_encoding)?;
                 if result.had_errors() {
@@ -208,12 +236,19 @@ fn decode_by_bom<'a, C>(context: &C, page: &'a ResponseData) -> Result<Decoded<C
 }
 
 /// Decodes the content of [page] with [encoding]
-fn do_decode<'a>(page: &'a ResponseData, encoding: &'static Encoding) -> Result<Decoded<Cow<'a, str>, Utf8PathBuf>, DecodingError> {
+fn do_decode<'a>(
+    page: &'a ResponseData,
+    encoding: &'static Encoding,
+) -> Result<Decoded<Cow<'a, str>, Utf8PathBuf>, DecodingError> {
     match &page.content {
         RawData::InMemory { data } => {
             let decoded = encoding.decode(data.as_slice());
             if decoded.2 {
-                log::info!("The page for {} had an error while decoding with {}. ", page.url, encoding.name());
+                log::info!(
+                    "The page for {} had an error while decoding with {}. ",
+                    page.url,
+                    encoding.name()
+                );
             }
             Ok(decoded.into())
         }
@@ -221,7 +256,10 @@ fn do_decode<'a>(page: &'a ResponseData, encoding: &'static Encoding) -> Result<
             let mut decoder = encoding.new_decoder_with_bom_removal();
             let mut out_path = file.clone();
             {
-                let mut name = out_path.file_name().expect("A DataFile always has a name!").to_string();
+                let mut name = out_path
+                    .file_name()
+                    .expect("A DataFile always has a name!")
+                    .to_string();
                 name.push_str("_decoded_");
                 name.push_str(encoding.name());
                 out_path.set_file_name(name);
@@ -233,21 +271,19 @@ fn do_decode<'a>(page: &'a ResponseData, encoding: &'static Encoding) -> Result<
             loop {
                 let buffer = reader.fill_buf()?;
                 if buffer.is_empty() {
-                    let (result, read, written) = decoder.decode_to_utf8_without_replacement(
-                        buffer,
-                        &mut output_buf,
-                        true
+                    let (result, read, written) =
+                        decoder.decode_to_utf8_without_replacement(buffer, &mut output_buf, true);
+                    assert_eq!(
+                        DecoderResult::InputEmpty,
+                        result,
+                        "The input should be empty!"
                     );
-                    assert_eq!(DecoderResult::InputEmpty, result, "The input should be empty!");
                     assert_eq!(0, read, "Read some data but shoudn't!");
                     assert_eq!(0, written, "Wrote some data but shoudn't!");
-                    break
+                    break;
                 }
-                let (result, read, written) = decoder.decode_to_utf8_without_replacement(
-                    buffer,
-                    &mut output_buf,
-                    false
-                );
+                let (result, read, written) =
+                    decoder.decode_to_utf8_without_replacement(buffer, &mut output_buf, false);
 
                 if read == 0 {
                     // Something bad happened.
@@ -262,31 +298,29 @@ fn do_decode<'a>(page: &'a ResponseData, encoding: &'static Encoding) -> Result<
                     }
                 }
 
-
                 let real_written = output.write(&output_buf[..written])?;
-                assert_eq!(written, real_written, "Expected to write {written} but only wrote {real_written}!");
+                assert_eq!(
+                    written, real_written,
+                    "Expected to write {written} but only wrote {real_written}!"
+                );
                 reader.consume(read);
             }
-            Ok(Decoded::new_off_memory(
-                out_path,
-                encoding,
-                had_error,
-            ))
-        },
-        RawData::None => unreachable!()
+            Ok(Decoded::new_off_memory(out_path, encoding, had_error))
+        }
+        RawData::None => unreachable!(),
     }
 }
 
 #[cfg(test)]
 mod test {
-    use std::borrow::Cow;
-    use encoding_rs::{Encoding};
-    use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
-    use reqwest::StatusCode;
-    use crate::decoding::{decode};
-    use crate::response::{ResponseData};
-    use crate::fetching::{FetchedRequestData};
+    use crate::decoding::decode;
+    use crate::fetching::FetchedRequestData;
     use crate::format::AtraFileInformation;
+    use crate::response::ResponseData;
+    use encoding_rs::Encoding;
+    use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
+    use reqwest::StatusCode;
+    use std::borrow::Cow;
 
     macro_rules! test_for {
         (@old $name: ident: $sample: ident($encoding: expr)) => {
@@ -325,69 +359,97 @@ mod test {
         };
     }
 
-
-    fn encode<'a>(encoding: &'static Encoding, data: &'a str) -> (Cow<'a, [u8]>, &'static Encoding, bool) {
+    fn encode<'a>(
+        encoding: &'static Encoding,
+        data: &'a str,
+    ) -> (Cow<'a, [u8]>, &'static Encoding, bool) {
         encoding.encode(data)
     }
 
     fn website_old(encoding: &'static Encoding) -> (ResponseData, &'static str) {
         const DATA: &'static str = include_str!("../samples/sample_1.html");
         let (content, used_enc, _) = encode(encoding, DATA);
-        assert_eq!(encoding, used_enc, "The used encoding {} differs from the expected one {}", used_enc.name(), encoding.name());
+        assert_eq!(
+            encoding,
+            used_enc,
+            "The used encoding {} differs from the expected one {}",
+            used_enc.name(),
+            encoding.name()
+        );
         let data = FetchedRequestData::new(
             RawData::from_vec(content.to_vec()),
             None,
             StatusCode::OK,
             None,
             None,
-            false
+            false,
         );
         (
-            ResponseData::new(data, UrlWithDepth::from_seed("https://www.example.com").unwrap()),
-            DATA
+            ResponseData::new(
+                data,
+                UrlWithDepth::from_seed("https://www.example.com").unwrap(),
+            ),
+            DATA,
         )
     }
-
-
 
     fn website_modern1(encoding: &'static Encoding) -> (ResponseData, &'static str) {
         const DATA: &'static str = include_str!("../samples/sample_1.html");
         let (content, used_enc, _) = encode(encoding, DATA);
-        assert_eq!(encoding, used_enc, "The used encoding {} differs from the expected one {}", used_enc.name(), encoding.name());
+        assert_eq!(
+            encoding,
+            used_enc,
+            "The used encoding {} differs from the expected one {}",
+            used_enc.name(),
+            encoding.name()
+        );
         let mut headers = HeaderMap::new();
-        headers.insert(CONTENT_TYPE, HeaderValue::try_from(format!("text/html; charset={}", encoding.name())).unwrap());
+        headers.insert(
+            CONTENT_TYPE,
+            HeaderValue::try_from(format!("text/html; charset={}", encoding.name())).unwrap(),
+        );
         let data = FetchedRequestData::new(
             RawData::from_vec(content.to_vec()),
             Some(headers),
             StatusCode::OK,
             None,
             None,
-            false
+            false,
         );
         (
-            ResponseData::new(data, UrlWithDepth::from_seed("https://www.example.com").unwrap()),
-            DATA
+            ResponseData::new(
+                data,
+                UrlWithDepth::from_seed("https://www.example.com").unwrap(),
+            ),
+            DATA,
         )
     }
-
-
 
     fn website_modern2(encoding: &'static Encoding) -> (ResponseData, String) {
         const DATA: &'static str = include_str!("../samples/sample_2.html");
         let replaces = DATA.replace("UTF-8", encoding.name());
         let (content, used_enc, _) = encode(encoding, &replaces);
-        assert_eq!(encoding, used_enc, "The used encoding {} differs from the expected one {}", used_enc.name(), encoding.name());
+        assert_eq!(
+            encoding,
+            used_enc,
+            "The used encoding {} differs from the expected one {}",
+            used_enc.name(),
+            encoding.name()
+        );
         let data = FetchedRequestData::new(
             RawData::from_vec(content.to_vec()),
             None,
             StatusCode::OK,
             None,
             None,
-            false
+            false,
         );
         (
-            ResponseData::new(data, UrlWithDepth::from_seed("https://www.example.com").unwrap()),
-            replaces
+            ResponseData::new(
+                data,
+                UrlWithDepth::from_seed("https://www.example.com").unwrap(),
+            ),
+            replaces,
         )
     }
 
@@ -395,18 +457,27 @@ mod test {
         const DATA: &'static str = include_str!("../samples/sample_3.html");
         let replaces = DATA.replace("UTF-8", encoding.name());
         let (content, used_enc, _) = encode(encoding, &replaces);
-        assert_eq!(encoding, used_enc, "The used encoding {} differs from the expected one {}", used_enc.name(), encoding.name());
+        assert_eq!(
+            encoding,
+            used_enc,
+            "The used encoding {} differs from the expected one {}",
+            used_enc.name(),
+            encoding.name()
+        );
         let data = FetchedRequestData::new(
             RawData::from_vec(content.to_vec()),
             None,
             StatusCode::OK,
             None,
             None,
-            false
+            false,
         );
         (
-            ResponseData::new(data, UrlWithDepth::from_seed("https://www.example.com").unwrap()),
-            replaces
+            ResponseData::new(
+                data,
+                UrlWithDepth::from_seed("https://www.example.com").unwrap(),
+            ),
+            replaces,
         )
     }
 
@@ -414,26 +485,38 @@ mod test {
         const DATA: &'static str = include_str!("../samples/sample_4.html");
         let replaces = DATA.replace("UTF-8", encoding.name());
         let (content, used_enc, _) = encode(encoding, &replaces);
-        assert_eq!(encoding, used_enc, "The used encoding {} differs from the expected one {}", used_enc.name(), encoding.name());
+        assert_eq!(
+            encoding,
+            used_enc,
+            "The used encoding {} differs from the expected one {}",
+            used_enc.name(),
+            encoding.name()
+        );
         let mut headers = HeaderMap::new();
-        headers.insert(CONTENT_TYPE, HeaderValue::try_from(format!("text/html; charset={}", encoding.name())).unwrap());
+        headers.insert(
+            CONTENT_TYPE,
+            HeaderValue::try_from(format!("text/html; charset={}", encoding.name())).unwrap(),
+        );
         let data = FetchedRequestData::new(
             RawData::from_vec(content.to_vec()),
             Some(headers),
             StatusCode::OK,
             None,
             None,
-            false
+            false,
         );
         (
-            ResponseData::new(data, UrlWithDepth::from_seed("https://www.example.com").unwrap()),
-            replaces
+            ResponseData::new(
+                data,
+                UrlWithDepth::from_seed("https://www.example.com").unwrap(),
+            ),
+            replaces,
         )
     }
 
-    use paste::paste;
     use crate::data::RawData;
     use crate::url::UrlWithDepth;
+    use paste::paste;
 
     macro_rules! multi_test_for {
         ($encoding: ident) => {

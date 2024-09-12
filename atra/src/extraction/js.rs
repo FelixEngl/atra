@@ -12,11 +12,11 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::collections::HashSet;
 use compact_str::{CompactString, ToCompactString};
 use ress::prelude::{StringLit, Token};
-use ress::Scanner;
 use ress::tokens::Punct;
+use ress::Scanner;
+use std::collections::HashSet;
 
 /// Tries to extract all links from a js-script.
 pub fn extract_links(script: &str) -> HashSet<CompactString> {
@@ -43,15 +43,11 @@ pub fn extract_links(script: &str) -> HashSet<CompactString> {
                     // TODO: handle string concat?????
                     Token::String(value) => {
                         if !href_found {
-                            continue
+                            continue;
                         }
                         let link = match value {
-                            StringLit::Single(value) => {
-                                value.content.to_compact_string()
-                            }
-                            StringLit::Double(value) => {
-                                value.content.to_compact_string()
-                            }
+                            StringLit::Single(value) => value.content.to_compact_string(),
+                            StringLit::Double(value) => value.content.to_compact_string(),
                         };
                         href_found = false;
                         links.insert(link);
@@ -74,7 +70,7 @@ mod test {
         ele.href = 'https://a11ywatch.com';
         "###;
     #[test]
-    fn test(){
+    fn test() {
         println!("{:?}", extract_links(SCRIPT))
     }
 }

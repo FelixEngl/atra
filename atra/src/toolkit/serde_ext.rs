@@ -12,13 +12,12 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-
 #[macro_export]
 macro_rules! next_from_seq {
     ($self: ident, $seq: ident, $len: expr) => {
         match $seq.next_element()? {
             Some(value) => value,
-            None => return Err(Error::invalid_length($len, &$self))
+            None => return Err(Error::invalid_length($len, &$self)),
         }
     };
 }
@@ -29,28 +28,25 @@ macro_rules! next_key_from_map {
         match $map.next_key::<&str>()? {
             Some(value) => {
                 if !$exp.contains(&value) {
-                    return Err(Error::unknown_field(value, $exp))
+                    return Err(Error::unknown_field(value, $exp));
                 } else {
                     value
                 }
-            },
-            None => return Err(Error::invalid_length($len, &$self))
+            }
+            None => return Err(Error::invalid_length($len, &$self)),
         }
     };
 }
-
-
-
 
 /// For `http::StatusCode`
 ///
 /// `#[serde(with = "http_serde::status_code")]`
 pub mod status_code {
+    use reqwest::StatusCode;
     use serde::de;
     use serde::de::{Unexpected, Visitor};
     use serde::{Deserializer, Serializer};
     use std::fmt;
-    use reqwest::StatusCode;
 
     /// Implementation detail. Use derive annotations instead.
     pub fn serialize<S: Serializer>(status: &StatusCode, ser: S) -> Result<S::Ok, S::Error> {
@@ -98,10 +94,9 @@ pub mod status_code {
 
     /// Implementation detail.
     pub fn deserialize<'de, D>(de: D) -> Result<StatusCode, D::Error>
-        where
-            D: Deserializer<'de>,
+    where
+        D: Deserializer<'de>,
     {
         de.deserialize_u16(StatusVisitor)
     }
 }
-

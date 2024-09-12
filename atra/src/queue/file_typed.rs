@@ -12,20 +12,20 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::fmt::{Debug};
-use std::marker::PhantomData;
-use std::path::Path;
-use serde::{Serialize};
-use serde::de::DeserializeOwned;
-use tokio::sync::broadcast::Receiver;
-use crate::queue::{AgingQueueElement, QueueError};
 use crate::queue::file::RawAgingQueueFile;
 use crate::queue::traits::{AgingQueue, RawAgingQueue};
+use crate::queue::{AgingQueueElement, QueueError};
 use crate::url::queue::EnqueueCalled;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+use std::fmt::Debug;
+use std::marker::PhantomData;
+use std::path::Path;
+use tokio::sync::broadcast::Receiver;
 
-pub trait TypedAgingQueueElement: AgingQueueElement + Serialize + DeserializeOwned + Debug{}
+pub trait TypedAgingQueueElement: AgingQueueElement + Serialize + DeserializeOwned + Debug {}
 
-impl<T: AgingQueueElement + Serialize + DeserializeOwned + Debug> TypedAgingQueueElement for T{}
+impl<T: AgingQueueElement + Serialize + DeserializeOwned + Debug> TypedAgingQueueElement for T {}
 
 // todo: cache structure for helper?
 
@@ -33,7 +33,7 @@ impl<T: AgingQueueElement + Serialize + DeserializeOwned + Debug> TypedAgingQueu
 #[derive(Debug, Clone)]
 pub struct AgingQueueFile<T: TypedAgingQueueElement> {
     queue: RawAgingQueueFile,
-    _element_typ: PhantomData<T>
+    _element_typ: PhantomData<T>,
 }
 
 impl<T: TypedAgingQueueElement> AgingQueueFile<T> {
@@ -46,7 +46,7 @@ impl<T: TypedAgingQueueElement> AgingQueueFile<T> {
     fn new_with(queue: RawAgingQueueFile) -> Self {
         Self {
             queue: queue,
-            _element_typ: PhantomData
+            _element_typ: PhantomData,
         }
     }
 }
@@ -71,14 +71,13 @@ impl<T: TypedAgingQueueElement> RawAgingQueue for AgingQueueFile<T> {
     }
 }
 
-impl<T: TypedAgingQueueElement> AgingQueue<T> for AgingQueueFile<T>{}
+impl<T: TypedAgingQueueElement> AgingQueue<T> for AgingQueueFile<T> {}
 
 impl<T: TypedAgingQueueElement> Default for AgingQueueFile<T> {
     fn default() -> Self {
         Self {
             queue: RawAgingQueueFile::default(),
-            _element_typ: PhantomData
+            _element_typ: PhantomData,
         }
     }
 }
-

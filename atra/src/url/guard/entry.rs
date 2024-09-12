@@ -12,16 +12,16 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::time::SystemTime;
-use serde::{Deserialize, Serialize};
 use crate::url::Depth;
+use serde::{Deserialize, Serialize};
+use std::time::SystemTime;
 
 /// The entry for an origin
 #[derive(Debug, Serialize, Deserialize, Copy, Clone)]
 pub struct GuardEntry {
     pub(super) is_in_use: bool,
     pub(super) last_modification: Option<SystemTime>,
-    pub(super) depth: Depth
+    pub(super) depth: Depth,
 }
 
 impl GuardEntry {
@@ -37,4 +37,3 @@ impl GuardEntry {
         self.depth
     }
 }
-

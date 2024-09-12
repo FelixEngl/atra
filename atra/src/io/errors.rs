@@ -10,7 +10,7 @@ type Result<T> = std::result::Result<T, ErrorWithPath>;
 pub struct ErrorWithPath {
     path: Utf8PathBuf,
     #[source]
-    source: std::io::Error
+    source: std::io::Error,
 }
 
 impl ErrorWithPath {
@@ -20,10 +20,12 @@ impl ErrorWithPath {
     }
 }
 
-
 /// Helper trait to convert Result-enums to Result-enums with FSAError
 #[sealed]
-pub trait ToErrorWithPath<T> where Self: Sized {
+pub trait ToErrorWithPath<T>
+where
+    Self: Sized,
+{
     /// Converts a normal IO error to an error with a path
     fn to_error_with_path<P: AsRef<Utf8Path>>(self, path: P) -> Result<T>;
 

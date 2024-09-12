@@ -12,18 +12,17 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use serde::{Deserialize, Serialize};
 use crate::extraction::extractor_method::ExtractorMethod;
 use crate::extraction::html::LinkOrigin;
+use serde::{Deserialize, Serialize};
 
 /// Holds information about the used extraction information
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ExtractorMethodHint {
     pub used_method: ExtractorMethod,
     #[serde(default)]
-    pub meta: Option<ExtractorMethodMeta>
+    pub meta: Option<ExtractorMethodMeta>,
 }
-
 
 impl ExtractorMethodHint {
     pub fn new(used_method: ExtractorMethod, meta: Option<ExtractorMethodMeta>) -> Self {
@@ -42,7 +41,7 @@ impl ExtractorMethodHint {
 /// Some kind of metadata for the used extraction method.
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub enum ExtractorMethodMeta {
-    Html(LinkOrigin)
+    Html(LinkOrigin),
 }
 
 pub trait ExtractorMethodMetaFactory {

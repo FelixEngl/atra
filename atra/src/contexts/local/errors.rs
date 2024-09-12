@@ -12,12 +12,12 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::io;
-use thiserror::Error;
 use crate::database::DatabaseError;
 use crate::link_state::LinkStateDBError;
 use crate::queue::QueueError;
 use crate::web_graph::LinkNetError;
+use std::io;
+use thiserror::Error;
 
 /// Error messages when the context fails somehow.
 #[derive(Debug, Error)]
@@ -34,7 +34,7 @@ pub enum LinkHandlingError {
 #[derive(Debug, Error)]
 pub enum WebsiteCrawlerError {
     #[error(transparent)]
-    Fetcher(#[from] crate::client::Error),
+    Fetcher(#[from] crate::client::ClientError),
     #[error(transparent)]
     Database(#[from] DatabaseError),
     #[error(transparent)]

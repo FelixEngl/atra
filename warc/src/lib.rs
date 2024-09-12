@@ -12,12 +12,12 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-pub mod writer;
-pub mod states;
-pub mod header;
 pub mod field;
+pub mod header;
 pub mod media_type;
-pub mod record_type;
-pub mod reader;
 pub mod parser;
+pub mod reader;
+pub mod record_type;
+pub mod states;
 pub mod truncated_reason;
+pub mod writer;

@@ -12,11 +12,11 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::fmt::Debug;
-use crate::url::AtraUrlOrigin;
-use crate::url::guard::{GuardPoisonedError, GuardianError, UrlGuard};
 use crate::url::guard::entry::GuardEntry;
+use crate::url::guard::{GuardPoisonedError, GuardianError, UrlGuard};
+use crate::url::AtraUrlOrigin;
 use crate::url::UrlWithDepth;
+use std::fmt::Debug;
 
 /// Basic api that is not public to the rest of the code
 pub unsafe trait UnsafeUrlGuardian {
@@ -31,7 +31,10 @@ pub unsafe trait UnsafeUrlGuardian {
 pub trait UrlGuardian: UnsafeUrlGuardian + Debug + Clone {
     /// Returns a guard if the reserve was successful.
     /// Returns an error if there is the domain is already in use.
-    async fn try_reserve<'a>(&'a self, url: &UrlWithDepth) -> Result<UrlGuard<'a, Self>, GuardianError>;
+    async fn try_reserve<'a>(
+        &'a self,
+        url: &UrlWithDepth,
+    ) -> Result<UrlGuard<'a, Self>, GuardianError>;
 
     /// Returns true if crawling this [url] provides an additional value for the host in general
     async fn can_provide_additional_value(&self, url: &UrlWithDepth) -> bool;
@@ -47,7 +50,8 @@ pub trait UrlGuardian: UnsafeUrlGuardian + Debug + Clone {
     async fn currently_reserved_origins(&self) -> Vec<AtraUrlOrigin>;
 
     /// Returns an error if the host is poisoned
-    async fn check_if_poisoned<'a>(&self, guard: &UrlGuard<'a, Self>) -> Result<(), GuardPoisonedError>;
+    async fn check_if_poisoned<'a>(
+        &self,
+        guard: &UrlGuard<'a, Self>,
+    ) -> Result<(), GuardPoisonedError>;
 }
-
-

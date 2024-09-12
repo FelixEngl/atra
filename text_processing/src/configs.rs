@@ -12,23 +12,26 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::ops::Deref;
+use crate::stopword_registry::StopWordRepository;
 use isolang::Language;
 use rust_stemmers::Algorithm;
 use serde::{Deserialize, Serialize};
-use crate::stopword_registry::StopWordRepository;
+use std::ops::Deref;
 
 /// The config for a stopword registry
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, Default)]
 #[serde(transparent)]
 pub struct StopwordRegistryConfig {
-    pub registries: Vec<StopWordRepository>
+    pub registries: Vec<StopWordRepository>,
 }
 
 impl PartialEq for StopwordRegistryConfig {
     fn eq(&self, other: &Self) -> bool {
         self.registries.len() == other.registries.len()
-            && self.registries.iter().all(|value| other.registries.contains(value))
+            && self
+                .registries
+                .iter()
+                .all(|value| other.registries.contains(value))
     }
 }
 
@@ -40,12 +43,11 @@ impl Deref for StopwordRegistryConfig {
     }
 }
 
-
 /// The config for the text processing used by other modules.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenizerConfig {
     /// If set to true the text is normalized
     pub normalize_text: bool,
     pub stopword_language: Option<Language>,
-    pub stemmer: Option<Algorithm>
+    pub stemmer: Option<Algorithm>,
 }

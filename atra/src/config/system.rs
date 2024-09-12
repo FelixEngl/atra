@@ -12,24 +12,21 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::num::NonZeroUsize;
-use serde::{Deserialize, Serialize};
 use crate::web_graph::DEFAULT_CACHE_SIZE_WEB_GRAPH;
+use serde::{Deserialize, Serialize};
+use std::num::NonZeroUsize;
 use ubyte::ByteUnit;
 
 /// The default cache size for the robots cache
-pub const DEFAULT_CACHE_SIZE_ROBOTS: NonZeroUsize = unsafe{NonZeroUsize::new_unchecked(32)};
+pub const DEFAULT_CACHE_SIZE_ROBOTS: NonZeroUsize = unsafe { NonZeroUsize::new_unchecked(32) };
 
 /// The default size of a fetched side that can be stored in memory (in byte)
-pub const DEFAULT_MAX_SIZE_IN_MEMORY_DOWNLOAD: u64 =
-    ByteUnit::Megabyte(100).as_u64();
-
+pub const DEFAULT_MAX_SIZE_IN_MEMORY_DOWNLOAD: u64 = ByteUnit::Megabyte(100).as_u64();
 
 /// Config of the system, basically caches etc.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename(serialize = "System"))]
 pub struct SystemConfig {
-
     /// The cache size of the robots manager
     #[serde(default = "_default_cache_size_robots")]
     pub robots_cache_size: NonZeroUsize,
@@ -49,15 +46,18 @@ pub struct SystemConfig {
 
     /// Log to a file?
     #[serde(default)]
-    pub log_to_file: bool
+    pub log_to_file: bool,
 }
 
-
-const fn _default_log_level() -> log::LevelFilter { log::LevelFilter::Info }
+const fn _default_log_level() -> log::LevelFilter {
+    log::LevelFilter::Info
+}
 const fn _default_cache_size_robots() -> NonZeroUsize {
     DEFAULT_CACHE_SIZE_ROBOTS
 }
-const fn _default_cache_size_web_graph() -> NonZeroUsize { DEFAULT_CACHE_SIZE_WEB_GRAPH }
+const fn _default_cache_size_web_graph() -> NonZeroUsize {
+    DEFAULT_CACHE_SIZE_WEB_GRAPH
+}
 const fn _default_max_in_memory() -> u64 {
     DEFAULT_MAX_SIZE_IN_MEMORY_DOWNLOAD
 }
@@ -69,7 +69,7 @@ impl Default for SystemConfig {
             max_file_size_in_memory: _default_max_in_memory(),
             web_graph_cache_size: _default_cache_size_web_graph(),
             log_level: _default_log_level(),
-            log_to_file: false
+            log_to_file: false,
         }
     }
 }

@@ -12,30 +12,31 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use camino::Utf8PathBuf;
 use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
 use crate::data::{Decoded, RawVecData};
 use crate::decoding::{decode, DecodingError};
 use crate::format::AtraFileInformation;
-use crate::response::{ResponseData};
-
+use crate::fetching::ResponseData;
+use camino::Utf8PathBuf;
 
 /// Decode the data
 pub async fn process<'a, C>(
     context: &C,
     page: &'a ResponseData,
-    identified_type: &AtraFileInformation
+    identified_type: &AtraFileInformation,
 ) -> Result<Decoded<String, Utf8PathBuf>, DecodingError>
-where C: SupportsFileSystemAccess + SupportsConfigs {
+where
+    C: SupportsFileSystemAccess + SupportsConfigs,
+{
     match &page.content {
-        RawVecData::None => {
-            return Ok(Decoded::None)
-        }
+        RawVecData::None => return Ok(Decoded::None),
         _ => {}
     };
 
     if identified_type.format.supports_decoding() {
-        Ok(decode(context, &page, &identified_type).await?.map_in_memory(|value| value.to_string()))
+        Ok(decode(context, &page, &identified_type)
+            .await?
+            .map_in_memory(|value| value.to_string()))
     } else {
         log::debug!("Decoding for {} not supported!", page.url.url);
         Ok(Decoded::None)

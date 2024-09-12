@@ -12,18 +12,16 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::fmt::{Debug};
-use std::path::Path;
-use rocksdb::{BlockBasedOptions, DB, DBCompressionType, MergeOperands, Options, SliceTransform};
-use thiserror::Error;
 use crate::link_state::{LinkState, LinkStateType};
+use rocksdb::{BlockBasedOptions, DBCompressionType, MergeOperands, Options, SliceTransform, DB};
+use std::fmt::Debug;
+use std::path::Path;
+use thiserror::Error;
 
 pub const LINK_STATE_DB_CF: &'static str = "ls";
 pub const CRAWL_DB_CF: &'static str = "cr";
 pub const ROBOTS_TXT_DB_CF: &'static str = "rt";
 pub const SEED_ID_DB_CF: &'static str = "si";
-
-
 
 /// Errors when opening a database.
 #[derive(Debug, Error)]
@@ -31,14 +29,14 @@ pub enum OpenDBError {
     #[error(transparent)]
     IO(#[from] std::io::Error),
     #[error(transparent)]
-    RocksDB(#[from] rocksdb::Error)
+    RocksDB(#[from] rocksdb::Error),
 }
 
 #[macro_export]
 macro_rules! declare_column_families {
     ($($self:ident.$db:ident => $name: ident($imported_name: ident))+) => {
         $(
-            const $imported_name: &'static str = $crate::toolkit::rocksdb_ext::$imported_name;
+            const $imported_name: &'static str = $crate::database::$imported_name;
             fn $name(&$self) -> std::sync::Arc<rocksdb::BoundColumnFamily> {
                 unsafe{$self.$db.cf_handle(Self::$imported_name).unwrap_unchecked()}
             }
@@ -52,7 +50,7 @@ macro_rules! db_health_check {
         $(
             if $db.cf_handle($handle_name).is_none() {
                 if cfg!(test) {
-                    $db.create_cf($handle_name, &$crate::toolkit::rocksdb_ext::$init()).expect(
+                    $db.create_cf($handle_name, &$crate::database::$init()).expect(
                         format!("Handle {} was not found: '{}'", $handle_name, $message).as_str()
                     );
                 } else {
@@ -73,7 +71,8 @@ pub fn open_db<P: AsRef<Path>>(path: P) -> Result<DB, OpenDBError> {
 use rocksdb::Error;
 
 /// Deletes a db
-#[cfg(test)] pub fn destroy_db<P: AsRef<Path>>(path: P) -> Result<(), Error> {
+#[cfg(test)]
+pub fn destroy_db<P: AsRef<Path>>(path: P) -> Result<(), Error> {
     if path.as_ref().exists() {
         DB::destroy(&db_options(), path)
     } else {
@@ -95,10 +94,10 @@ fn create_open_options() -> (Options, [(&'static str, Options); 4]) {
 
 /// A save method to open a [DB] without knowing all the cfs
 fn open_db_internal<P, I, N>(opts: &Options, path: P, cf_options: I) -> Result<DB, OpenDBError>
-    where
-        P: AsRef<Path>,
-        I: IntoIterator<Item = (N, Options)>,
-        N: AsRef<str>
+where
+    P: AsRef<Path>,
+    I: IntoIterator<Item = (N, Options)>,
+    N: AsRef<str>,
 {
     let path = path.as_ref();
     if !path.exists() {
@@ -106,7 +105,6 @@ fn open_db_internal<P, I, N>(opts: &Options, path: P, cf_options: I) -> Result<D
     }
     Ok(DB::open_cf_with_opts(&opts, path, cf_options)?)
 }
-
 
 fn db_options() -> Options {
     // May need https://github.com/facebook/rocksdb/wiki/BlobDB#performance-tuning
@@ -130,14 +128,20 @@ fn db_options() -> Options {
     options
 }
 
-fn merge_linkstate(new_key: &[u8], existing_val: Option<&[u8]>, operands: &MergeOperands) -> Option<Vec<u8>> {
+fn merge_linkstate(
+    new_key: &[u8],
+    existing_val: Option<&[u8]>,
+    operands: &MergeOperands,
+) -> Option<Vec<u8>> {
     let mut merge_result = if let Some(first) = existing_val {
         Vec::from(first)
     } else {
         Vec::new()
     };
     for operand in operands {
-        if operand.is_empty() { continue; }
+        if operand.is_empty() {
+            continue;
+        }
         if merge_result.is_empty() {
             merge_result.extend_from_slice(operand);
             continue;
@@ -161,7 +165,10 @@ fn merge_linkstate(new_key: &[u8], existing_val: Option<&[u8]>, operands: &Merge
         let new_time = if let Ok(new_time) = new_time {
             new_time
         } else {
-            log::error!("Illegal value for {:?}. Does not contain a timestamp in the new value!", new_key);
+            log::error!(
+                "Illegal value for {:?}. Does not contain a timestamp in the new value!",
+                new_key
+            );
             continue;
         };
 
@@ -178,7 +185,6 @@ fn merge_linkstate(new_key: &[u8], existing_val: Option<&[u8]>, operands: &Merge
     }
     Some(merge_result)
 }
-
 
 pub fn link_state_cf_options() -> Options {
     let mut options = Options::default();
@@ -243,7 +249,5 @@ pub fn crawled_page_cf_options() -> Options {
 #[cfg(test)]
 mod test {
     #[test]
-    fn can_extract(){
-
-    }
+    fn can_extract() {}
 }

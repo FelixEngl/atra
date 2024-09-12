@@ -12,13 +12,13 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+use crate::header::{WarcHeader, WarcHeaderWriteError};
+use crate::states::State;
 use std::fmt::{Debug, Formatter};
 use std::io;
 use std::io::{Read, Write};
 use thiserror::Error;
 use ubyte::ByteUnit;
-use crate::header::{WarcHeader, WarcHeaderWriteError};
-use crate::states::State;
 
 /// A writer for a warc file writes the content according to the values
 /// warc-file    = 1*warc-record
@@ -32,7 +32,7 @@ pub struct WarcWriter<W: Write> {
     inner: W,
     bytes_written: usize,
     state: State,
-    corrupt: bool
+    corrupt: bool,
 }
 
 const BODY_TAIL: &[u8; 4] = b"\r\n\r\n";
@@ -53,20 +53,21 @@ pub enum WarcWriterError {
     #[error(transparent)]
     IOError(#[from] io::Error),
     #[error("Current state is {current} but expected {expected}!")]
-    WrongStateError {
-        current: State,
-        expected: State
-    },
+    WrongStateError { current: State, expected: State },
     #[error("The writer is corrupted.")]
     Corrupt,
     #[error(transparent)]
-    HeaderError(#[from] WarcHeaderWriteError)
+    HeaderError(#[from] WarcHeaderWriteError),
 }
-
 
 impl<W: Write> WarcWriter<W> {
     pub fn new(inner: W) -> Self {
-        Self{inner, bytes_written: 0, state: State::ExpectHeader, corrupt: false}
+        Self {
+            inner,
+            bytes_written: 0,
+            state: State::ExpectHeader,
+            corrupt: false,
+        }
     }
 
     /// The number of bytes written
@@ -77,12 +78,12 @@ impl<W: Write> WarcWriter<W> {
     /// Returns an error if the state is not the [expected].
     pub fn check_if_state(&self, expected: State) -> Result<(), WarcWriterError> {
         if self.corrupt {
-            return Err(WarcWriterError::Corrupt)
+            return Err(WarcWriterError::Corrupt);
         }
         if self.state != expected {
             Err(WarcWriterError::WrongStateError {
                 current: self.state,
-                expected
+                expected,
             })
         } else {
             Ok(())
@@ -90,25 +91,25 @@ impl<W: Write> WarcWriter<W> {
     }
 
     /// The current state
-    
+
     pub fn state(&self) -> State {
         self.state
     }
 
     /// Returns true if the writer failed somewhere in a non recoverable way.
-     pub fn corrupted(&self) -> bool {
+    pub fn corrupted(&self) -> bool {
         self.corrupt
     }
 
     /// Sets the corruption flag to [new_corrupt].
     /// May cause the production of illegal WARC archives.
-     pub unsafe fn set_corrupt(&mut self, new_corrupt: bool) -> bool {
+    pub unsafe fn set_corrupt(&mut self, new_corrupt: bool) -> bool {
         std::mem::replace(&mut self.corrupt, new_corrupt)
     }
 
     /// Sets the state to [new_state].
     /// May cause the production of illegal WARC archives.
-     pub unsafe fn set_state(&mut self, new_state: State) -> State {
+    pub unsafe fn set_state(&mut self, new_state: State) -> State {
         std::mem::replace(&mut self.state, new_state)
     }
 
@@ -118,7 +119,7 @@ impl<W: Write> WarcWriter<W> {
     pub fn write_header(&mut self, header: &WarcHeader) -> Result<usize, WarcWriterError> {
         self.check_if_state(State::ExpectHeader)?;
         let written = match header.write_to(&mut self.inner, true) {
-            Ok(value) => {value}
+            Ok(value) => value,
             Err(err) => {
                 self.corrupt = true;
                 return Err(err.into());
@@ -132,7 +133,7 @@ impl<W: Write> WarcWriter<W> {
     /// Write the body tail, does not increment the bytes written.
     fn write_body_tail(&mut self) -> Result<(), WarcWriterError> {
         match self.inner.write(BODY_TAIL) {
-            Ok(_) => {Ok(())}
+            Ok(_) => Ok(()),
             Err(err) => {
                 self.corrupt = true;
                 Err(err.into())
@@ -150,7 +151,7 @@ impl<W: Write> WarcWriter<W> {
                 Ok(_) => {}
                 Err(err) => {
                     self.corrupt = true;
-                    return Err(err.into())
+                    return Err(err.into());
                 }
             }
             self.bytes_written += body.len();
@@ -170,7 +171,7 @@ impl<W: Write> WarcWriter<W> {
         let mut bytes_written = 0usize;
         loop {
             let read = match body.read(&mut buffer) {
-                Ok(value) => {value}
+                Ok(value) => value,
                 Err(err) => {
                     if bytes_written > 0 {
                         self.corrupt = true
@@ -191,7 +192,6 @@ impl<W: Write> WarcWriter<W> {
                     return Err(err.into());
                 }
             }
-
         }
         self.write_body_tail()?;
         self.bytes_written += 4;
@@ -211,13 +211,14 @@ impl<W: Write> WarcWriter<W> {
 
 #[cfg(test)]
 pub(crate) mod test {
-    use std::io::Cursor;
     use crate::parser::test::create_test_header;
     use crate::writer::WarcWriter;
+    use std::io::Cursor;
 
     pub fn build_test_warc() -> Vec<u8> {
         const A1: &[u8; 36] = b"Hallo Welt,\n\n das hier ist ein test!";
-        const A2: &[u8; 64] = b"Ich bin auch eine testfile \n\r\n\rWARC/1.1\r\n Aber das macht nichts!";
+        const A2: &[u8; 64] =
+            b"Ich bin auch eine testfile \n\r\n\rWARC/1.1\r\n Aber das macht nichts!";
         let header = create_test_header("amazon", A1.len() as u64);
         let mut writer = WarcWriter::new(Vec::new());
         writer.write_header(&header).unwrap();
@@ -229,9 +230,9 @@ pub(crate) mod test {
     }
 
     #[test]
-    fn can_write(){
+    fn can_write() {
         let inner = build_test_warc();
-        let data = unsafe{String::from_utf8_unchecked(inner)};
+        let data = unsafe { String::from_utf8_unchecked(inner) };
         println!("{}", data.escape_debug())
     }
 }

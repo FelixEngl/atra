@@ -12,50 +12,54 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use clap::Parser;
-use log::info;
-use crate::application::{Atra, ApplicationMode};
+use crate::application::{ApplicationMode, Atra};
 use crate::args::{consume_args, AtraArgs, ConsumedArgs};
 use crate::config::Configs;
 use crate::runtime::graceful_shutdown;
 use crate::seed::SeedDefinition;
+use clap::Parser;
+use log::info;
 // Shutdown logic from https://github.com/tokio-rs/mini-redis/blob/master/src/server.rs
 
-mod args;
-mod client;
 mod application;
-mod logging;
-mod web_graph;
-mod response;
-mod link_state;
-mod url;
-mod toolkit;
-mod sync;
-mod stores;
-mod runtime;
-mod robots;
-mod queue;
-mod io;
-mod format;
-mod fetching;
-mod extraction;
-mod decoding;
-mod crawl;
-mod contexts;
-mod config;
+mod args;
 mod blacklist;
-mod html;
+mod client;
+mod config;
+mod contexts;
+mod crawl;
+mod data;
+mod database;
+mod decoding;
+mod extraction;
+mod fetching;
+mod format;
 mod gdbr;
+mod html;
+mod io;
+mod link_state;
+mod logging;
+mod queue;
+mod robots;
+mod runtime;
+mod seed;
+mod stores;
+mod sync;
 #[cfg(test)]
 mod test_impls;
-mod data;
+mod toolkit;
+mod url;
 mod warc_ext;
-mod seed;
-mod database;
+mod web_graph;
+mod consumer;
 
 // Bare metal platforms usually have very small amounts of RAM
 // (in the order of hundreds of KB)
-pub const DEFAULT_BUF_SIZE: usize = if cfg!(target_os = "espidf") { 512 } else { 8 * 1024 };
+pub const DEFAULT_BUF_SIZE: usize = if cfg!(target_os = "espidf") {
+    512
+} else {
+    8 * 1024
+};
 
 pub const ATRA_TEXT: &'static str = r#"
         |
@@ -87,42 +91,35 @@ fn exec_args(args: AtraArgs) {
 /// Execute the
 fn exec(application_mode: ApplicationMode, seed_definition: SeedDefinition, configs: Configs) {
     let (notify, shutdown, mut barrier) = graceful_shutdown();
-    let (mut atra, runtime) = Atra::build_with_runtime(
-        application_mode,
-        notify,
-        shutdown,
-    );
+    let (mut atra, runtime) = Atra::build_with_runtime(application_mode, notify, shutdown);
     let signal_handler = tokio::signal::ctrl_c();
     info!("{}", ATRA_TEXT);
-    runtime.block_on(
-        async move {
-            tokio::select! {
-                res = atra.run(seed_definition, configs) => {
-                    if let Err(err) = res {
-                        log::error!("Error: {err}");
-                    }
-                }
-                _ = signal_handler => {
-                    log::info!("Shutting down.");
+    runtime.block_on(async move {
+        tokio::select! {
+            res = atra.run(seed_definition, configs) => {
+                if let Err(err) = res {
+                    log::error!("Error: {err}");
                 }
             }
-            drop(atra);
-            barrier.wait().await;
+            _ = signal_handler => {
+                log::info!("Shutting down.");
+            }
         }
-    );
+        drop(atra);
+        barrier.wait().await;
+    });
     info!("Exit application.")
 }
 
-
 #[cfg(test)]
 mod test {
-    use time::Duration;
-    use crate::application::{ApplicationMode};
+    use crate::application::ApplicationMode;
     use crate::args::{AtraArgs, RunMode};
     use crate::config::crawl::UserAgent;
     use crate::config::{BudgetSetting, Configs, CrawlConfig};
-    use crate::{exec, exec_args};
     use crate::seed::SeedDefinition;
+    use crate::{exec, exec_args};
+    use time::Duration;
 
     #[test]
     pub fn can_generate_example_config() {
@@ -136,18 +133,16 @@ mod test {
     #[test]
     pub fn can_call_single_crawl() {
         let args = AtraArgs {
-            mode: Some(
-                RunMode::SINGLE {
-                    log_level: log::LevelFilter::Trace,
-                    seeds: SeedDefinition::Single("https://choosealicense.com/".to_string()),
-                    session_name: Some("test".to_string()),
-                    depth: 2,
-                    absolute: true,
-                    timeout: None,
-                    agent: UserAgent::Custom("TestCrawl/Atra/v0.1.0".to_string()),
-                    log_to_file: true,
-                }
-            ),
+            mode: Some(RunMode::SINGLE {
+                log_level: log::LevelFilter::Trace,
+                seeds: SeedDefinition::Single("https://choosealicense.com/".to_string()),
+                session_name: Some("test".to_string()),
+                depth: 2,
+                absolute: true,
+                timeout: None,
+                agent: UserAgent::Custom("TestCrawl/Atra/v0.1.0".to_string()),
+                log_to_file: true,
+            }),
             generate_example_config: false,
         };
 

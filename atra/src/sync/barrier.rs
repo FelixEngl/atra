@@ -1,17 +1,16 @@
+use crate::contexts::traits::{SupportsUrlQueue, SupportsWorkerId};
+use crate::url::queue::UrlQueue;
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::select;
 use tokio_util::sync::CancellationToken;
-use crate::contexts::traits::{SupportsUrlQueue, SupportsWorkerId};
-use crate::url::queue::UrlQueue;
 
 /// The result of the [WorkerBarrier]
 #[derive(Debug)]
 pub enum ContinueOrStop<T> {
     Continue(T),
-    Cancelled(T)
+    Cancelled(T),
 }
-
 
 /// A barrier to help with the synchronisation of the workers.
 /// Allows to recover if the workload changes.
@@ -22,7 +21,6 @@ pub struct WorkerBarrier {
 }
 
 impl WorkerBarrier {
-
     pub fn new(number_of_worker: NonZeroUsize) -> Self {
         Self {
             number_of_workers: number_of_worker,
@@ -43,24 +41,48 @@ impl WorkerBarrier {
         self.cancellation_token.cancel()
     }
 
-    pub async fn wait_for_is_cancelled<C, T>(&self, context: &C, cause: T) -> ContinueOrStop<T> where C: SupportsWorkerId + SupportsUrlQueue {
+    pub async fn wait_for_is_cancelled<C, T>(&self, context: &C, cause: T) -> ContinueOrStop<T>
+    where
+        C: SupportsWorkerId + SupportsUrlQueue,
+    {
         self.wait_for_is_cancelled_with(context, || cause).await
     }
 
     /// Waits for a specific context until either all decide to stop orthe queue has some kind of change
-    pub async fn wait_for_is_cancelled_with<C, T, F: FnOnce() -> T>(&self, context: &C, cause_provider: F) -> ContinueOrStop<T> where C: SupportsWorkerId + SupportsUrlQueue {
+    pub async fn wait_for_is_cancelled_with<C, T, F: FnOnce() -> T>(
+        &self,
+        context: &C,
+        cause_provider: F,
+    ) -> ContinueOrStop<T>
+    where
+        C: SupportsWorkerId + SupportsUrlQueue,
+    {
         if self.cancellation_token.is_cancelled() {
-            return ContinueOrStop::Cancelled(cause_provider())
+            return ContinueOrStop::Cancelled(cause_provider());
         }
         let mut queue_changed_subscription = context.url_queue().subscribe_to_change();
-        log::info!("Worker {} starts waiting for stop or queue event.", context.worker_id());
-        let count = self.cancel_requester_count_plus_one.fetch_add(1, Ordering::SeqCst);
-        assert_ne!(0, count, "Worker {} encountered an illegal state with the barrier!", context.worker_id());
+        log::info!(
+            "Worker {} starts waiting for stop or queue event.",
+            context.worker_id()
+        );
+        let count = self
+            .cancel_requester_count_plus_one
+            .fetch_add(1, Ordering::SeqCst);
+        assert_ne!(
+            0,
+            count,
+            "Worker {} encountered an illegal state with the barrier!",
+            context.worker_id()
+        );
         if count == self.number_of_workers.get() {
             log::debug!("Worker {} Send cancellation!", context.worker_id());
             self.cancellation_token.cancel();
         } else {
-            log::debug!("Worker {} Wait for cancellation! ({count}|{})", context.worker_id(), self.number_of_workers.get());
+            log::debug!(
+                "Worker {} Wait for cancellation! ({count}|{})",
+                context.worker_id(),
+                self.number_of_workers.get()
+            );
         }
         select! {
             _ = queue_changed_subscription.recv() => {

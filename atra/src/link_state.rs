@@ -12,25 +12,25 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::array::TryFromSliceError;
-use std::ops::{RangeBounds};
-use std::sync::Arc;
-use rocksdb::{BoundColumnFamily, DB, ReadOptions};
+use crate::database::DBActionType::{Merge, Read, Write};
+use crate::database::LINK_STATE_DB_CF;
+use crate::database::{DBActionType, DatabaseError, RawDatabaseError};
+use crate::url::Depth;
+use crate::url::UrlWithDepth;
+use crate::{db_health_check, declare_column_families};
+use num_enum::FromPrimitive;
+use num_enum::IntoPrimitive;
+use rocksdb::{BoundColumnFamily, ReadOptions, DB};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
+use std::array::TryFromSliceError;
+use std::ops::RangeBounds;
+use std::sync::Arc;
+use strum::AsRefStr;
+use strum::{Display, EnumIs};
 use thiserror::Error;
 use time::{error, OffsetDateTime};
-use crate::url::Depth;
-use num_enum::IntoPrimitive;
-use num_enum::FromPrimitive;
-use strum::{Display, EnumIs};
-use strum::AsRefStr;
 use tokio::task::yield_now;
-use crate::database::{DatabaseError, DBActionType, RawDatabaseError};
-use crate::database::DBActionType::{Merge, Read, Write};
-use crate::{db_health_check, declare_column_families};
-use crate::database::LINK_STATE_DB_CF;
-use crate::url::UrlWithDepth;
 
 /// The state of a link
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq, Hash)]
@@ -120,7 +120,7 @@ impl LinkState {
     Display,
     AsRefStr,
     Hash,
-    EnumIs
+    EnumIs,
 )]
 #[repr(u8)]
 pub enum LinkStateType {
@@ -176,7 +176,6 @@ pub enum LinkStateError {
     TimestampNotReconstructable(#[from] error::ComponentRange),
 }
 
-
 impl LinkState {
     pub const TYP_POS: usize = 0;
     pub const LAST_SIGNIFICANT_TYP_POS: usize = 1;
@@ -186,13 +185,17 @@ impl LinkState {
     pub const IDEAL_SIZE: usize = Self::OFFSET_PAYLOAD;
 
     fn write_timestamp(target: &mut [u8], time: &OffsetDateTime) {
-        (&mut target[Self::OFFSET_TIME..Self::OFFSET_DEPTH]).copy_from_slice(&time.unix_timestamp_nanos().to_be_bytes())
+        (&mut target[Self::OFFSET_TIME..Self::OFFSET_DEPTH])
+            .copy_from_slice(&time.unix_timestamp_nanos().to_be_bytes())
     }
 
     fn write_depth_descriptor(target: &mut [u8], depth: &Depth) {
-        (&mut target[Self::OFFSET_DEPTH..Self::OFFSET_DEPTH + 8]).copy_from_slice(&depth.depth_on_website.to_be_bytes());
-        (&mut target[Self::OFFSET_DEPTH + 8..Self::OFFSET_DEPTH + 16]).copy_from_slice(&depth.distance_to_seed.to_be_bytes());
-        (&mut target[Self::OFFSET_DEPTH + 16..Self::OFFSET_PAYLOAD]).copy_from_slice(&depth.total_distance_to_seed.to_be_bytes());
+        (&mut target[Self::OFFSET_DEPTH..Self::OFFSET_DEPTH + 8])
+            .copy_from_slice(&depth.depth_on_website.to_be_bytes());
+        (&mut target[Self::OFFSET_DEPTH + 8..Self::OFFSET_DEPTH + 16])
+            .copy_from_slice(&depth.distance_to_seed.to_be_bytes());
+        (&mut target[Self::OFFSET_DEPTH + 16..Self::OFFSET_PAYLOAD])
+            .copy_from_slice(&depth.total_distance_to_seed.to_be_bytes());
     }
 
     pub fn as_db_entry(&self) -> SmallVec<[u8; Self::IDEAL_SIZE]> {
@@ -221,7 +224,10 @@ impl LinkState {
 
     pub fn read_last_significant_typ(buffer: &[u8]) -> Result<LinkStateType, LinkStateError> {
         if buffer.len() < Self::OFFSET_TIME {
-            Err(LinkStateError::BufferTooSmall(Self::OFFSET_TIME, buffer.len()))
+            Err(LinkStateError::BufferTooSmall(
+                Self::OFFSET_TIME,
+                buffer.len(),
+            ))
         } else {
             Ok(buffer[Self::LAST_SIGNIFICANT_TYP_POS].into())
         }
@@ -229,19 +235,36 @@ impl LinkState {
 
     pub fn read_timestamp(buffer: &[u8]) -> Result<OffsetDateTime, LinkStateError> {
         if buffer.len() < Self::OFFSET_DEPTH {
-            return Err(LinkStateError::BufferTooSmall(Self::OFFSET_DEPTH, buffer.len()));
+            return Err(LinkStateError::BufferTooSmall(
+                Self::OFFSET_DEPTH,
+                buffer.len(),
+            ));
         }
-        Ok(OffsetDateTime::from_unix_timestamp_nanos(i128::from_be_bytes(buffer[Self::OFFSET_TIME..Self::OFFSET_DEPTH].try_into()?))?)
+        Ok(OffsetDateTime::from_unix_timestamp_nanos(
+            i128::from_be_bytes(buffer[Self::OFFSET_TIME..Self::OFFSET_DEPTH].try_into()?),
+        )?)
     }
 
     pub fn read_depth_desc(buffer: &[u8]) -> Result<Depth, LinkStateError> {
         if buffer.len() < Self::OFFSET_PAYLOAD {
-            return Err(LinkStateError::BufferTooSmall(Self::OFFSET_PAYLOAD, buffer.len()));
+            return Err(LinkStateError::BufferTooSmall(
+                Self::OFFSET_PAYLOAD,
+                buffer.len(),
+            ));
         }
-        let depth_on_website = u64::from_be_bytes((&buffer[Self::OFFSET_DEPTH..Self::OFFSET_DEPTH + 8]).try_into()?);
-        let distance_to_seed = u64::from_be_bytes((&buffer[Self::OFFSET_DEPTH + 8..Self::OFFSET_DEPTH + 16]).try_into()?);
-        let total_distance_to_seed = u64::from_be_bytes((&buffer[Self::OFFSET_DEPTH + 16..Self::OFFSET_PAYLOAD]).try_into()?);
-        Ok(Depth::new(depth_on_website, distance_to_seed, total_distance_to_seed))
+        let depth_on_website =
+            u64::from_be_bytes((&buffer[Self::OFFSET_DEPTH..Self::OFFSET_DEPTH + 8]).try_into()?);
+        let distance_to_seed = u64::from_be_bytes(
+            (&buffer[Self::OFFSET_DEPTH + 8..Self::OFFSET_DEPTH + 16]).try_into()?,
+        );
+        let total_distance_to_seed = u64::from_be_bytes(
+            (&buffer[Self::OFFSET_DEPTH + 16..Self::OFFSET_PAYLOAD]).try_into()?,
+        );
+        Ok(Depth::new(
+            depth_on_website,
+            distance_to_seed,
+            total_distance_to_seed,
+        ))
     }
 
     pub fn read_optional_payload(buffer: &[u8]) -> Option<Vec<u8>> {
@@ -259,15 +282,13 @@ impl LinkState {
         let depth = Self::read_depth_desc(buffer)?;
         let payload = Self::read_optional_payload(buffer);
 
-        Ok(
-            Self {
-                payload,
-                depth,
-                timestamp,
-                typ,
-                last_significant_typ,
-            }
-        )
+        Ok(Self {
+            payload,
+            depth,
+            timestamp,
+            typ,
+            last_significant_typ,
+        })
     }
 }
 
@@ -290,7 +311,11 @@ pub trait LinkStateManager {
     fn upsert_state(&self, url: &UrlWithDepth, upsert: &LinkState) -> Result<(), LinkStateDBError>;
 
     /// Basically an [upsert_state] but the update is automatically generated
-    fn update_state(&self, url: &UrlWithDepth, new_state: LinkStateType) -> Result<(), LinkStateDBError> {
+    fn update_state(
+        &self,
+        url: &UrlWithDepth,
+        new_state: LinkStateType,
+    ) -> Result<(), LinkStateDBError> {
         self.upsert_state(url, &new_state.into_update(url, None))
     }
 
@@ -299,7 +324,12 @@ pub trait LinkStateManager {
 
     /// Basically an [upsert_state] but the update is automatically generated
     #[allow(dead_code)]
-    fn update_state_with_payload(&self, url: &UrlWithDepth, new_state: LinkStateType, payload: Vec<u8>) -> Result<(), LinkStateDBError> {
+    fn update_state_with_payload(
+        &self,
+        url: &UrlWithDepth,
+        new_state: LinkStateType,
+        payload: Vec<u8>,
+    ) -> Result<(), LinkStateDBError> {
         self.upsert_state(url, &new_state.into_update(url, Some(payload)))
     }
 
@@ -309,13 +339,11 @@ pub trait LinkStateManager {
     async fn scan_for_any_link_state<T: RangeBounds<LinkStateType>>(&self, states: T) -> bool;
 }
 
-
 /// A database knowing all the states of all urls.
 #[derive(Clone, Debug)]
 pub struct LinkStateDB {
     db: Arc<DB>,
 }
-
 
 impl LinkStateDB {
     declare_column_families! {
@@ -333,7 +361,12 @@ impl LinkStateDB {
         Ok(Self { db })
     }
 
-    fn set_state_internal(&self, cf: &Arc<BoundColumnFamily>, url: &UrlWithDepth, url_state: &LinkState) -> Result<(), LinkStateDBError> {
+    fn set_state_internal(
+        &self,
+        cf: &Arc<BoundColumnFamily>,
+        url: &UrlWithDepth,
+        url_state: &LinkState,
+    ) -> Result<(), LinkStateDBError> {
         let url_state = url_state.as_db_entry();
         Ok(self.db.put_cf(cf, url, &url_state).enrich_with_entry(
             Self::LINK_STATE_DB_CF,
@@ -343,7 +376,11 @@ impl LinkStateDB {
         )?)
     }
 
-    fn get_state_internal(&self, cf: &Arc<BoundColumnFamily>, url: &UrlWithDepth) -> Result<Option<LinkState>, LinkStateDBError> {
+    fn get_state_internal(
+        &self,
+        cf: &Arc<BoundColumnFamily>,
+        url: &UrlWithDepth,
+    ) -> Result<Option<LinkState>, LinkStateDBError> {
         let found = self.db.get_pinned_cf(cf, url).enrich_without_entry(
             Self::LINK_STATE_DB_CF,
             Read,
@@ -356,23 +393,25 @@ impl LinkStateDB {
         }
     }
 
-    fn upsert_state_internal(&self, cf: &Arc<BoundColumnFamily>, url: &UrlWithDepth, url_state: &LinkState) -> Result<(), LinkStateDBError> {
+    fn upsert_state_internal(
+        &self,
+        cf: &Arc<BoundColumnFamily>,
+        url: &UrlWithDepth,
+        url_state: &LinkState,
+    ) -> Result<(), LinkStateDBError> {
         let url_state = url_state.as_db_entry();
-        Ok(
-            self.db.merge_cf(
-                cf,
-                url,
-                &url_state,
-            ).enrich_with_entry(
-                Self::LINK_STATE_DB_CF,
-                Merge,
-                url,
-                &url_state,
-            )?
-        )
+        Ok(self.db.merge_cf(cf, url, &url_state).enrich_with_entry(
+            Self::LINK_STATE_DB_CF,
+            Merge,
+            url,
+            &url_state,
+        )?)
     }
 
-    async fn scan_for_any_link_state_internal<T: RangeBounds<LinkStateType>>(&self, states: T) -> bool {
+    async fn scan_for_any_link_state_internal<T: RangeBounds<LinkStateType>>(
+        &self,
+        states: T,
+    ) -> bool {
         let mut options = ReadOptions::default();
         options.fill_cache(false);
 
@@ -430,14 +469,20 @@ impl LinkStateManager for LinkStateDB {
         self.get_state_internal(&handle, url)
     }
 
-    fn upsert_state(&self, url: &UrlWithDepth, url_state: &LinkState) -> Result<(), LinkStateDBError> {
+    fn upsert_state(
+        &self,
+        url: &UrlWithDepth,
+        url_state: &LinkState,
+    ) -> Result<(), LinkStateDBError> {
         let handle = self.cf_handle();
         self.upsert_state_internal(&handle, url, url_state)
     }
 
     fn count_state(&self, link_state_type: LinkStateType) -> Result<u64, LinkStateDBError> {
         let handle = self.cf_handle();
-        self.db.flush_cf(&handle).enrich_no_key(LINK_STATE_DB_CF, DBActionType::Flush)?;
+        self.db
+            .flush_cf(&handle)
+            .enrich_no_key(LINK_STATE_DB_CF, DBActionType::Flush)?;
         let mut iter = self.db.raw_iterator_cf(&handle);
         // Forwards iteration
         iter.seek_to_first();
@@ -474,8 +519,13 @@ impl<'a> LinkStateManager for WeakLinkStateDB<'a> {
         self.state_db.get_state_internal(&self.cf, url)
     }
 
-    fn upsert_state(&self, url: &UrlWithDepth, url_state: &LinkState) -> Result<(), LinkStateDBError> {
-        self.state_db.upsert_state_internal(&self.cf, url, url_state)
+    fn upsert_state(
+        &self,
+        url: &UrlWithDepth,
+        url_state: &LinkState,
+    ) -> Result<(), LinkStateDBError> {
+        self.state_db
+            .upsert_state_internal(&self.cf, url, url_state)
     }
 
     fn count_state(&self, link_state_type: LinkStateType) -> Result<u64, LinkStateDBError> {
@@ -487,15 +537,14 @@ impl<'a> LinkStateManager for WeakLinkStateDB<'a> {
     }
 }
 
-
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
-    use scopeguard::defer;
-    use time::OffsetDateTime;
+    use super::{LinkState, LinkStateDB, LinkStateManager, LinkStateType};
     use crate::database::{destroy_db, open_db};
     use crate::url::{Depth, UrlWithDepth};
-    use super::{LinkStateManager, LinkState, LinkStateDB, LinkStateType};
+    use scopeguard::defer;
+    use std::sync::Arc;
+    use time::OffsetDateTime;
 
     #[test]
     fn ser_and_deser_work() {
@@ -518,27 +567,52 @@ mod test {
     fn can_initialize() {
         defer! {let  _ = destroy_db("test.db1");}
 
-
         let db = Arc::new(open_db("test.db1").unwrap());
         let db = LinkStateDB::new(db).unwrap();
 
         db.set_state(
             &UrlWithDepth::from_seed("https://google.de").unwrap(),
-            &LinkState::without_payload(LinkStateType::Discovered, LinkStateType::Discovered, OffsetDateTime::now_utc(), Depth::ZERO),
-        ).unwrap();
+            &LinkState::without_payload(
+                LinkStateType::Discovered,
+                LinkStateType::Discovered,
+                OffsetDateTime::now_utc(),
+                Depth::ZERO,
+            ),
+        )
+        .unwrap();
 
         db.set_state(
             &UrlWithDepth::from_seed("https://amazon.de").unwrap(),
-            &LinkState::without_payload(LinkStateType::Crawled, LinkStateType::Discovered, OffsetDateTime::now_utc(), Depth::ZERO),
-        ).unwrap();
+            &LinkState::without_payload(
+                LinkStateType::Crawled,
+                LinkStateType::Discovered,
+                OffsetDateTime::now_utc(),
+                Depth::ZERO,
+            ),
+        )
+        .unwrap();
 
         db.upsert_state(
             &UrlWithDepth::from_seed("https://google.de").unwrap(),
-            &LinkState::without_payload(LinkStateType::InternalError, LinkStateType::Discovered, OffsetDateTime::now_utc(), Depth::ZERO),
-        ).unwrap();
+            &LinkState::without_payload(
+                LinkStateType::InternalError,
+                LinkStateType::Discovered,
+                OffsetDateTime::now_utc(),
+                Depth::ZERO,
+            ),
+        )
+        .unwrap();
 
-        println!("{:?}", db.get_state(&UrlWithDepth::from_seed("https://amazon.de").unwrap()).unwrap());
-        println!("{:?}", db.get_state(&UrlWithDepth::from_seed("https://google.de").unwrap()).unwrap());
+        println!(
+            "{:?}",
+            db.get_state(&UrlWithDepth::from_seed("https://amazon.de").unwrap())
+                .unwrap()
+        );
+        println!(
+            "{:?}",
+            db.get_state(&UrlWithDepth::from_seed("https://google.de").unwrap())
+                .unwrap()
+        );
     }
 
     #[test]
@@ -553,17 +627,37 @@ mod test {
 
             db.set_state(
                 &UrlWithDepth::from_seed("https://amazon.de").unwrap(),
-                &LinkState::without_payload(LinkStateType::Discovered, LinkStateType::Discovered, OffsetDateTime::now_utc(), Depth::ZERO),
-            ).unwrap();
+                &LinkState::without_payload(
+                    LinkStateType::Discovered,
+                    LinkStateType::Discovered,
+                    OffsetDateTime::now_utc(),
+                    Depth::ZERO,
+                ),
+            )
+            .unwrap();
 
             db.set_state(
                 &UrlWithDepth::from_seed("https://google.de").unwrap(),
-                &LinkState::without_payload(LinkStateType::Crawled, LinkStateType::Discovered, OffsetDateTime::now_utc(), Depth::ZERO),
-            ).unwrap();
+                &LinkState::without_payload(
+                    LinkStateType::Crawled,
+                    LinkStateType::Discovered,
+                    OffsetDateTime::now_utc(),
+                    Depth::ZERO,
+                ),
+            )
+            .unwrap();
         }
 
-        println!("{:?}", db.get_state(&UrlWithDepth::from_seed("https://amazon.de").unwrap()).unwrap());
-        println!("{:?}", db.get_state(&UrlWithDepth::from_seed("https://google.de").unwrap()).unwrap());
+        println!(
+            "{:?}",
+            db.get_state(&UrlWithDepth::from_seed("https://amazon.de").unwrap())
+                .unwrap()
+        );
+        println!(
+            "{:?}",
+            db.get_state(&UrlWithDepth::from_seed("https://google.de").unwrap())
+                .unwrap()
+        );
     }
 
     #[test]
@@ -580,23 +674,40 @@ mod test {
             db.update_state(
                 &UrlWithDepth::from_seed("https://amazon.de").unwrap(),
                 LinkStateType::Discovered,
-            ).unwrap();
+            )
+            .unwrap();
 
             db.update_state(
                 &UrlWithDepth::from_seed("https://google.de").unwrap(),
                 LinkStateType::Discovered,
-            ).unwrap();
+            )
+            .unwrap();
 
             db.update_state(
                 &UrlWithDepth::from_seed("https://google.de").unwrap(),
                 LinkStateType::Crawled,
-            ).unwrap();
+            )
+            .unwrap();
 
-            println!("Amazon: {:?}", db.get_state(&UrlWithDepth::from_seed("https://amazon.de").unwrap()));
-            println!("Google: {:?}", db.get_state(&UrlWithDepth::from_seed("https://google.de").unwrap()));
+            println!(
+                "Amazon: {:?}",
+                db.get_state(&UrlWithDepth::from_seed("https://amazon.de").unwrap())
+            );
+            println!(
+                "Google: {:?}",
+                db.get_state(&UrlWithDepth::from_seed("https://google.de").unwrap())
+            );
         }
 
-        println!("{:?}", db.get_state(&UrlWithDepth::from_seed("https://amazon.de").unwrap()).unwrap());
-        println!("{:?}", db.get_state(&UrlWithDepth::from_seed("https://google.de").unwrap()).unwrap());
+        println!(
+            "{:?}",
+            db.get_state(&UrlWithDepth::from_seed("https://amazon.de").unwrap())
+                .unwrap()
+        );
+        println!(
+            "{:?}",
+            db.get_state(&UrlWithDepth::from_seed("https://google.de").unwrap())
+                .unwrap()
+        );
     }
 }

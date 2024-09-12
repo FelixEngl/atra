@@ -32,7 +32,6 @@ pub struct SessionConfig {
     pub warc_compression_level: Option<u32>,
 }
 
-
 fn _default_service_name() -> String {
     "atra".to_string()
 }
@@ -47,8 +46,7 @@ impl Default for SessionConfig {
             service: "atra".to_string(),
             collection: "unnamed".to_string(),
             crawl_job_id: 0,
-            warc_compression_level: None
+            warc_compression_level: None,
         }
     }
 }
-

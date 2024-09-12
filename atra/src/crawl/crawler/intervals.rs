@@ -12,14 +12,14 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+use crate::client::Client;
+use crate::config::CrawlConfig;
+use crate::robots::information::RobotsInformation;
+use crate::url::{AtraOriginProvider, AtraUrlOrigin, UrlWithDepth};
 use std::collections::HashMap;
 use std::sync::Arc;
 use time::Duration;
 use tokio::time::Interval;
-use crate::client::Client;
-use crate::config::CrawlConfig;
-use crate::robots::information::RobotsInformation;
-use crate::url::{UrlWithDepth, AtraUrlOrigin, AtraOriginProvider};
 
 /// Manages the interval
 pub struct InvervalManager<'a, R: RobotsInformation> {
@@ -27,15 +27,11 @@ pub struct InvervalManager<'a, R: RobotsInformation> {
     configured_robots: Arc<R>,
     registered_intervals: HashMap<AtraUrlOrigin, Interval>,
     default_delay: Option<Duration>,
-    no_domain_default: Interval
+    no_domain_default: Interval,
 }
 
 impl<'a, R: RobotsInformation> InvervalManager<'a, R> {
-    pub fn new(
-        client: &'a Client,
-        config: &CrawlConfig,
-        configured_robots: Arc<R>,
-    ) -> Self {
+    pub fn new(client: &'a Client, config: &CrawlConfig, configured_robots: Arc<R>) -> Self {
         Self {
             client,
             configured_robots,
@@ -45,7 +41,7 @@ impl<'a, R: RobotsInformation> InvervalManager<'a, R> {
                 tokio::time::interval(default.clone().unsigned_abs())
             } else {
                 tokio::time::interval(std::time::Duration::from_millis(1000))
-            }
+            },
         }
     }
 
@@ -54,9 +50,16 @@ impl<'a, R: RobotsInformation> InvervalManager<'a, R> {
             if let Some(interval) = self.registered_intervals.get_mut(&origin) {
                 log::trace!("Wait {origin} for {}ms!", interval.period().as_millis());
                 interval.tick().await;
-                log::trace!("Finished waiting {origin} for {}!", interval.period().as_millis());
+                log::trace!(
+                    "Finished waiting {origin} for {}!",
+                    interval.period().as_millis()
+                );
             } else {
-                let target_duration = if let Some(found) = self.configured_robots.get_or_retrieve_delay(&self.client, url).await {
+                let target_duration = if let Some(found) = self
+                    .configured_robots
+                    .get_or_retrieve_delay(&self.client, url)
+                    .await
+                {
                     log::trace!("Wait found {found}");
                     found.unsigned_abs()
                 } else if let Some(default) = self.default_delay {
@@ -66,8 +69,13 @@ impl<'a, R: RobotsInformation> InvervalManager<'a, R> {
                     log::warn!("Fallback to 100ms");
                     std::time::Duration::from_millis(100)
                 };
-                self.registered_intervals.insert(origin.clone(), tokio::time::interval(target_duration));
-                self.registered_intervals.get_mut(&origin).unwrap().tick().await;
+                self.registered_intervals
+                    .insert(origin.clone(), tokio::time::interval(target_duration));
+                self.registered_intervals
+                    .get_mut(&origin)
+                    .unwrap()
+                    .tick()
+                    .await;
             }
         } else {
             log::trace!("No host tick.");

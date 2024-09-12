@@ -12,24 +12,24 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+use crate::config::Configs;
+use crate::contexts::traits::*;
+use crate::contexts::worker::error::CrawlWriteError;
+use crate::crawl::CrawlResult;
+use crate::crawl::{SlimCrawlResult, StoredDataHint};
+use crate::data::RawVecData;
+use crate::extraction::ExtractedLink;
+use crate::io::errors::ErrorWithPath;
+use crate::io::fs::{AtraFS, WorkerFileSystemAccess};
+use crate::link_state::{LinkState, LinkStateType};
+use crate::seed::BasicSeed;
+use crate::stores::warc::ThreadsafeMultiFileWarcWriter;
+use crate::url::UrlWithDepth;
+use crate::warc_ext::write_warc;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 use text_processing::stopword_registry::StopWordRegistry;
-use crate::crawl::CrawlResult;
-use crate::seed::BasicSeed;
-use crate::crawl::{SlimCrawlResult, StoredDataHint};
-use crate::io::fs::{AtraFS, WorkerFileSystemAccess};
-use crate::config::Configs;
-use crate::contexts::traits::*;
-use crate::contexts::worker::error::WriteError;
-use crate::extraction::ExtractedLink;
-use crate::io::errors::{ErrorWithPath};
-use crate::link_state::{LinkState, LinkStateType};
-use crate::stores::warc::ThreadsafeMultiFileWarcWriter;
-use crate::warc_ext::{write_warc};
-use crate::data::RawVecData;
-use crate::url::UrlWithDepth;
 
 /// A context for a specific worker
 #[derive(Debug)]
@@ -37,7 +37,7 @@ pub struct WorkerContext<T> {
     worker_id: usize,
     inner: Arc<T>,
     worker_file_provider: Arc<WorkerFileSystemAccess>,
-    worker_warc_writer: ThreadsafeMultiFileWarcWriter
+    worker_warc_writer: ThreadsafeMultiFileWarcWriter,
 }
 
 impl<T> AsyncContext for WorkerContext<T> where T: AsyncContext {}
@@ -49,23 +49,29 @@ impl<T> SupportsWorkerId for WorkerContext<T> {
     }
 }
 
-impl<T> WorkerContext<T> where T: SupportsFileSystemAccess {
+impl<T> WorkerContext<T>
+where
+    T: SupportsFileSystemAccess,
+{
     pub async fn create(worker_id: usize, inner: Arc<T>) -> Result<Self, ErrorWithPath> {
         let worker_warc_system = inner.fs().create_worker_file_provider(worker_id).await?;
         Ok(Self::new(worker_id, inner, worker_warc_system)?)
     }
 
-    pub fn new(worker_id: usize, inner: Arc<T>, worker_warc_system: WorkerFileSystemAccess) -> Result<Self, ErrorWithPath> {
+    pub fn new(
+        worker_id: usize,
+        inner: Arc<T>,
+        worker_warc_system: WorkerFileSystemAccess,
+    ) -> Result<Self, ErrorWithPath> {
         let worker_file_provider = Arc::new(worker_warc_system);
-        let worker_warc_writer = ThreadsafeMultiFileWarcWriter::new_for_worker(worker_file_provider.clone())?;
-        Ok(
-            Self {
-                worker_id,
-                inner,
-                worker_file_provider,
-                worker_warc_writer
-            }
-        )
+        let worker_warc_writer =
+            ThreadsafeMultiFileWarcWriter::new_for_worker(worker_file_provider.clone())?;
+        Ok(Self {
+            worker_id,
+            inner,
+            worker_file_provider,
+            worker_warc_writer,
+        })
     }
 }
 
@@ -75,12 +81,15 @@ impl<T> Clone for WorkerContext<T> {
             worker_id: self.worker_id,
             inner: self.inner.clone(),
             worker_file_provider: self.worker_file_provider.clone(),
-            worker_warc_writer: self.worker_warc_writer.clone()
+            worker_warc_writer: self.worker_warc_writer.clone(),
         }
     }
 }
 
-impl<T> SupportsLinkSeeding for WorkerContext<T> where T: SupportsLinkSeeding  {
+impl<T> SupportsLinkSeeding for WorkerContext<T>
+where
+    T: SupportsLinkSeeding,
+{
     type Error = T::Error;
 
     delegate::delegate! {
@@ -92,7 +101,10 @@ impl<T> SupportsLinkSeeding for WorkerContext<T> where T: SupportsLinkSeeding  {
     }
 }
 
-impl<T> SupportsLinkState for WorkerContext<T> where T: SupportsLinkState  {
+impl<T> SupportsLinkState for WorkerContext<T>
+where
+    T: SupportsLinkState,
+{
     type Error = T::Error;
 
     delegate::delegate! {
@@ -110,7 +122,9 @@ impl<T> SupportsLinkState for WorkerContext<T> where T: SupportsLinkState  {
     }
 }
 
-impl<T> SupportsUrlGuarding for WorkerContext<T> where T: SupportsUrlGuarding
+impl<T> SupportsUrlGuarding for WorkerContext<T>
+where
+    T: SupportsUrlGuarding,
 {
     type Guardian = T::Guardian;
 
@@ -121,7 +135,10 @@ impl<T> SupportsUrlGuarding for WorkerContext<T> where T: SupportsUrlGuarding
     }
 }
 
-impl<T> SupportsRobotsManager for WorkerContext<T> where T: SupportsRobotsManager  {
+impl<T> SupportsRobotsManager for WorkerContext<T>
+where
+    T: SupportsRobotsManager,
+{
     type RobotsManager = T::RobotsManager;
 
     delegate::delegate! {
@@ -131,9 +148,11 @@ impl<T> SupportsRobotsManager for WorkerContext<T> where T: SupportsRobotsManage
     }
 }
 
-impl<T> SupportsBlackList for WorkerContext<T> where T: SupportsBlackList  {
+impl<T> SupportsBlackList for WorkerContext<T>
+where
+    T: SupportsBlackList,
+{
     type BlackList = T::BlackList;
-
 
     delegate::delegate! {
         to self.inner {
@@ -142,7 +161,10 @@ impl<T> SupportsBlackList for WorkerContext<T> where T: SupportsBlackList  {
     }
 }
 
-impl<T> SupportsMetaInfo for WorkerContext<T> where T: SupportsMetaInfo {
+impl<T> SupportsMetaInfo for WorkerContext<T>
+where
+    T: SupportsMetaInfo,
+{
     delegate::delegate! {
         to self.inner {
             fn crawl_started_at(&self) -> time::OffsetDateTime;
@@ -152,7 +174,10 @@ impl<T> SupportsMetaInfo for WorkerContext<T> where T: SupportsMetaInfo {
     }
 }
 
-impl<T> SupportsConfigs for WorkerContext<T> where T: SupportsConfigs {
+impl<T> SupportsConfigs for WorkerContext<T>
+where
+    T: SupportsConfigs,
+{
     delegate::delegate! {
         to self.inner {
             fn configs(&self) -> &Configs;
@@ -160,7 +185,10 @@ impl<T> SupportsConfigs for WorkerContext<T> where T: SupportsConfigs {
     }
 }
 
-impl<T> SupportsUrlQueue for WorkerContext<T> where T: SupportsUrlQueue {
+impl<T> SupportsUrlQueue for WorkerContext<T>
+where
+    T: SupportsUrlQueue,
+{
     type UrlQueue = T::UrlQueue;
 
     delegate::delegate! {
@@ -172,7 +200,10 @@ impl<T> SupportsUrlQueue for WorkerContext<T> where T: SupportsUrlQueue {
     }
 }
 
-impl<T> SupportsFileSystemAccess for WorkerContext<T> where T: SupportsFileSystemAccess {
+impl<T> SupportsFileSystemAccess for WorkerContext<T>
+where
+    T: SupportsFileSystemAccess,
+{
     type FileSystem = T::FileSystem;
 
     delegate::delegate! {
@@ -182,7 +213,10 @@ impl<T> SupportsFileSystemAccess for WorkerContext<T> where T: SupportsFileSyste
     }
 }
 
-impl<T> SupportsWebGraph for WorkerContext<T> where T: SupportsWebGraph {
+impl<T> SupportsWebGraph for WorkerContext<T>
+where
+    T: SupportsWebGraph,
+{
     type WebGraphManager = T::WebGraphManager;
 
     delegate::delegate! {
@@ -192,7 +226,9 @@ impl<T> SupportsWebGraph for WorkerContext<T> where T: SupportsWebGraph {
     }
 }
 
-impl<T> SupportsStopwordsRegistry for WorkerContext<T> where T: SupportsStopwordsRegistry
+impl<T> SupportsStopwordsRegistry for WorkerContext<T>
+where
+    T: SupportsStopwordsRegistry,
 {
     delegate::delegate! {
         to self.inner {
@@ -201,10 +237,11 @@ impl<T> SupportsStopwordsRegistry for WorkerContext<T> where T: SupportsStopword
     }
 }
 
-impl<T> SupportsGdbrRegistry for WorkerContext<T> where T: SupportsGdbrRegistry
+impl<T> SupportsGdbrRegistry for WorkerContext<T>
+where
+    T: SupportsGdbrRegistry,
 {
     type Registry = T::Registry;
-
 
     delegate::delegate! {
         to self.inner {
@@ -212,7 +249,10 @@ impl<T> SupportsGdbrRegistry for WorkerContext<T> where T: SupportsGdbrRegistry
         }
     }
 }
-impl<T> SupportsSlimCrawlResults for WorkerContext<T> where T: SupportsSlimCrawlResults {
+impl<T> SupportsSlimCrawlResults for WorkerContext<T>
+where
+    T: SupportsSlimCrawlResults,
+{
     type Error = T::Error;
     delegate::delegate! {
         to self.inner {
@@ -225,19 +265,23 @@ impl<T> SupportsSlimCrawlResults for WorkerContext<T> where T: SupportsSlimCrawl
 
 impl<T> SupportsCrawlResults for WorkerContext<T>
 where
-    T: AsyncContext + SupportsSlimCrawlResults
+    T: AsyncContext + SupportsSlimCrawlResults,
 {
-    type Error = WriteError<T::Error>;
+    type Error = CrawlWriteError<T::Error>;
 
     async fn store_crawled_website(&self, result: &CrawlResult) -> Result<(), Self::Error> {
         let hint = match &result.content {
-            RawVecData::None => {StoredDataHint::None}
+            RawVecData::None => StoredDataHint::None,
             RawVecData::InMemory { .. } => {
                 log::debug!("Store in warc: {}", result.meta.url);
-                StoredDataHint::Warc(self.worker_warc_writer.execute_on_writer(|value| {
-                    log::debug!("WARC-Writer start:");
-                    write_warc(value, result)
-                }).await?)
+                StoredDataHint::Warc(
+                    self.worker_warc_writer
+                        .execute_on_writer(|value| {
+                            log::debug!("WARC-Writer start:");
+                            write_warc(value, result)
+                        })
+                        .await?,
+                )
             }
             RawVecData::ExternalFile { file } => {
                 log::debug!("Store external");
@@ -245,21 +289,31 @@ where
             }
         };
         log::debug!("Store slim: {}", result.meta.url);
-        self.store_slim_crawled_website(SlimCrawlResult::new(result, hint)).await.map_err(WriteError::SlimError)
+        self.store_slim_crawled_website(SlimCrawlResult::new(result, hint))
+            .await
+            .map_err(CrawlWriteError::SlimError)
     }
 
-
-    async fn retrieve_crawled_website(&self, url: &UrlWithDepth) -> Result<Option<CrawlResult>, Self::Error> {
-        if let Some(found) = self.retrieve_slim_crawled_website(url).await.map_err(WriteError::SlimError)? {
+    async fn retrieve_crawled_website(
+        &self,
+        url: &UrlWithDepth,
+    ) -> Result<Option<CrawlResult>, Self::Error> {
+        if let Some(found) = self
+            .retrieve_slim_crawled_website(url)
+            .await
+            .map_err(CrawlWriteError::SlimError)?
+        {
             match &found.stored_data_hint {
-                StoredDataHint::External(_) | StoredDataHint::None | StoredDataHint::InMemory(_) => {
+                StoredDataHint::External(_)
+                | StoredDataHint::None
+                | StoredDataHint::InMemory(_) => {
                     return Ok(Some(found.inflate(None)));
                 }
                 StoredDataHint::Warc(pointers) => {
                     let read = pointers.read_in_context(&self.worker_warc_writer).await?;
                     return Ok(Some(found.inflate(read)));
                 }
-                StoredDataHint::Associated => unreachable!()
+                StoredDataHint::Associated => unreachable!(),
             }
         } else {
             Ok(None)
@@ -269,11 +323,24 @@ where
 
 #[cfg(test)]
 pub mod test {
+    use crate::config::Configs;
+    use crate::contexts::local::LocalContext;
+    use crate::contexts::traits::{SupportsCrawlResults, SupportsSlimCrawlResults};
+    use crate::contexts::worker::context::WorkerContext;
+    use crate::crawl::test::{
+        create_test_data, create_test_data_unknown, create_testdata_with_on_seed,
+    };
+    use crate::data::RawVecData;
+    use crate::io::fs::{AtraFS, FileSystemAccess};
+    use crate::runtime::RuntimeContext;
+    use crate::stores::warc::ThreadsafeMultiFileWarcWriter;
+    use crate::url::UrlWithDepth;
+    use crate::warc_ext::SpecialWarcWriter;
+    use camino::Utf8PathBuf;
+    use encoding_rs::UTF_8;
     use std::net::{IpAddr, Ipv4Addr};
     use std::path::Path;
     use std::sync::Arc;
-    use camino::Utf8PathBuf;
-    use encoding_rs::UTF_8;
     use time::OffsetDateTime;
     use ubyte::ByteUnit;
     use warc::field::UriLikeFieldValue;
@@ -281,33 +348,59 @@ pub mod test {
     use warc::media_type::parse_media_type;
     use warc::record_type::WarcRecordType;
     use warc::truncated_reason::TruncatedReason;
-    use crate::config::Configs;
-    use crate::contexts::local::LocalContext;
-    use crate::io::fs::{AtraFS, FileSystemAccess};
-    use crate::contexts::traits::{SupportsCrawlResults, SupportsSlimCrawlResults};
-    use crate::contexts::worker::context::WorkerContext;
-    use crate::crawl::test::{create_test_data, create_test_data_unknown, create_testdata_with_on_seed};
-    use crate::stores::warc::ThreadsafeMultiFileWarcWriter;
-    use crate::runtime::RuntimeContext;
-    use crate::data::RawVecData;
-    use crate::url::UrlWithDepth;
-    use crate::warc_ext::SpecialWarcWriter;
 
     pub fn create_test_header(id_base: &str, content_length: u64) -> WarcHeader {
         fn create_uri_num(id_base: &str, ct: u64) -> UriLikeFieldValue {
-            UriLikeFieldValue::new(format!("https://www.{id_base}.com/{ct}").parse().unwrap()).unwrap()
+            UriLikeFieldValue::new(format!("https://www.{id_base}.com/{ct}").parse().unwrap())
+                .unwrap()
         }
 
         let mut data = WarcHeader::new();
         let mut uri_ct = 0;
-        data.warc_record_id(create_uri_num(id_base, {let x = uri_ct; uri_ct+=1; x})).unwrap();
-        data.concurrent_to(create_uri_num(id_base, {let x = uri_ct; uri_ct+=1; x})).unwrap();
-        data.refers_to(create_uri_num(id_base, {let x = uri_ct; uri_ct+=1; x})).unwrap();
-        data.refers_to_target(create_uri_num(id_base, {let x = uri_ct; uri_ct+=1; x})).unwrap();
-        data.target_uri(create_uri_num(id_base, {let x = uri_ct; uri_ct+=1; x})).unwrap();
-        data.info_id(create_uri_num(id_base, {let x = uri_ct; uri_ct+=1; x})).unwrap();
-        data.profile(create_uri_num(id_base, {let x = uri_ct; uri_ct+=1; x})).unwrap();
-        data.segment_origin_id(create_uri_num(id_base, uri_ct)).unwrap();
+        data.warc_record_id(create_uri_num(id_base, {
+            let x = uri_ct;
+            uri_ct += 1;
+            x
+        }))
+        .unwrap();
+        data.concurrent_to(create_uri_num(id_base, {
+            let x = uri_ct;
+            uri_ct += 1;
+            x
+        }))
+        .unwrap();
+        data.refers_to(create_uri_num(id_base, {
+            let x = uri_ct;
+            uri_ct += 1;
+            x
+        }))
+        .unwrap();
+        data.refers_to_target(create_uri_num(id_base, {
+            let x = uri_ct;
+            uri_ct += 1;
+            x
+        }))
+        .unwrap();
+        data.target_uri(create_uri_num(id_base, {
+            let x = uri_ct;
+            uri_ct += 1;
+            x
+        }))
+        .unwrap();
+        data.info_id(create_uri_num(id_base, {
+            let x = uri_ct;
+            uri_ct += 1;
+            x
+        }))
+        .unwrap();
+        data.profile(create_uri_num(id_base, {
+            let x = uri_ct;
+            uri_ct += 1;
+            x
+        }))
+        .unwrap();
+        data.segment_origin_id(create_uri_num(id_base, uri_ct))
+            .unwrap();
 
         data.warc_type(WarcRecordType::Response).unwrap();
 
@@ -320,12 +413,19 @@ pub mod test {
         data.segment_number(1234).unwrap();
         data.segment_total_length(12345).unwrap();
 
-        data.content_type(parse_media_type::<true>(b"text/html;charset=UTF-8").unwrap().1).unwrap();
-        data.indentified_payload_type(parse_media_type::<true>(b"text/xml").unwrap().1).unwrap();
+        data.content_type(
+            parse_media_type::<true>(b"text/html;charset=UTF-8")
+                .unwrap()
+                .1,
+        )
+        .unwrap();
+        data.indentified_payload_type(parse_media_type::<true>(b"text/xml").unwrap().1)
+            .unwrap();
 
         data.truncated_reason(TruncatedReason::Length).unwrap();
 
-        data.ip_address(IpAddr::V4(Ipv4Addr::new(127,0,0,1))).unwrap();
+        data.ip_address(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)))
+            .unwrap();
 
         data.block_digest_string("sha1:bla").unwrap();
         data.payload_digest_string("sha1:bla").unwrap();
@@ -341,26 +441,25 @@ pub mod test {
             std::fs::remove_dir_all(x).unwrap();
         }
 
-
         let fs = FileSystemAccess::new(
             "test_service".to_string(),
             "test_collection".to_string(),
             0,
             Utf8PathBuf::from("test\\data"),
             Utf8PathBuf::from("test\\data\\blobs"),
-        ).unwrap();
+        )
+        .unwrap();
 
-        let wwr = ThreadsafeMultiFileWarcWriter::new_for_worker(
-            Arc::new(
-                fs.create_worker_file_provider(0).await.unwrap()
-            )
-        ).unwrap();
+        let wwr = ThreadsafeMultiFileWarcWriter::new_for_worker(Arc::new(
+            fs.create_worker_file_provider(0).await.unwrap(),
+        ))
+        .unwrap();
 
         (fs, wwr)
     }
 
     #[tokio::test]
-    async fn writer_test(){
+    async fn writer_test() {
         let (_, wwr) = create_writers().await;
 
         const DATA1: &[u8] = b"TEXT1.....bla";
@@ -378,31 +477,39 @@ pub mod test {
             writer.write_header(create_test_header("ebay", DATA3.len() as u64))?;
             writer.write_body_complete(&DATA3)?;
             Ok(())
-        }).await.unwrap();
-
-
+        })
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
     async fn test_context() {
-
         if Path::new("test").exists() {
             std::fs::remove_dir_all("test").unwrap();
         }
 
-
         let mut cfg = Configs::default();
         cfg.paths.root = "test".parse().unwrap();
 
-        let local = Arc::new(LocalContext::new(cfg, RuntimeContext::unbound()).await.unwrap());
-
+        let local = Arc::new(
+            LocalContext::new(cfg, RuntimeContext::unbound())
+                .await
+                .unwrap(),
+        );
 
         let worker = WorkerContext::create(0, local.clone()).await.unwrap();
         let test_data1 = create_testdata_with_on_seed(None);
-        const BIG_DATA: [u8; ByteUnit::Gigabyte(1).as_u64() as usize - 20] = [b'a'; {ByteUnit::Gigabyte(1).as_u64() as usize - 20}];
+        const BIG_DATA: [u8; ByteUnit::Gigabyte(1).as_u64() as usize - 20] =
+            [b'a'; { ByteUnit::Gigabyte(1).as_u64() as usize - 20 }];
 
-        let test_data2 = create_test_data(UrlWithDepth::from_seed("https://www.oofsize.de/").unwrap(), Some(RawVecData::from_vec(BIG_DATA.to_vec())));
-        let test_data3 = create_test_data(UrlWithDepth::from_seed("https://www.catsanddogs.de/").unwrap(), None);
+        let test_data2 = create_test_data(
+            UrlWithDepth::from_seed("https://www.oofsize.de/").unwrap(),
+            Some(RawVecData::from_vec(BIG_DATA.to_vec())),
+        );
+        let test_data3 = create_test_data(
+            UrlWithDepth::from_seed("https://www.catsanddogs.de/").unwrap(),
+            None,
+        );
         worker.store_crawled_website(&test_data1).await.unwrap();
         worker.store_crawled_website(&test_data2).await.unwrap();
         worker.store_crawled_website(&test_data3).await.unwrap();
@@ -412,41 +519,72 @@ pub mod test {
         let found = worker.retrieve_slim_crawled_website(&x).await.unwrap();
         println!("{:?}", found);
 
-        let retrieved = worker.retrieve_crawled_website(&test_data1.meta.url).await.expect("This should work").expect("Expected to exist!");
-        println!("->{}<-", String::from_utf8(test_data1.content.as_in_memory().unwrap().clone()).unwrap());
-        println!("->{}<-", String::from_utf8(retrieved.content.as_in_memory().unwrap().clone()).unwrap());
+        let retrieved = worker
+            .retrieve_crawled_website(&test_data1.meta.url)
+            .await
+            .expect("This should work")
+            .expect("Expected to exist!");
+        println!(
+            "->{}<-",
+            String::from_utf8(test_data1.content.as_in_memory().unwrap().clone()).unwrap()
+        );
+        println!(
+            "->{}<-",
+            String::from_utf8(retrieved.content.as_in_memory().unwrap().clone()).unwrap()
+        );
         assert_eq!(retrieved, test_data1);
     }
 
     #[tokio::test]
     async fn test_context2() {
-
         if Path::new("test").exists() {
             std::fs::remove_dir_all("test").unwrap();
         }
 
-
         let mut cfg = Configs::default();
         cfg.paths.root = "test".parse().unwrap();
 
-        let local = Arc::new(LocalContext::new(cfg, RuntimeContext::unbound()).await.unwrap());
+        let local = Arc::new(
+            LocalContext::new(cfg, RuntimeContext::unbound())
+                .await
+                .unwrap(),
+        );
 
         let worker = WorkerContext::create(0, local.clone()).await.unwrap();
         let test_data1 = create_testdata_with_on_seed(None);
-        const BIG_DATA: [u8; ByteUnit::Gigabyte(1).as_u64() as usize - 20] = [b'a'; {ByteUnit::Gigabyte(1).as_u64() as usize - 20}];
+        const BIG_DATA: [u8; ByteUnit::Gigabyte(1).as_u64() as usize - 20] =
+            [b'a'; { ByteUnit::Gigabyte(1).as_u64() as usize - 20 }];
 
-        let test_data2 = create_test_data_unknown(UrlWithDepth::from_seed("https://www.oofsize.de/").unwrap(), RawVecData::from_vec(BIG_DATA.to_vec()));
-        let test_data3 = create_test_data(UrlWithDepth::from_seed("https://www.catsanddogs.de/").unwrap(), None);
+        let test_data2 = create_test_data_unknown(
+            UrlWithDepth::from_seed("https://www.oofsize.de/").unwrap(),
+            RawVecData::from_vec(BIG_DATA.to_vec()),
+        );
+        let test_data3 = create_test_data(
+            UrlWithDepth::from_seed("https://www.catsanddogs.de/").unwrap(),
+            None,
+        );
         worker.store_crawled_website(&test_data1).await.unwrap();
         worker.store_crawled_website(&test_data2).await.unwrap();
         worker.store_crawled_website(&test_data3).await.unwrap();
 
         let x = UrlWithDepth::from_seed("https://www.oofsize.de/").unwrap();
 
-        let found = worker.retrieve_crawled_website(&x).await.expect("This should work").expect("Expected to exist!");
-        assert_eq!(test_data2, found, "Failed to compare:\n\nA: {:?}\n\nB: {:?}", test_data2, found);
+        let found = worker
+            .retrieve_crawled_website(&x)
+            .await
+            .expect("This should work")
+            .expect("Expected to exist!");
+        assert_eq!(
+            test_data2, found,
+            "Failed to compare:\n\nA: {:?}\n\nB: {:?}",
+            test_data2, found
+        );
 
-        let retrieved = worker.retrieve_crawled_website(&test_data1.meta.url).await.expect("This should work").expect("Expected to exist!");
+        let retrieved = worker
+            .retrieve_crawled_website(&test_data1.meta.url)
+            .await
+            .expect("This should work")
+            .expect("Expected to exist!");
         assert_eq!(test_data1, retrieved);
     }
 }

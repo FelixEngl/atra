@@ -12,10 +12,10 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-pub mod fs;
-pub mod simple_line;
-pub mod unique_path_provider;
-pub mod templating;
-pub mod file_owner;
 pub mod errors;
+pub mod file_owner;
+pub mod fs;
 pub mod serial;
+pub mod simple_line;
+pub mod templating;
+pub mod unique_path_provider;

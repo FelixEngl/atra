@@ -12,11 +12,11 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use camino::Utf8PathBuf;
-use serde::{Deserialize, Serialize};
 use crate::crawl::crawler::result::{CrawlResult, CrawlResultMeta};
 use crate::data::RawData;
 use crate::warc_ext::WarcSkipInstruction;
+use camino::Utf8PathBuf;
+use serde::{Deserialize, Serialize};
 
 /// The header information of a [CrawlResult]
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
@@ -39,14 +39,14 @@ pub enum StoredDataHint {
     /// The data is associated by some external means.
     Associated,
     /// There is no data
-    None
+    None,
 }
 
 impl SlimCrawlResult {
     pub fn new(crawl_result: &CrawlResult, stored_data_hint: StoredDataHint) -> Self {
         Self {
             meta: crawl_result.meta.clone(),
-            stored_data_hint
+            stored_data_hint,
         }
     }
 
@@ -54,16 +54,12 @@ impl SlimCrawlResult {
     /// You may provide an associated [body] if necessary
     pub fn inflate(self, body: Option<Vec<u8>>) -> CrawlResult {
         let content = match self.stored_data_hint {
-            StoredDataHint::External(value) => {
-                RawData::from_external(value)
-            }
+            StoredDataHint::External(value) => RawData::from_external(value),
             StoredDataHint::Warc(_) => {
                 // TODO: what about big files???
                 RawData::from_vec(body.expect("A warc file has to be loaded beforehand."))
             }
-            StoredDataHint::InMemory(value) => {
-                RawData::from_vec(value)
-            }
+            StoredDataHint::InMemory(value) => RawData::from_vec(value),
             StoredDataHint::Associated | StoredDataHint::None => {
                 if let Some(body) = body {
                     RawData::from_vec(body)
@@ -82,32 +78,31 @@ impl SlimCrawlResult {
 
 #[cfg(test)]
 mod test {
-    use camino::Utf8PathBuf;
     use crate::crawl::crawler::result::test::create_test_data;
     use crate::crawl::crawler::slim::{SlimCrawlResult, StoredDataHint};
     use crate::url::UrlWithDepth;
     use crate::warc_ext::{WarcSkipInstruction, WarcSkipPointer, WarcSkipPointerWithPath};
+    use camino::Utf8PathBuf;
 
     #[test]
-    fn serde_test(){
+    fn serde_test() {
         let ptr = StoredDataHint::Warc(WarcSkipInstruction::new_single(
             WarcSkipPointerWithPath::new(
                 Utf8PathBuf::from("test.warc".to_string()),
-                WarcSkipPointer::new(
-                    12589,
-                    1,
-                    2
-                ),
+                WarcSkipPointer::new(12589, 1, 2),
             ),
             123,
-            false
+            false,
         ));
 
         let x = bincode::serialize(&ptr).unwrap();
         let y = bincode::deserialize::<StoredDataHint>(&x).unwrap();
         assert_eq!(ptr, y);
 
-        let x = create_test_data(UrlWithDepth::from_seed("https://www.google.de").unwrap(), None);
+        let x = create_test_data(
+            UrlWithDepth::from_seed("https://www.google.de").unwrap(),
+            None,
+        );
         let slim = SlimCrawlResult::new(&x, ptr);
         let data = bincode::serialize(&slim).unwrap();
         println!("{:?}", data);

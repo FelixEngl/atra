@@ -12,14 +12,13 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::sync::LazyLock;
 use data_encoding::BASE32;
+use std::sync::LazyLock;
 
-static EMPTY_HASH: LazyLock<Vec<u8>> = LazyLock::new(|| {
-    labeled_xxh128_digest_impl(b"")
-});
+static EMPTY_HASH: LazyLock<Vec<u8>> = LazyLock::new(|| labeled_xxh128_digest_impl(b""));
 
-#[inline] fn labeled_xxh128_digest_impl<B: AsRef<[u8]>>(data: B) -> Vec<u8> {
+#[inline]
+fn labeled_xxh128_digest_impl<B: AsRef<[u8]>>(data: B) -> Vec<u8> {
     let mut output = Vec::new();
     output.extend(b"XXH128:");
     let digest = twox_hash::xxh3::hash128(data.as_ref());
@@ -27,15 +26,12 @@ static EMPTY_HASH: LazyLock<Vec<u8>> = LazyLock::new(|| {
     output
 }
 
-
 /// Writes a labeled, padded Base32 digest of some optional [data] into [output].
 /// If no data is given it returns an empty hash
 pub fn labeled_xxh128_digest<B: AsRef<[u8]>>(data: B) -> Vec<u8> {
     let bytes = data.as_ref();
     if bytes.is_empty() {
-        return EMPTY_HASH.clone()
+        return EMPTY_HASH.clone();
     }
     labeled_xxh128_digest_impl(data)
 }
-
-

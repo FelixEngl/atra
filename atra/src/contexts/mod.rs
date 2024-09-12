@@ -12,9 +12,9 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-pub mod local;
 mod context;
-pub mod worker;
 pub mod helper;
+pub mod local;
+pub mod worker;
 
 pub use context::*;

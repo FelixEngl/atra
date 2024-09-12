@@ -12,14 +12,14 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+use crate::queue::AgingQueueElement;
+use serde::de::{SeqAccess, Visitor};
+use serde::ser::SerializeTuple;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::any::type_name;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde::de::{SeqAccess, Visitor};
-use serde::ser::SerializeTuple;
-use crate::queue::AgingQueueElement;
 
 /// An entry for the url queue.
 pub struct UrlQueueElementBase<T> {
@@ -27,7 +27,7 @@ pub struct UrlQueueElementBase<T> {
     pub is_seed: bool,
     pub age: u32,
     pub host_was_in_use: bool,
-    pub target: T
+    pub target: T,
 }
 
 impl<T> AgingQueueElement for UrlQueueElementBase<T> {
@@ -36,50 +36,52 @@ impl<T> AgingQueueElement for UrlQueueElementBase<T> {
     }
 }
 
-
 impl<T> UrlQueueElementBase<T> {
     pub fn new(is_seed: bool, age: u32, host_was_in_use: bool, target: T) -> Self {
         Self {
             is_seed,
             age,
             host_was_in_use,
-            target
+            target,
         }
     }
 
-    pub fn map<R, F>(self, mapping: F) -> UrlQueueElementBase<R> where F: FnOnce(T) -> R {
+    pub fn map<R, F>(self, mapping: F) -> UrlQueueElementBase<R>
+    where
+        F: FnOnce(T) -> R,
+    {
         UrlQueueElementBase::new(
             self.is_seed,
             self.age,
             self.host_was_in_use,
-            mapping(self.target)
+            mapping(self.target),
         )
     }
 
-    pub fn map_or<R, F>(self, mapping: F) -> Option<UrlQueueElementBase<R>> where F: FnOnce(T) -> Option<R> {
-        Some(
-            UrlQueueElementBase::new(
-                self.is_seed,
-                self.age,
-                self.host_was_in_use,
-                mapping(self.target)?
-            )
-        )
+    pub fn map_or<R, F>(self, mapping: F) -> Option<UrlQueueElementBase<R>>
+    where
+        F: FnOnce(T) -> Option<R>,
+    {
+        Some(UrlQueueElementBase::new(
+            self.is_seed,
+            self.age,
+            self.host_was_in_use,
+            mapping(self.target)?,
+        ))
     }
 
-    pub fn map_or_err<R, E, F>(self, mapping: F) -> Result<UrlQueueElementBase<R>, E> where F: FnOnce(T) -> Result<R, E> {
-        Ok(
-            UrlQueueElementBase::new(
-                self.is_seed,
-                self.age,
-                self.host_was_in_use,
-                mapping(self.target)?
-            )
-        )
+    pub fn map_or_err<R, E, F>(self, mapping: F) -> Result<UrlQueueElementBase<R>, E>
+    where
+        F: FnOnce(T) -> Result<R, E>,
+    {
+        Ok(UrlQueueElementBase::new(
+            self.is_seed,
+            self.age,
+            self.host_was_in_use,
+            mapping(self.target)?,
+        ))
     }
 }
-
-
 
 impl<T: Clone> Clone for UrlQueueElementBase<T> {
     fn clone(&self) -> Self {
@@ -87,7 +89,7 @@ impl<T: Clone> Clone for UrlQueueElementBase<T> {
             is_seed: self.is_seed,
             age: self.age,
             host_was_in_use: self.host_was_in_use,
-            target: self.target.clone()
+            target: self.target.clone(),
         }
     }
 }
@@ -114,20 +116,22 @@ impl<T: Hash> Hash for UrlQueueElementBase<T> {
 
 impl<T: Display> Display for UrlQueueElementBase<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f,
-               "CrawlElement(is_seed: {}, age: {}, host_was_in_use: {}, target: {})",
-               self.is_seed,
-               self.age,
-               self.host_was_in_use,
-               self.target
+        write!(
+            f,
+            "CrawlElement(is_seed: {}, age: {}, host_was_in_use: {}, target: {})",
+            self.is_seed, self.age, self.host_was_in_use, self.target
         )
     }
 }
 
-
 impl<T> From<UrlQueueElementBase<T>> for (bool, u32, bool, T) {
     fn from(value: UrlQueueElementBase<T>) -> Self {
-        (value.is_seed, value.age, value.host_was_in_use, value.target)
+        (
+            value.is_seed,
+            value.age,
+            value.host_was_in_use,
+            value.target,
+        )
     }
 }
 
@@ -143,15 +147,17 @@ impl<T> AsRef<T> for UrlQueueElementBase<T> {
     }
 }
 
-impl<T: PartialEq> PartialEq<UrlQueueElementBase<T>> for UrlQueueElementBase<T>   {
+impl<T: PartialEq> PartialEq<UrlQueueElementBase<T>> for UrlQueueElementBase<T> {
     fn eq(&self, other: &UrlQueueElementBase<T>) -> bool {
         self.target.eq(&other.target)
     }
 }
 
-
 impl<T: Serialize> Serialize for UrlQueueElementBase<T> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
         let mut tup = serializer.serialize_tuple(4)?;
         tup.serialize_element(&self.is_seed)?;
         tup.serialize_element(&self.age)?;
@@ -161,13 +167,15 @@ impl<T: Serialize> Serialize for UrlQueueElementBase<T> {
     }
 }
 
-struct CrawlMetaContainerVisitor<T>{
-    _phantom: PhantomData<T>
+struct CrawlMetaContainerVisitor<T> {
+    _phantom: PhantomData<T>,
 }
 
 impl<T> CrawlMetaContainerVisitor<T> {
     fn new() -> Self {
-        Self{_phantom: PhantomData}
+        Self {
+            _phantom: PhantomData,
+        }
     }
 }
 
@@ -178,25 +186,28 @@ impl<'de, T: Deserialize<'de>> Visitor<'de> for CrawlMetaContainerVisitor<T> {
         formatter.write_str("a UrlQueueEntry in tuple format.")
     }
 
-    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error> where A: SeqAccess<'de> {
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
         let is_seed: bool = seq.next_element()?.unwrap();
         let age: u32 = seq.next_element()?.unwrap();
         let domain_was_in_use: bool = seq.next_element()?.unwrap();
         let target: T = seq.next_element()?.unwrap();
-        Ok(
-            UrlQueueElementBase {
-                is_seed,
-                age,
-                host_was_in_use: domain_was_in_use,
-                target
-            }
-        )
+        Ok(UrlQueueElementBase {
+            is_seed,
+            age,
+            host_was_in_use: domain_was_in_use,
+            target,
+        })
     }
 }
 
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for UrlQueueElementBase<T> {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
         deserializer.deserialize_tuple(4, CrawlMetaContainerVisitor::new())
     }
 }
-

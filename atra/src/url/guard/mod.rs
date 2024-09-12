@@ -11,9 +11,9 @@ pub use traits::*;
 
 pub use errors::*;
 
-pub use guard::UrlGuard;
-use crate::url::{AtraOriginProvider, AtraUrlOrigin, UrlWithDepth};
 use crate::url::guard::entry::GuardEntry;
+use crate::url::{AtraOriginProvider, AtraUrlOrigin, UrlWithDepth};
+pub use guard::UrlGuard;
 //Copyright 2024 Felix Engl
 //
 //Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,7 +28,6 @@ use crate::url::guard::entry::GuardEntry;
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-
 /// Manages the crawl state of the domains in the current crawl
 #[derive(Debug, Default)]
 pub struct InMemoryUrlGuardian {
@@ -37,7 +36,9 @@ pub struct InMemoryUrlGuardian {
 
 impl InMemoryUrlGuardian {
     pub fn new() -> Self {
-        Self { data_holder: Default::default() }
+        Self {
+            data_holder: Default::default(),
+        }
     }
 }
 
@@ -45,75 +46,68 @@ unsafe impl UnsafeUrlGuardian for InMemoryUrlGuardian {
     unsafe fn release(&self, origin: AtraUrlOrigin) {
         // This makes sure, that we never fail with our spawned task.
         let shared = self.data_holder.clone();
-        tokio::spawn(
-            async move {
-                let mut holder = shared.write().await;
-                if let Some(value) = holder.get_mut(&origin) {
-                    value.is_in_use = false;
-                    value.last_modification = Some(SystemTime::now());
-                } else {
-                    unreachable!();
-                }
+        tokio::spawn(async move {
+            let mut holder = shared.write().await;
+            if let Some(value) = holder.get_mut(&origin) {
+                value.is_in_use = false;
+                value.last_modification = Some(SystemTime::now());
+            } else {
+                unreachable!();
             }
-        );
+        });
     }
 }
 
 impl UrlGuardian for InMemoryUrlGuardian {
-
-    async fn try_reserve<'a>(&'a self, url: &UrlWithDepth) -> Result<UrlGuard<'a, Self>, GuardianError> {
-        let origin = url.atra_origin().ok_or_else(|| GuardianError::NoOriginError(url.clone()))?;
+    async fn try_reserve<'a>(
+        &'a self,
+        url: &UrlWithDepth,
+    ) -> Result<UrlGuard<'a, Self>, GuardianError> {
+        let origin = url
+            .atra_origin()
+            .ok_or_else(|| GuardianError::NoOriginError(url.clone()))?;
         let mut holder = self.data_holder.write().await;
         if let Some(found) = holder.get_mut(&origin) {
             if found.is_in_use {
-                return Err(GuardianError::AlreadyOccupied(origin))
+                return Err(GuardianError::AlreadyOccupied(origin));
             }
             let reserved_at = SystemTime::now();
             found.last_modification = Some(reserved_at.clone());
             found.depth = found.depth.merge_to_lowes(url.depth());
             found.is_in_use = true;
 
-            return Ok(
-                UrlGuard {
-                    reserved_at,
-                    origin_manager: self as *const InMemoryUrlGuardian,
-                    entry: found.clone(),
-                    origin,
-                    _marker: PhantomData
-                }
-            )
+            return Ok(UrlGuard {
+                reserved_at,
+                origin_manager: self as *const InMemoryUrlGuardian,
+                entry: found.clone(),
+                origin,
+                _marker: PhantomData,
+            });
         }
         let reserved_at = SystemTime::now();
         let entry = GuardEntry {
             is_in_use: true,
             last_modification: None,
-            depth: url.depth().clone()
+            depth: url.depth().clone(),
         };
-        holder.insert(
-            origin.clone(),
-            entry.clone()
-        );
-        Ok(
-            UrlGuard {
-                reserved_at,
-                origin_manager: self as *const InMemoryUrlGuardian,
-                origin,
-                entry,
-                _marker: PhantomData
-            }
-        )
+        holder.insert(origin.clone(), entry.clone());
+        Ok(UrlGuard {
+            reserved_at,
+            origin_manager: self as *const InMemoryUrlGuardian,
+            origin,
+            entry,
+            _marker: PhantomData,
+        })
     }
 
     async fn can_provide_additional_value(&self, url: &UrlWithDepth) -> bool {
         match url.atra_origin() {
-            None => {false}
+            None => false,
             Some(ref value) => {
                 let holder = self.data_holder.read().await;
                 match holder.get(value) {
-                    None => {true}
-                    Some(value) => {
-                        url.depth() < &value.depth
-                    }
+                    None => true,
+                    Some(value) => url.depth() < &value.depth,
                 }
             }
         }
@@ -133,17 +127,21 @@ impl UrlGuardian for InMemoryUrlGuardian {
 
     async fn currently_reserved_origins(&self) -> Vec<AtraUrlOrigin> {
         let read = self.data_holder.read().await;
-        read.iter().filter_map(|(host, state)| {
-            if state.is_in_use {
-                Some(host.clone())
-            } else {
-                None
-            }
-        }).collect()
+        read.iter()
+            .filter_map(|(host, state)| {
+                if state.is_in_use {
+                    Some(host.clone())
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
-
-    async fn check_if_poisoned<'a>(&self, guard: &UrlGuard<'a, Self>) -> Result<(), GuardPoisonedError> {
+    async fn check_if_poisoned<'a>(
+        &self,
+        guard: &UrlGuard<'a, Self>,
+    ) -> Result<(), GuardPoisonedError> {
         let read = self.data_holder.read().await;
         if let Some(found) = read.get(&guard.origin) {
             if found.is_in_use {
@@ -151,7 +149,11 @@ impl UrlGuardian for InMemoryUrlGuardian {
                     if guard.reserved_at.eq(modification) {
                         Ok(())
                     } else {
-                        Err(GuardPoisonedError::WrongTimestampSet(guard.origin.clone(), guard.reserved_at, modification.clone()))
+                        Err(GuardPoisonedError::WrongTimestampSet(
+                            guard.origin.clone(),
+                            guard.reserved_at,
+                            modification.clone(),
+                        ))
                     }
                 } else {
                     Err(GuardPoisonedError::NoTimestampSet(guard.origin.clone()))
@@ -167,19 +169,20 @@ impl UrlGuardian for InMemoryUrlGuardian {
 
 impl Clone for InMemoryUrlGuardian {
     fn clone(&self) -> Self {
-        Self{data_holder: self.data_holder.clone()}
+        Self {
+            data_holder: self.data_holder.clone(),
+        }
     }
 }
 
-
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
-    use std::time::Duration;
-    use itertools::{Itertools, Position};
-    use smallvec::SmallVec;
     use crate::url::guard::{GuardianError, UrlGuardian};
     use crate::url::{AtraOriginProvider, UrlWithDepth};
+    use itertools::{Itertools, Position};
+    use smallvec::SmallVec;
+    use std::sync::Arc;
+    use std::time::Duration;
 
     #[tokio::test]
     async fn the_domain_works_as_expected() {
@@ -189,9 +192,13 @@ mod test {
             "https://www.ebay.de".parse::<UrlWithDepth>().unwrap(),
             "https://www.youtube.com/".parse::<UrlWithDepth>().unwrap(),
             "https://www.germany.de/".parse::<UrlWithDepth>().unwrap(),
-            "https://www.gradle.org/test/".parse::<UrlWithDepth>().unwrap(),
+            "https://www.gradle.org/test/"
+                .parse::<UrlWithDepth>()
+                .unwrap(),
             "https://www.hello.info/".parse::<UrlWithDepth>().unwrap(),
-            "https://www.amazon.co.uk/prod?v=1".parse::<UrlWithDepth>().unwrap(),
+            "https://www.amazon.co.uk/prod?v=1"
+                .parse::<UrlWithDepth>()
+                .unwrap(),
             "https://www.ebay.de/cat".parse::<UrlWithDepth>().unwrap(),
         ];
 
@@ -207,66 +214,82 @@ mod test {
             match a {
                 Position::Last => {
                     let hosts = domains.clone();
-                    handles.push(
-                        tokio::task::spawn(
-                            async move {
-                                for current in &hosts {
-                                    println!("{:?}", host_manager.current_origin_state(current).await)
-                                }
-                                println!("Waiting!");
-                                tokio::time::sleep(Duration::from_secs(5)).await;
-                                println!("Finished!");
-                                let wait_result2 = c2.wait().await;
-                                for current in &hosts {
-                                    println!("{} - {:?}", current, host_manager.current_origin_state(current).await)
-                                }
-                                let succ = host_manager.try_reserve(&url).await;
-                                let found_text = match &succ {
-                                    Ok(_) => {
-                                        "successfull"
-                                    }
-                                    Err(GuardianError::NoOriginError(url)) => {
-                                        panic!("The no domain error for {url} should not occur!")
-                                    }
-                                    Err(GuardianError::AlreadyOccupied(_)) => {
-                                        "unsucessfull"
-                                    }
-                                };
-                                for current in &hosts {
-                                    println!("{} - {:?}", current, host_manager.current_origin_state(current).await)
-                                }
-                                println!("Was reserved origin for {} was {}", url, found_text);
-
-                                (None, wait_result2, succ.is_err(), url.atra_origin().unwrap(), url)
+                    handles.push(tokio::task::spawn(async move {
+                        for current in &hosts {
+                            println!("{:?}", host_manager.current_origin_state(current).await)
+                        }
+                        println!("Waiting!");
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        println!("Finished!");
+                        let wait_result2 = c2.wait().await;
+                        for current in &hosts {
+                            println!(
+                                "{} - {:?}",
+                                current,
+                                host_manager.current_origin_state(current).await
+                            )
+                        }
+                        let succ = host_manager.try_reserve(&url).await;
+                        let found_text = match &succ {
+                            Ok(_) => "successfull",
+                            Err(GuardianError::NoOriginError(url)) => {
+                                panic!("The no domain error for {url} should not occur!")
                             }
+                            Err(GuardianError::AlreadyOccupied(_)) => "unsucessfull",
+                        };
+                        for current in &hosts {
+                            println!(
+                                "{} - {:?}",
+                                current,
+                                host_manager.current_origin_state(current).await
+                            )
+                        }
+                        println!("Was reserved origin for {} was {}", url, found_text);
+
+                        (
+                            None,
+                            wait_result2,
+                            succ.is_err(),
+                            url.atra_origin().unwrap(),
+                            url,
                         )
-                    )
+                    }))
                 }
                 Position::Only => unreachable!(),
                 _ => {
                     let c1 = barrier1.clone();
-                    handles.push(
-                        tokio::task::spawn(
-                            async move {
-                                let wait_result1 = c1.wait().await;
-                                let barrier = host_manager.try_reserve(&url).await.unwrap();
-                                let wait_result2 = c2.wait().await;
-                                tokio::time::sleep(Duration::from_secs(5)).await;
-                                (Some(wait_result1), wait_result2, true, barrier.origin().to_owned(), url)
-                            }
+                    handles.push(tokio::task::spawn(async move {
+                        let wait_result1 = c1.wait().await;
+                        let barrier = host_manager.try_reserve(&url).await.unwrap();
+                        let wait_result2 = c2.wait().await;
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        (
+                            Some(wait_result1),
+                            wait_result2,
+                            true,
+                            barrier.origin().to_owned(),
+                            url,
                         )
-                    )
+                    }))
                 }
             }
         }
 
         for handle in handles {
             let (_, _, was_correctly_borrowed, origin, url) = handle.await.unwrap();
-            assert!(was_correctly_borrowed, "Expected that {} for {} was correctly borrowed", origin, url)
+            assert!(
+                was_correctly_borrowed,
+                "Expected that {} for {} was correctly borrowed",
+                origin, url
+            )
         }
 
         for current in &domains {
-            println!("{} - {:?}", current, host_manager.current_origin_state(current).await)
+            println!(
+                "{} - {:?}",
+                current,
+                host_manager.current_origin_state(current).await
+            )
         }
     }
 }

@@ -1,7 +1,7 @@
-use std::sync::LazyLock;
-use mime::{Mime};
-use paste::paste;
 use const_format::concatcp;
+use mime::Mime;
+use paste::paste;
+use std::sync::LazyLock;
 
 macro_rules! mime_declarations {
 

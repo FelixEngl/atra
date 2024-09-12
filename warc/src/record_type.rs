@@ -16,13 +16,22 @@ use strum::{AsRefStr, Display, EnumString};
 
 #[derive(Clone, Debug, PartialEq, EnumString, AsRefStr, Display)]
 pub enum WarcRecordType {
-    #[strum(to_string = "warcinfo")]WarcInfo,
-    #[strum(to_string = "response")]Response,
-    #[strum(to_string = "resource")]Resource,
-    #[strum(to_string = "request")]Request,
-    #[strum(to_string = "metadata")]Metadata,
-    #[strum(to_string = "revisit")]Revisit,
-    #[strum(to_string = "conversion")]Conversion,
-    #[strum(to_string = "continuation")]Continuation,
-    #[strum(default)] Unknown(String),
+    #[strum(to_string = "warcinfo")]
+    WarcInfo,
+    #[strum(to_string = "response")]
+    Response,
+    #[strum(to_string = "resource")]
+    Resource,
+    #[strum(to_string = "request")]
+    Request,
+    #[strum(to_string = "metadata")]
+    Metadata,
+    #[strum(to_string = "revisit")]
+    Revisit,
+    #[strum(to_string = "conversion")]
+    Conversion,
+    #[strum(to_string = "continuation")]
+    Continuation,
+    #[strum(default)]
+    Unknown(String),
 }

@@ -12,19 +12,23 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::num::NonZeroUsize;
-use std::sync::{Arc};
-use time::OffsetDateTime;
-use tokio::task::JoinSet;
 use crate::config::Configs;
 use crate::contexts::local::LocalContext;
 use crate::contexts::traits::{SupportsLinkState, SupportsMetaInfo, SupportsUrlQueue};
 use crate::contexts::worker::WorkerContext;
 use crate::crawl::crawl;
-use crate::seed::SeedDefinition;
-use crate::runtime::{AtraRuntime, OptionalAtraHandle, RuntimeContext, graceful_shutdown, GracefulShutdown, GracefulShutdownBarrier, ShutdownReceiver, ShutdownSignalSender};
-use crate::sync::barrier::WorkerBarrier;
 use crate::logging::configure_logging;
+use crate::runtime::{
+    graceful_shutdown, AtraRuntime, GracefulShutdown, GracefulShutdownBarrier, OptionalAtraHandle,
+    RuntimeContext, ShutdownReceiver, ShutdownSignalSender,
+};
+use crate::seed::SeedDefinition;
+use crate::sync::barrier::WorkerBarrier;
+use std::num::NonZeroUsize;
+use std::sync::Arc;
+use time::OffsetDateTime;
+use tokio::task::JoinSet;
+use crate::consumer::GlobalErrorConsumer;
 
 /// The application
 pub struct Atra {
@@ -74,7 +78,8 @@ fn num_cpus() -> NonZeroUsize {
             assert!(n > 0, "\"{}\" cannot be set to 0", ENV_WORKER_THREADS);
             unsafe { NonZeroUsize::new_unchecked(n) }
         }
-        Err(std::env::VarError::NotPresent) => NonZeroUsize::new(usize::max(1, num_cpus::get())).unwrap_or(unsafe { NonZeroUsize::new_unchecked(1) }),
+        Err(std::env::VarError::NotPresent) => NonZeroUsize::new(usize::max(1, num_cpus::get()))
+            .unwrap_or(unsafe { NonZeroUsize::new_unchecked(1) }),
         Err(std::env::VarError::NotUnicode(e)) => {
             panic!(
                 "\"{}\" must be valid unicode, error: {:?}",
@@ -83,7 +88,6 @@ fn num_cpus() -> NonZeroUsize {
         }
     }
 }
-
 
 impl Atra {
     pub fn new(
@@ -106,12 +110,10 @@ impl Atra {
         shutdown: GracefulShutdown,
     ) -> (Self, AtraRuntime) {
         let runtime = match &mode {
-            ApplicationMode::Single => {
-                tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .expect("Fatal: Was not able to initialize runtime!")
-            }
+            ApplicationMode::Single => tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("Fatal: Was not able to initialize runtime!"),
             ApplicationMode::Multi(threads) => {
                 if let Some(t) = threads {
                     tokio::runtime::Builder::new_multi_thread()
@@ -131,12 +133,20 @@ impl Atra {
         let runtime = AtraRuntime::new(runtime, None);
 
         (
-            Self::new(mode, notify_shutdown, shutdown, runtime.handle().as_optional()),
-            runtime
+            Self::new(
+                mode,
+                notify_shutdown,
+                shutdown,
+                runtime.handle().as_optional(),
+            ),
+            runtime,
         )
     }
 
-    fn create_contained_with(mode: ApplicationMode, handle: OptionalAtraHandle) -> (Self, GracefulShutdownBarrier) {
+    fn create_contained_with(
+        mode: ApplicationMode,
+        handle: OptionalAtraHandle,
+    ) -> (Self, GracefulShutdownBarrier) {
         let (notify, shutdown, barrier) = graceful_shutdown();
         let instance = Self::new(mode, notify, shutdown, handle);
         (instance, barrier)
@@ -148,14 +158,21 @@ impl Atra {
     //     (instance, runtime, barrier)
     // }
 
-
     /// Start the application
-    pub async fn run(&mut self, seeds: SeedDefinition, configs: Configs) -> Result<(), anyhow::Error> {
+    pub async fn run(
+        &mut self,
+        seeds: SeedDefinition,
+        configs: Configs,
+    ) -> Result<(), anyhow::Error> {
         configure_logging(&configs);
         self.run_without_logger(seeds, configs).await
     }
 
-    async fn run_without_logger(&self, seeds: SeedDefinition, configs: Configs) -> Result<(), anyhow::Error> {
+    async fn run_without_logger(
+        &self,
+        seeds: SeedDefinition,
+        configs: Configs,
+    ) -> Result<(), anyhow::Error> {
         match self.mode {
             ApplicationMode::Single => {
                 let start = OffsetDateTime::now_utc();
@@ -166,10 +183,9 @@ impl Atra {
                 );
 
                 let context = Arc::new(
-                    LocalContext::new(
-                        configs,
-                        shutdown_and_handle,
-                    ).await.unwrap()
+                    LocalContext::new(configs, shutdown_and_handle)
+                        .await
+                        .unwrap(),
                 );
                 let barrier = WorkerBarrier::new(unsafe { NonZeroUsize::new_unchecked(1) });
                 seeds.fill_queue(context.url_queue()).await;
@@ -177,10 +193,24 @@ impl Atra {
                     WorkerContext::create(0, context.clone()).await?,
                     self.shutdown.weak_handle(),
                     Arc::new(barrier),
-                ).await.expect("Failed the crawl.");
+                    GlobalErrorConsumer::new()
+                )
+                .await
+                .expect("Failed the crawl.");
                 let time_needed = OffsetDateTime::now_utc() - start;
-                log::info!("Needed {} for discovering {} websites", time_needed, context.discovered_websites());
-                log::info!("Needed {} for crawling {} websites", time_needed, context.crawled_websites().map(|value| value.to_string()).unwrap_or("# ERROR COUNTING#".to_string()));
+                log::info!(
+                    "Needed {} for discovering {} websites",
+                    time_needed,
+                    context.discovered_websites()
+                );
+                log::info!(
+                    "Needed {} for crawling {} websites",
+                    time_needed,
+                    context
+                        .crawled_websites()
+                        .map(|value| value.to_string())
+                        .unwrap_or("# ERROR COUNTING#".to_string())
+                );
                 return Ok(());
             }
             ApplicationMode::Multi(worker) => {
@@ -191,7 +221,9 @@ impl Atra {
                 );
 
                 let context = Arc::new(
-                    LocalContext::new(configs, shutdown_and_handle).await.unwrap()
+                    LocalContext::new(configs, shutdown_and_handle)
+                        .await
+                        .unwrap(),
                 );
                 seeds.fill_queue(context.url_queue()).await;
                 let mut set = JoinSet::new();
@@ -202,36 +234,44 @@ impl Atra {
                     let b = barrier.clone();
                     let s = self.shutdown.clone();
                     let context = WorkerContext::create(i, context.clone()).await?;
-                    set.spawn(
-                        async move {
-                            let context = context;
-                            while context.can_poll().await {
-                                match crawl(context.clone(), s.clone(), b.clone()).await {
-                                    Ok(stop) => {
-                                        log::info!("Exit {i} with {stop}.")
-                                    }
-                                    Err(_) => {
-                                        log::error!("Encountered some errors.")
-                                    }
+                    set.spawn(async move {
+                        let context = context;
+                        while context.can_poll().await {
+                            match crawl(context.clone(), s.clone(), b.clone(), GlobalErrorConsumer::new()).await {
+                                Ok(stop) => {
+                                    log::info!("Exit {i} with {stop}.")
+                                }
+                                Err(_) => {
+                                    log::error!("Encountered some errors.")
                                 }
                             }
-                            b.trigger_cancellation();
-                            i
                         }
-                    );
+                        b.trigger_cancellation();
+                        i
+                    });
                 }
                 while let Some(res) = set.join_next().await {
                     log::info!("Stopped worker {res:?}.")
                 }
                 let time_needed = OffsetDateTime::now_utc() - start;
-                log::info!("Needed {} for discovering {} websites", time_needed, context.discovered_websites());
-                log::info!("Needed {} for crawling {} websites", time_needed, context.crawled_websites().map(|value| value.to_string()).unwrap_or("# ERROR COUNTING#".to_string()));
+                log::info!(
+                    "Needed {} for discovering {} websites",
+                    time_needed,
+                    context.discovered_websites()
+                );
+                log::info!(
+                    "Needed {} for crawling {} websites",
+                    time_needed,
+                    context
+                        .crawled_websites()
+                        .map(|value| value.to_string())
+                        .unwrap_or("# ERROR COUNTING#".to_string())
+                );
                 Ok(())
             }
         }
     }
 }
-
 
 /// The mode of the application
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -241,20 +281,19 @@ pub enum ApplicationMode {
     Multi(Option<NonZeroUsize>),
 }
 
-
 #[cfg(test)]
 mod test {
-    use log4rs::append::file::FileAppender;
-    use log4rs::Config;
-    use log4rs::config::{Appender, Logger, Root};
-    use log4rs::encode::pattern::PatternEncoder;
-    use log::LevelFilter;
-    use time::Duration;
-    use crate::application::{Atra, ApplicationMode};
-    use crate::config::{BudgetSetting, Configs, CrawlConfig};
+    use crate::application::{ApplicationMode, Atra};
     use crate::config::crawl::UserAgent;
+    use crate::config::{BudgetSetting, Configs, CrawlConfig};
     use crate::runtime::OptionalAtraHandle;
     use crate::seed::SeedDefinition;
+    use log::LevelFilter;
+    use log4rs::append::file::FileAppender;
+    use log4rs::config::{Appender, Logger, Root};
+    use log4rs::encode::pattern::PatternEncoder;
+    use log4rs::Config;
+    use time::Duration;
 
     fn init() {
         // let stdout = ConsoleAppender::builder().build();
@@ -277,10 +316,8 @@ mod test {
     #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
     async fn can_multithread() {
         init();
-        let (app, mut barrier) = Atra::create_contained_with(
-            ApplicationMode::Multi(None),
-            OptionalAtraHandle::None,
-        );
+        let (app, mut barrier) =
+            Atra::create_contained_with(ApplicationMode::Multi(None), OptionalAtraHandle::None);
 
         let mut config: CrawlConfig = CrawlConfig::default();
         config.budget.default = BudgetSetting::Absolute {
@@ -307,13 +344,14 @@ mod test {
                 "https://ticktoo.com/".to_string(),
             ]),
             configs,
-        ).await.expect("no errors");
+        )
+        .await
+        .expect("no errors");
 
         drop(app);
         barrier.wait().await;
     }
 }
-
 
 #[cfg(test)]
 mod config_test {

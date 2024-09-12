@@ -1,6 +1,6 @@
+use isolang::Language;
 use std::convert::Infallible;
 use std::error::Error as StdError;
-use isolang::Language;
 use whatlang::Lang;
 
 pub trait ToIsoLang {
@@ -14,8 +14,10 @@ pub trait TryToIsoLang {
     fn try_to_isolang(self) -> Result<Language, Self::Error>;
 }
 
-
-impl<T> TryToIsoLang for T where T: ToIsoLang {
+impl<T> TryToIsoLang for T
+where
+    T: ToIsoLang,
+{
     type Error = Infallible;
 
     #[inline(always)]
@@ -23,7 +25,6 @@ impl<T> TryToIsoLang for T where T: ToIsoLang {
         Ok(self.to_isolang())
     }
 }
-
 
 impl ToIsoLang for Lang {
     fn to_isolang(self) -> Language {

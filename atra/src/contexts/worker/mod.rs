@@ -1,5 +1,5 @@
-mod error;
 mod context;
+mod error;
 
-pub use error::WriteError;
 pub use context::WorkerContext;
+pub use error::CrawlWriteError;

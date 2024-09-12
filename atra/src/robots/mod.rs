@@ -12,14 +12,14 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-pub mod error;
 pub mod cached;
+pub mod error;
 pub mod information;
 pub mod manager;
 pub mod manager_impl;
 
-pub use error::RobotsError;
 pub use cached::CachedRobots;
+pub use error::RobotsError;
 pub use information::*;
 pub use manager::RobotsManager;
 pub use manager_impl::*;

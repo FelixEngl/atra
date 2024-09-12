@@ -1,15 +1,14 @@
+use crate::io::serial::{NoSerial, SerialProvider};
+use crate::io::templating::TemplateError::ArgumentMissing;
+use data_encoding::BASE64URL_NOPAD;
 use std::borrow::{Borrow, Cow};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter, Write};
 use std::hash::Hash;
 use std::sync::Arc;
-use data_encoding::BASE64URL_NOPAD;
 use thiserror::Error;
-use time::format_description::{OwnedFormatItem, parse_owned};
+use time::format_description::{parse_owned, OwnedFormatItem};
 use time::OffsetDateTime;
-use crate::io::templating::TemplateError::ArgumentMissing;
-use crate::io::serial::{NoSerial, SerialProvider};
-
 
 macro_rules! file_name_template_element {
     ($result: ident, $value: literal $($tt:tt)*) => {
@@ -131,16 +130,21 @@ pub(crate) use {file_name_template, file_name_template_element};
 #[derive(Debug, Clone)]
 #[repr(transparent)]
 pub struct FileNameTemplate {
-    parts: Arc<Vec<FileNameTemplateElement>>
+    parts: Arc<Vec<FileNameTemplateElement>>,
 }
 
 impl FileNameTemplate {
     pub fn new(parts: Arc<Vec<FileNameTemplateElement>>) -> Self {
-        Self{ parts }
+        Self { parts }
     }
 
     /// Writes the template element to `f`. Returns true if some kind of content was written.
-    pub fn write(&self, f: &mut impl Write, serial_provider: &impl SerialProvider, args: Option<&FileNameTemplateArgs>) -> Result<bool, TemplateError> {
+    pub fn write(
+        &self,
+        f: &mut impl Write,
+        serial_provider: &impl SerialProvider,
+        args: Option<&FileNameTemplateArgs>,
+    ) -> Result<bool, TemplateError> {
         let mut wrote_something = false;
         for value in self.parts.iter() {
             wrote_something |= value.write(f, serial_provider, args)?;
@@ -165,9 +169,6 @@ impl From<Vec<FileNameTemplateElement>> for FileNameTemplate {
     }
 }
 
-
-
-
 /// Template args
 #[derive(Debug, Clone)]
 #[repr(transparent)]
@@ -182,25 +183,39 @@ impl FileNameTemplateArgs {
         Self(HashMap::with_capacity(capacity))
     }
 
-    pub fn insert_str(&mut self, key: impl AsRef<str>, value: &'static str) -> Option<Cow<'static, str>> {
-        self.0.insert(key.as_ref().to_string(), Cow::Borrowed(value))
+    pub fn insert_str(
+        &mut self,
+        key: impl AsRef<str>,
+        value: &'static str,
+    ) -> Option<Cow<'static, str>> {
+        self.0
+            .insert(key.as_ref().to_string(), Cow::Borrowed(value))
     }
 
     pub fn insert(&mut self, key: impl AsRef<str>, value: String) -> Option<Cow<'static, str>> {
         self.0.insert(key.as_ref().to_string(), Cow::Owned(value))
     }
 
-    pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<&Cow<'static, str>> where String: Borrow<Q>, Q: Hash + Eq {
+    pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<&Cow<'static, str>>
+    where
+        String: Borrow<Q>,
+        Q: Hash + Eq,
+    {
         self.0.get(key)
     }
 
-    pub fn insert_value(&mut self, key: impl AsRef<str>, value: impl ToString) -> Option<Cow<'static, str>> {
-        self.0.insert(key.as_ref().to_string(), Cow::Owned(value.to_string()))
+    pub fn insert_value(
+        &mut self,
+        key: impl AsRef<str>,
+        value: impl ToString,
+    ) -> Option<Cow<'static, str>> {
+        self.0
+            .insert(key.as_ref().to_string(), Cow::Owned(value.to_string()))
     }
 }
 
 impl Extend<(String, Cow<'static, str>)> for FileNameTemplateArgs {
-    fn extend<T: IntoIterator<Item=(String, Cow<'static, str>)>>(&mut self, iter: T) {
+    fn extend<T: IntoIterator<Item = (String, Cow<'static, str>)>>(&mut self, iter: T) {
         self.0.extend(iter)
     }
 }
@@ -213,7 +228,7 @@ pub enum FileNameTemplateElement {
     UnixTimestamp(bool),
     FormattedTimestamp(OwnedFormatItem),
     Serial,
-    FileNameTemplate(FileNameTemplate)
+    FileNameTemplate(FileNameTemplate),
 }
 
 #[derive(Debug, Error)]
@@ -223,26 +238,34 @@ pub enum TemplateError {
     #[error(transparent)]
     Fmt(#[from] std::fmt::Error),
     #[error("The required argument value {0:?} is missing!")]
-    ArgumentMissing(&'static str)
+    ArgumentMissing(&'static str),
 }
 
 impl FileNameTemplateElement {
-    pub fn formatted_timestamp(format: impl AsRef<str>) -> Result<Self, time::error::InvalidFormatDescription> {
+    pub fn formatted_timestamp(
+        format: impl AsRef<str>,
+    ) -> Result<Self, time::error::InvalidFormatDescription> {
         Ok(Self::FormattedTimestamp(parse_owned::<2>(format.as_ref())?))
     }
 
     /// Writes the template element to `f`. Returns true if some kind of content was written.
-    pub fn write(&self, f: &mut impl Write, serial_provider: &impl SerialProvider, args: Option<&FileNameTemplateArgs>) -> Result<bool, TemplateError> {
+    pub fn write(
+        &self,
+        f: &mut impl Write,
+        serial_provider: &impl SerialProvider,
+        args: Option<&FileNameTemplateArgs>,
+    ) -> Result<bool, TemplateError> {
         match self {
-            FileNameTemplateElement::Static(value) => {
-                write!(f, "{}", value)?
-            }
-            FileNameTemplateElement::Dynamic(value) => {
-                write!(f, "{}", value)?
-            }
+            FileNameTemplateElement::Static(value) => write!(f, "{}", value)?,
+            FileNameTemplateElement::Dynamic(value) => write!(f, "{}", value)?,
             FileNameTemplateElement::UnixTimestamp(base64) => {
                 if *base64 {
-                    BASE64URL_NOPAD.encode_write(&OffsetDateTime::now_utc().unix_timestamp_nanos().to_be_bytes(), f)?;
+                    BASE64URL_NOPAD.encode_write(
+                        &OffsetDateTime::now_utc()
+                            .unix_timestamp_nanos()
+                            .to_be_bytes(),
+                        f,
+                    )?;
                 } else {
                     write!(f, "{}", OffsetDateTime::now_utc().unix_timestamp_nanos())?
                 }
@@ -254,7 +277,7 @@ impl FileNameTemplateElement {
                 if let Some(serial) = serial_provider.provide_serial() {
                     write!(f, "{serial}")?
                 } else {
-                    return Ok(false)
+                    return Ok(false);
                 }
             }
             FileNameTemplateElement::FileNameTemplate(template) => {
@@ -269,21 +292,20 @@ impl FileNameTemplateElement {
                             Err(ArgumentMissing(*key))
                         } else {
                             Ok(false)
-                        }
+                        };
                     }
                 } else {
                     return if *required {
                         Err(ArgumentMissing(*key))
                     } else {
                         Ok(false)
-                    }
+                    };
                 }
             }
         }
         Ok(true)
     }
 }
-
 
 impl From<FileNameTemplate> for FileNameTemplateElement {
     fn from(value: FileNameTemplate) -> Self {
@@ -312,29 +334,33 @@ impl From<&'static str> for FileNameTemplateElement {
 #[cfg(test)]
 mod test {
     use crate::io::serial::DefaultSerialProvider;
-    use crate::io::templating::{FileNameTemplateArgs};
+    use crate::io::templating::FileNameTemplateArgs;
 
     #[test]
-    fn can_build(){
+    fn can_build() {
         let serial_provider = DefaultSerialProvider::default();
 
         let template1 = file_name_template!(
             "wasser" _ "<ist>" _ "nass"
-        ).expect("Why?");
+        )
+        .expect("Why?");
 
         let mut s = String::new();
         s.push('a');
 
         let template = file_name_template!(
             s _ "test" _ ref template1 _ arg@"testi" _ "here" _ dyn@123 _ timestamp _ serial ".exe"
-        ).expect("Why?");
+        )
+        .expect("Why?");
 
         let mut result = String::new();
 
         let mut args = FileNameTemplateArgs::new();
         args.insert_str("testi", "<my_testi_value>");
 
-        template.write(&mut result, &serial_provider, Some(&args)).expect("Success!");
+        template
+            .write(&mut result, &serial_provider, Some(&args))
+            .expect("Success!");
 
         assert!(result.starts_with("test_wasser_<ist>_nass_<my_testi_value>_here_123_"));
         assert!(result.ends_with("_0.exe"));

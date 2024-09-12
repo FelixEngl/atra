@@ -12,19 +12,30 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::sync::Arc;
-use time::Duration;
 use crate::client::Client;
 use crate::robots::{CachedRobots, RobotsError};
 use crate::url::UrlWithDepth;
+use std::sync::Arc;
+use time::Duration;
 
 /// The basics that share all robots manager
 pub trait RobotsManager {
     /// A faster version of `get_or_retrieve` where no client is needed.
     /// Returns None if there is no robots.txt in any cache level.
-    async fn get(&self, agent: &str, url: &UrlWithDepth, max_age: Option<&Duration>) -> Result<Option<Arc<CachedRobots>>, RobotsError>;
+    async fn get(
+        &self,
+        agent: &str,
+        url: &UrlWithDepth,
+        max_age: Option<&Duration>,
+    ) -> Result<Option<Arc<CachedRobots>>, RobotsError>;
 
     /// Uses a mutex internally, therefore you should cache the returned value in your task.
     /// If nothing is in any cache it downloads the robots.txt with the client.
-    async fn get_or_retrieve(&self, client: &Client, agent: &str, url: &UrlWithDepth, max_age: Option<&Duration>) -> Result<Arc<CachedRobots>, RobotsError>;
+    async fn get_or_retrieve(
+        &self,
+        client: &Client,
+        agent: &str,
+        url: &UrlWithDepth,
+        max_age: Option<&Duration>,
+    ) -> Result<Arc<CachedRobots>, RobotsError>;
 }

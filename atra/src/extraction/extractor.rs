@@ -12,19 +12,19 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::cmp::Ordering;
-use std::collections::HashSet;
-use camino::Utf8PathBuf;
-use serde::{Deserialize, Serialize};
-use strum::{Display, EnumString};
-use enum_iterator::{all};
+use super::ExtractedLink;
 use crate::contexts::traits::{SupportsConfigs, SupportsGdbrRegistry};
 use crate::data::Decoded;
-use super::ExtractedLink;
 use crate::extraction::extractor_method::ExtractorMethod;
 use crate::format::AtraFileInformation;
+use crate::fetching::ResponseData;
 use crate::toolkit::LanguageInformation;
-use crate::response::ResponseData;
+use camino::Utf8PathBuf;
+use enum_iterator::all;
+use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
+use std::collections::HashSet;
+use strum::{Display, EnumString};
 /*
     To register a new extractor, create a extractor_decode_action_declaration
     and extractor_sub_extractor_declaration.
@@ -42,19 +42,27 @@ impl PartialEq for Extractor {
 }
 
 impl Extractor {
-
     /// If the
-    async fn apply_extractors<const FALLBACK_MODE: bool, C>(&self, context: &C, response: ProcessedData<'_>, result: &mut ExtractorResult)
-    where C: SupportsConfigs + SupportsGdbrRegistry
+    async fn apply_extractors<const FALLBACK_MODE: bool, C>(
+        &self,
+        context: &C,
+        response: ProcessedData<'_>,
+        result: &mut ExtractorResult,
+    ) where
+        C: SupportsConfigs + SupportsGdbrRegistry,
     {
         for extractor in &self.0 {
             // Require that both are either true or false
             if FALLBACK_MODE ^ extractor.is_fallback() {
-                continue
+                continue;
             }
             if extractor.can_apply(&response) {
                 if result.apply_extractor(extractor.extractor_method) {
-                    match extractor.extractor_method.extract_links(context, &response, result).await {
+                    match extractor
+                        .extractor_method
+                        .extract_links(context, &response, result)
+                        .await
+                    {
                         Ok(value) => {
                             log::debug!("Extracted {value} links with {extractor:?}.");
                         }
@@ -72,18 +80,28 @@ impl Extractor {
     }
 
     /// Extracts the data this the set extractors
-    pub async fn extract<C>(&self, context: &C, response: &ResponseData, identified_type: &AtraFileInformation, decoded: &Decoded<String, Utf8PathBuf>, lang: Option<&LanguageInformation>) -> ExtractorResult
-    where C: SupportsConfigs + SupportsGdbrRegistry
+    pub async fn extract<C>(
+        &self,
+        context: &C,
+        response: &ResponseData,
+        identified_type: &AtraFileInformation,
+        decoded: &Decoded<String, Utf8PathBuf>,
+        lang: Option<&LanguageInformation>,
+    ) -> ExtractorResult
+    where
+        C: SupportsConfigs + SupportsGdbrRegistry,
     {
         log::trace!("Extractor: {:?} - {}", identified_type.format, response.url);
         let mut result = ExtractorResult::default();
         let holder = ProcessedData(response, identified_type, decoded, lang);
-        self.apply_extractors::<false, _>(context, holder, &mut result).await;
+        self.apply_extractors::<false, _>(context, holder, &mut result)
+            .await;
         if result.no_extractor_applied() || result.is_empty() {
             if !result.no_extractor_applied() {
                 log::debug!("Extractor: Unsupported type: {:?}", identified_type.format);
             }
-            self.apply_extractors::<true, _>(context, holder, &mut result).await;
+            self.apply_extractors::<true, _>(context, holder, &mut result)
+                .await;
         }
         result
     }
@@ -94,7 +112,7 @@ impl Default for Extractor {
         Self(
             all::<ExtractorMethod>()
                 .map(|value| ExtractorCommand::new_default_apply(value))
-                .collect()
+                .collect(),
         )
     }
 }
@@ -105,19 +123,17 @@ pub(crate) struct ProcessedData<'a>(
     pub &'a ResponseData,
     pub &'a AtraFileInformation,
     pub &'a Decoded<String, Utf8PathBuf>,
-    pub Option<&'a LanguageInformation>
+    pub Option<&'a LanguageInformation>,
 );
-
 
 /// The result of an extraction, contains the extracted links as well es the applied extractors.
 #[derive(Debug, Default)]
 pub struct ExtractorResult {
     pub links: HashSet<ExtractedLink>,
-    pub applied_extractors: HashSet<ExtractorMethod>
+    pub applied_extractors: HashSet<ExtractorMethod>,
 }
 
 impl ExtractorResult {
-
     /// Returns true if the extractor can be applied
     pub fn apply_extractor(&mut self, extractor: ExtractorMethod) -> bool {
         self.applied_extractors.insert(extractor)
@@ -147,10 +163,21 @@ impl ExtractorResult {
     }
 }
 
-
-
 /// When to apply the extractor?
-#[derive(Debug, Copy, Clone, Default, Serialize, Deserialize, EnumString, Display, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(
+    Debug,
+    Copy,
+    Clone,
+    Default,
+    Serialize,
+    Deserialize,
+    EnumString,
+    Display,
+    Ord,
+    PartialOrd,
+    Eq,
+    PartialEq,
+)]
 pub enum ApplyWhen {
     Always,
     #[default]
@@ -165,36 +192,27 @@ pub struct ExtractorCommand {
 }
 
 impl ExtractorCommand {
-    pub fn new(
-        extractor_method: ExtractorMethod,
-        apply_when: ApplyWhen,
-    ) -> Self {
+    pub fn new(extractor_method: ExtractorMethod, apply_when: ApplyWhen) -> Self {
         Self {
             extractor_method,
-            apply_when
+            apply_when,
         }
     }
 
-    pub fn new_default_apply(
-        extractor_method: ExtractorMethod,
-    ) -> Self {
+    pub fn new_default_apply(extractor_method: ExtractorMethod) -> Self {
         Self::new(extractor_method, Default::default())
     }
 
     pub fn can_apply(&self, page: &ProcessedData<'_>) -> bool {
         match self.apply_when {
-            ApplyWhen::Always => {true}
-            ApplyWhen::IfSuitable => {
-                self.extractor_method.is_compatible(page)
-            }
-            ApplyWhen::Fallback => {
-                false
-            }
+            ApplyWhen::Always => true,
+            ApplyWhen::IfSuitable => self.extractor_method.is_compatible(page),
+            ApplyWhen::Fallback => false,
         }
     }
 
     pub fn is_fallback(&self) -> bool {
-        return self.apply_when == ApplyWhen::Fallback
+        return self.apply_when == ApplyWhen::Fallback;
     }
 }
 
@@ -228,17 +246,16 @@ impl Ord for ExtractorCommand {
     }
 }
 
-
 #[cfg(test)]
 mod test {
     use crate::config::CrawlConfig;
-    use crate::response::{ResponseData};
-    use crate::data_processing::process;
     use crate::data::RawData;
+    use crate::data_processing::process;
     use crate::extraction::extractor::Extractor;
-    use crate::fetching::{FetchedRequestData};
+    use crate::fetching::FetchedRequestData;
     use crate::format::AtraFileInformation;
     use crate::language_detection::LanguageInformation;
+    use crate::response::ResponseData;
     use crate::test_impls::InMemoryContext;
     use crate::url::UrlWithDepth;
 
@@ -266,9 +283,17 @@ mod test {
         cfg.respect_nofollow = true;
         cfg.crawl_embedded_data = true;
 
-
-
-        let extracted = Extractor::default().extract(&context, &page, &identified_type, &preprocessed, Some(&LanguageInformation::ENG)).await.to_optional_links().unwrap();
+        let extracted = Extractor::default()
+            .extract(
+                &context,
+                &page,
+                &identified_type,
+                &preprocessed,
+                Some(&LanguageInformation::ENG),
+            )
+            .await
+            .to_optional_links()
+            .unwrap();
 
         println!("{}", extracted.len());
 
@@ -277,4 +302,3 @@ mod test {
         }
     }
 }
-

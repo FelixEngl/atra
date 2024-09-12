@@ -19,7 +19,7 @@ pub type ClientBuilder = reqwest_middleware::ClientBuilder;
 pub type Client = reqwest_middleware::ClientWithMiddleware;
 
 /// The client error
-pub type Error = reqwest_middleware::Error;
+pub type ClientError = reqwest_middleware::Error;
 
 /// The client result
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, ClientError>;

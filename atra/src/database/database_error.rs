@@ -12,15 +12,15 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::fmt::{Debug, Display, Formatter};
-use data_encoding::{BASE64, DecodeError};
-use rocksdb::{Error, ErrorKind};
-use thiserror::Error;
 use crate::io::errors::ErrorWithPath;
-use warc::header::{WarcHeaderValueError};
+use crate::warc_ext::ReaderError;
+use data_encoding::{DecodeError, BASE64};
+use rocksdb::{Error, ErrorKind};
+use std::fmt::{Debug, Display, Formatter};
+use thiserror::Error;
+use warc::header::WarcHeaderValueError;
 use warc::reader::WarcCursorReadError;
 use warc::writer::WarcWriterError;
-use crate::warc_ext::ReaderError;
 
 /// Returns the reason why a database is failing
 #[derive(Debug, Error)]
@@ -29,14 +29,14 @@ pub enum DatabaseError {
     Damaged {
         cf: &'static str,
         #[source]
-        source: Error
+        source: Error,
     },
     #[error("Tried to execute {action} in {cf} but resulted in {source}.")]
     FailureWithoutKey {
         cf: &'static str,
         action: DBActionType,
         #[source]
-        source: Error
+        source: Error,
     },
     #[error("Tried to execute {action} in {cf} with {key} but resulted in {source}.")]
     Failure {
@@ -45,7 +45,7 @@ pub enum DatabaseError {
         key: String,
         entry: Option<Vec<u8>>,
         #[source]
-        source: Error
+        source: Error,
     },
     #[error("Recoverable: Tried to execute {action} in {cf} with {key} but resulted in {source}.")]
     RecoverableFailure {
@@ -54,7 +54,7 @@ pub enum DatabaseError {
         key: String,
         entry: Option<Vec<u8>>,
         #[source]
-        source: Error
+        source: Error,
     },
     #[error("NotFound: Tried to execute {action} in {cf} with {key} but resulted in {source}.")]
     NotFound {
@@ -63,16 +63,18 @@ pub enum DatabaseError {
         key: String,
         entry: Option<Vec<u8>>,
         #[source]
-        source: Error
+        source: Error,
     },
-    #[error("Unknown failure while executing {action} in {cf} with {key} but resulted in {source}.")]
+    #[error(
+        "Unknown failure while executing {action} in {cf} with {key} but resulted in {source}."
+    )]
     Unknown {
         cf: &'static str,
         action: DBActionType,
         key: String,
         entry: Option<Vec<u8>>,
         #[source]
-        source: Error
+        source: Error,
     },
     #[error("The value for {key} in {cf} is not serializable!\n{value:?}")]
     NotSerializable {
@@ -80,7 +82,7 @@ pub enum DatabaseError {
         key: String,
         value: Box<dyn Debug + Send + Sync>,
         #[source]
-        source: bincode::Error
+        source: bincode::Error,
     },
     #[error("The value for {key} in {cf} is not deserializable!\n{entry}")]
     NotDeSerializable {
@@ -88,14 +90,14 @@ pub enum DatabaseError {
         key: String,
         entry: LazyBase64Value<Vec<u8>>,
         #[source]
-        source: bincode::Error
+        source: bincode::Error,
     },
     #[error(transparent)]
     WarcCursorError(#[from] WarcCursorReadError),
     #[error(transparent)]
     IOErrorWithPath(#[from] ErrorWithPath),
     #[error(transparent)]
-    IOError(#[from]std::io::Error),
+    IOError(#[from] std::io::Error),
     #[error(transparent)]
     WarcWriterError(#[from] WarcWriterError),
     #[error(transparent)]
@@ -103,9 +105,8 @@ pub enum DatabaseError {
     #[error(transparent)]
     Base64DecodeError(#[from] DecodeError),
     #[error(transparent)]
-    WarcReadError(#[from] ReaderError)
+    WarcReadError(#[from] ReaderError),
 }
-
 
 #[derive(Debug)]
 #[repr(transparent)]
@@ -135,13 +136,13 @@ impl DatabaseError {
         cf: &'static str,
         key: String,
         value: T,
-        source: bincode::Error
+        source: bincode::Error,
     ) -> Self {
         Self::NotSerializable {
             cf,
             key,
             source,
-            value: Box::new(value)
+            value: Box::new(value),
         }
     }
 
@@ -149,13 +150,13 @@ impl DatabaseError {
         cf: &'static str,
         key: String,
         entry: LazyBase64Value<Vec<u8>>,
-        source: bincode::Error
+        source: bincode::Error,
     ) -> Self {
         Self::NotDeSerializable {
             cf,
             key,
             source,
-            entry
+            entry,
         }
     }
 
@@ -167,63 +168,57 @@ impl DatabaseError {
         source: Error,
     ) -> DatabaseError {
         match source.kind() {
-            ErrorKind::Corruption | ErrorKind::IOError | ErrorKind::ColumnFamilyDropped | ErrorKind::ShutdownInProgress | ErrorKind::CompactionTooLarge => {
-                DatabaseError::Damaged {
-                    cf,
-                    source
-                }
-            }
-            ErrorKind::NotSupported | ErrorKind::InvalidArgument | ErrorKind::Incomplete | ErrorKind::Expired => {
-                DatabaseError::Failure {
-                    cf,
-                    action,
-                    key: data_encoding::BASE64.encode(key.as_ref()),
-                    entry: entry.map(|value| value.to_vec()),
-                    source
-                }
-            }
-            ErrorKind::TryAgain | ErrorKind::MergeInProgress | ErrorKind::TimedOut | ErrorKind::Busy | ErrorKind::Aborted => {
-                DatabaseError::RecoverableFailure {
-                    cf,
-                    action,
-                    key: data_encoding::BASE64.encode(key.as_ref()),
-                    entry: entry.map(|value| value.to_vec()),
-                    source
-                }
-            }
-            ErrorKind::NotFound => {
-                DatabaseError::NotFound {
-                    cf,
-                    action,
-                    key: data_encoding::BASE64.encode(key.as_ref()),
-                    entry: entry.map(|value| value.to_vec()),
-                    source
-                }
-            }
-            ErrorKind::Unknown => {
-                DatabaseError::Unknown {
-                    cf,
-                    action,
-                    key: data_encoding::BASE64.encode(key.as_ref()),
-                    entry: entry.map(|value| value.to_vec()),
-                    source
-                }
-            }
+            ErrorKind::Corruption
+            | ErrorKind::IOError
+            | ErrorKind::ColumnFamilyDropped
+            | ErrorKind::ShutdownInProgress
+            | ErrorKind::CompactionTooLarge => DatabaseError::Damaged { cf, source },
+            ErrorKind::NotSupported
+            | ErrorKind::InvalidArgument
+            | ErrorKind::Incomplete
+            | ErrorKind::Expired => DatabaseError::Failure {
+                cf,
+                action,
+                key: data_encoding::BASE64.encode(key.as_ref()),
+                entry: entry.map(|value| value.to_vec()),
+                source,
+            },
+            ErrorKind::TryAgain
+            | ErrorKind::MergeInProgress
+            | ErrorKind::TimedOut
+            | ErrorKind::Busy
+            | ErrorKind::Aborted => DatabaseError::RecoverableFailure {
+                cf,
+                action,
+                key: data_encoding::BASE64.encode(key.as_ref()),
+                entry: entry.map(|value| value.to_vec()),
+                source,
+            },
+            ErrorKind::NotFound => DatabaseError::NotFound {
+                cf,
+                action,
+                key: data_encoding::BASE64.encode(key.as_ref()),
+                entry: entry.map(|value| value.to_vec()),
+                source,
+            },
+            ErrorKind::Unknown => DatabaseError::Unknown {
+                cf,
+                action,
+                key: data_encoding::BASE64.encode(key.as_ref()),
+                entry: entry.map(|value| value.to_vec()),
+                source,
+            },
         }
     }
 }
-
-
 
 /// Indicates a raw database error
 pub trait RawDatabaseError {
     type ReturnValue;
 
-    fn enrich_no_key(
-        self,
-        cf: &'static str,
-        action: DBActionType
-    ) -> Self::ReturnValue where Self: Sized;
+    fn enrich_no_key(self, cf: &'static str, action: DBActionType) -> Self::ReturnValue
+    where
+        Self: Sized;
 
     fn enrich<K: AsRef<[u8]>>(
         self,
@@ -231,7 +226,9 @@ pub trait RawDatabaseError {
         action: DBActionType,
         key: K,
         entry: Option<&[u8]>,
-    ) -> Self::ReturnValue where Self: Sized;
+    ) -> Self::ReturnValue
+    where
+        Self: Sized;
 
     #[inline]
     fn enrich_with_entry<K: AsRef<[u8]>>(
@@ -240,13 +237,11 @@ pub trait RawDatabaseError {
         action: DBActionType,
         key: K,
         entry: &[u8],
-    ) -> Self::ReturnValue where Self: Sized {
-        self.enrich(
-            cf,
-            action,
-            key,
-            Some(entry)
-        )
+    ) -> Self::ReturnValue
+    where
+        Self: Sized,
+    {
+        self.enrich(cf, action, key, Some(entry))
     }
 
     #[inline]
@@ -255,57 +250,63 @@ pub trait RawDatabaseError {
         cf: &'static str,
         action: DBActionType,
         key: K,
-    ) -> Self::ReturnValue where Self: Sized {
-        self.enrich(
-            cf,
-            action,
-            key,
-            None
-        )
+    ) -> Self::ReturnValue
+    where
+        Self: Sized,
+    {
+        self.enrich(cf, action, key, None)
     }
 }
 
-impl RawDatabaseError for Error{
+impl RawDatabaseError for Error {
     type ReturnValue = DatabaseError;
 
-    fn enrich_no_key(self, cf: &'static str, action: DBActionType) -> Self::ReturnValue where Self: Sized {
+    fn enrich_no_key(self, cf: &'static str, action: DBActionType) -> Self::ReturnValue
+    where
+        Self: Sized,
+    {
         DatabaseError::FailureWithoutKey {
             cf,
             action,
-            source: self
+            source: self,
         }
     }
 
     #[inline]
-    fn enrich<K: AsRef<[u8]>>(self, cf: &'static str, action: DBActionType, key: K, entry: Option<&[u8]>) -> Self::ReturnValue {
-        DatabaseError::from(
-            cf,
-            action,
-            key,
-            entry,
-            self
-        )
+    fn enrich<K: AsRef<[u8]>>(
+        self,
+        cf: &'static str,
+        action: DBActionType,
+        key: K,
+        entry: Option<&[u8]>,
+    ) -> Self::ReturnValue {
+        DatabaseError::from(cf, action, key, entry, self)
     }
 }
 
-impl<T> RawDatabaseError for Result<T, Error>{
+impl<T> RawDatabaseError for Result<T, Error> {
     type ReturnValue = Result<T, DatabaseError>;
 
-    fn enrich_no_key(self, cf: &'static str, action: DBActionType) -> Self::ReturnValue where Self: Sized {
+    fn enrich_no_key(self, cf: &'static str, action: DBActionType) -> Self::ReturnValue
+    where
+        Self: Sized,
+    {
         match self {
-            Ok(value) => {
-                Ok(value)
-            }
-            Err(err) => {Err(err.enrich_no_key(cf, action))}
+            Ok(value) => Ok(value),
+            Err(err) => Err(err.enrich_no_key(cf, action)),
         }
     }
 
-    fn enrich<K: AsRef<[u8]>>(self, cf: &'static str, action: DBActionType, key: K, entry: Option<&[u8]>) -> Self::ReturnValue {
+    fn enrich<K: AsRef<[u8]>>(
+        self,
+        cf: &'static str,
+        action: DBActionType,
+        key: K,
+        entry: Option<&[u8]>,
+    ) -> Self::ReturnValue {
         match self {
-            Ok(value) => {
-                Ok(value)
-            }
-            Err(err) => {Err(err.enrich(cf, action, key, entry))}
+            Ok(value) => Ok(value),
+            Err(err) => Err(err.enrich(cf, action, key, entry)),
         }
     }
 }
@@ -320,7 +321,6 @@ pub trait RawIOError {
         value: V,
     ) -> Self::ReturnValue;
 
-
     fn enrich_de<K: AsRef<[u8]>>(
         self,
         cf: &'static str,
@@ -333,22 +333,32 @@ impl RawIOError for bincode::Error {
     type ReturnValue = DatabaseError;
 
     #[inline]
-    fn enrich_ser<V: Debug + Send + Sync + 'static, K: AsRef<[u8]>>(self, cf: &'static str, key: K, value: V) -> Self::ReturnValue {
+    fn enrich_ser<V: Debug + Send + Sync + 'static, K: AsRef<[u8]>>(
+        self,
+        cf: &'static str,
+        key: K,
+        value: V,
+    ) -> Self::ReturnValue {
         DatabaseError::from_serialisation(
             cf,
             data_encoding::BASE64.encode(key.as_ref()),
             value,
-            self
+            self,
         )
     }
 
     #[inline]
-    fn enrich_de<K: AsRef<[u8]>>(self, cf: &'static str, key: K, value: Vec<u8>) -> Self::ReturnValue {
+    fn enrich_de<K: AsRef<[u8]>>(
+        self,
+        cf: &'static str,
+        key: K,
+        value: Vec<u8>,
+    ) -> Self::ReturnValue {
         DatabaseError::from_deserialisation(
             cf,
             BASE64.encode(key.as_ref()),
             LazyBase64Value(value),
-            self
+            self,
         )
     }
 }
@@ -357,22 +367,28 @@ impl<T> RawIOError for Result<T, bincode::Error> {
     type ReturnValue = Result<T, DatabaseError>;
 
     #[inline]
-    fn enrich_ser<V: Debug + Send + Sync + 'static, K: AsRef<[u8]>>(self, cf: &'static str, key: K, value: V) -> Self::ReturnValue {
+    fn enrich_ser<V: Debug + Send + Sync + 'static, K: AsRef<[u8]>>(
+        self,
+        cf: &'static str,
+        key: K,
+        value: V,
+    ) -> Self::ReturnValue {
         match self {
-            Ok(value) => {
-                Ok(value)
-            }
-            Err(err) => {Err(err.enrich_ser(cf, key, value))}
+            Ok(value) => Ok(value),
+            Err(err) => Err(err.enrich_ser(cf, key, value)),
         }
     }
 
     #[inline]
-    fn enrich_de<K: AsRef<[u8]>>(self, cf: &'static str, key: K, value: Vec<u8>) -> Self::ReturnValue {
+    fn enrich_de<K: AsRef<[u8]>>(
+        self,
+        cf: &'static str,
+        key: K,
+        value: Vec<u8>,
+    ) -> Self::ReturnValue {
         match self {
-            Ok(value) => {
-                Ok(value)
-            }
-            Err(err) => {Err(err.enrich_de(cf, key, value))}
+            Ok(value) => Ok(value),
+            Err(err) => Err(err.enrich_de(cf, key, value)),
         }
     }
 }

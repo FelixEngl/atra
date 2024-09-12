@@ -12,21 +12,21 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::borrow::Cow;
-use std::cmp::{Ordering};
-use std::fmt::{Debug, Display, Formatter};
-use std::hash::{Hash, Hasher};
-use std::ops::Deref;
-use std::str::FromStr;
+use super::origin::{AtraOriginProvider, AtraUrlOrigin};
+use crate::url::atra_uri::{AtraUri, HostComparisonError, ParseError};
+use crate::url::cleaner::SingleUrlCleaner;
+use crate::url::Depth;
 use case_insensitive_string::CaseInsensitiveString;
 use itertools::{EitherOrBoth, Itertools, Position};
 use reqwest::IntoUrl;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
+use std::cmp::Ordering;
+use std::fmt::{Debug, Display, Formatter};
+use std::hash::{Hash, Hasher};
+use std::ops::Deref;
+use std::str::FromStr;
 use warc::field::{ToUriLikeFieldValue, UriLikeFieldValue};
-use super::origin::{AtraUrlOrigin, AtraOriginProvider};
-use crate::url::cleaner::SingleUrlCleaner;
-use crate::url::atra_uri::{AtraUri, ParseError, HostComparisonError};
-use crate::url::Depth;
 
 /// Represents an url with knowledge about its depth and raw representation.
 /// The equals and hash methods only consider the [parsed_url].
@@ -43,10 +43,7 @@ impl UrlWithDepth {
     /// Creates a new [UrlWithDepth]
     pub fn new(depth: Depth, mut url: AtraUri) -> Self {
         url.clean(SingleUrlCleaner::Fragment);
-        Self {
-            url,
-            depth
-        }
+        Self { url, depth }
     }
 
     /// Creates an url with depth from
@@ -64,20 +61,26 @@ impl UrlWithDepth {
         &self.depth
     }
 
-
     /// Returns the scheme of the underlying url
     pub fn scheme(&self) -> &str {
         self.url.scheme()
     }
 
-    fn create_new_calculate_depth_with_base(base: &UrlWithDepth, url: AtraUri) -> Result<Self, ParseError> {
+    fn create_new_calculate_depth_with_base(
+        base: &UrlWithDepth,
+        url: AtraUri,
+    ) -> Result<Self, ParseError> {
         let mut depth = base.depth;
-        
+
         match url.compare_hosts(&base.url) {
             Ok(true) => {
                 depth.depth_on_website += 1;
             }
-            Ok(false) | Err(HostComparisonError::NoHost { left_has_host: true, right_has_host: false }) => {
+            Ok(false)
+            | Err(HostComparisonError::NoHost {
+                left_has_host: true,
+                right_has_host: false,
+            }) => {
                 depth.depth_on_website = 0;
                 depth.distance_to_seed += 1;
             }
@@ -103,12 +106,7 @@ impl UrlWithDepth {
         // }
         depth.total_distance_to_seed += 1;
 
-        Ok(
-            Self {
-                depth,
-                url,
-            }
-        )
+        Ok(Self { depth, url })
     }
 
     /// Creates a new url with [base] as base for [raw_url] if needed.
@@ -127,10 +125,7 @@ impl UrlWithDepth {
 
     /// Checks
     pub fn is_exactly_same_as(&self, other: &Self) -> bool {
-        std::ptr::eq(self, other) || (
-            self.depth == other.depth
-                && self.url == other.url
-        )
+        std::ptr::eq(self, other) || (self.depth == other.depth && self.url == other.url)
     }
 
     pub fn as_str(&self) -> Cow<str> {
@@ -155,7 +150,11 @@ impl UrlWithDepth {
     /// Returns a url without path, query and fragment.
     pub fn clean_url(&self) -> AtraUri {
         let mut target = self.url.clone();
-        target.clean([SingleUrlCleaner::Fragment, SingleUrlCleaner::Query, SingleUrlCleaner::Password]);
+        target.clean([
+            SingleUrlCleaner::Fragment,
+            SingleUrlCleaner::Query,
+            SingleUrlCleaner::Password,
+        ]);
         target
     }
 }
@@ -195,57 +194,70 @@ impl PartialEq for UrlWithDepth {
 impl Ord for UrlWithDepth {
     fn cmp(&self, other: &Self) -> Ordering {
         if self.url == other.url {
-            match self.depth.distance_to_seed.cmp(&other.depth.distance_to_seed) {
-                Ordering::Equal => self.depth.depth_on_website.cmp(&other.depth.depth_on_website),
-                other => other
+            match self
+                .depth
+                .distance_to_seed
+                .cmp(&other.depth.distance_to_seed)
+            {
+                Ordering::Equal => self
+                    .depth
+                    .depth_on_website
+                    .cmp(&other.depth.depth_on_website),
+                other => other,
             }
         } else {
-            for (position, value) in self.url.as_bytes().iter().zip_longest(other.url.as_bytes().iter()).with_position() {
+            for (position, value) in self
+                .url
+                .as_bytes()
+                .iter()
+                .zip_longest(other.url.as_bytes().iter())
+                .with_position()
+            {
                 match position {
-                    Position::First | Position::Middle => {
-                        match value {
-                            EitherOrBoth::Both(a, b) => {
-                                match a.cmp(b) {
-                                    Ordering::Less => { return Ordering::Less }
-                                    Ordering::Greater => { return Ordering::Greater }
-                                    _ => {}
-                                }
-                            }
-                            EitherOrBoth::Left(_) => {
-                                return Ordering::Less
-                            }
-                            EitherOrBoth::Right(_) => {
-                                return Ordering::Greater
-                            }
-                        }
-                    }
+                    Position::First | Position::Middle => match value {
+                        EitherOrBoth::Both(a, b) => match a.cmp(b) {
+                            Ordering::Less => return Ordering::Less,
+                            Ordering::Greater => return Ordering::Greater,
+                            _ => {}
+                        },
+                        EitherOrBoth::Left(_) => return Ordering::Less,
+                        EitherOrBoth::Right(_) => return Ordering::Greater,
+                    },
                     Position::Last | Position::Only => {
                         return match value {
-                            EitherOrBoth::Both(a, b) => {
-                                match a.cmp(b) {
-                                    Ordering::Less => Ordering::Less,
-                                    Ordering::Greater => Ordering::Greater,
-                                    _ => {
-                                        match self.depth.distance_to_seed.cmp(&other.depth.distance_to_seed) {
-                                            Ordering::Equal => self.depth.depth_on_website.cmp(&other.depth.depth_on_website),
-                                            other => other
-                                        }
+                            EitherOrBoth::Both(a, b) => match a.cmp(b) {
+                                Ordering::Less => Ordering::Less,
+                                Ordering::Greater => Ordering::Greater,
+                                _ => {
+                                    match self
+                                        .depth
+                                        .distance_to_seed
+                                        .cmp(&other.depth.distance_to_seed)
+                                    {
+                                        Ordering::Equal => self
+                                            .depth
+                                            .depth_on_website
+                                            .cmp(&other.depth.depth_on_website),
+                                        other => other,
                                     }
                                 }
-                            }
-                            EitherOrBoth::Left(_) => {
-                                Ordering::Less
-                            }
-                            EitherOrBoth::Right(_) => {
-                                Ordering::Greater
-                            }
+                            },
+                            EitherOrBoth::Left(_) => Ordering::Less,
+                            EitherOrBoth::Right(_) => Ordering::Greater,
                         }
                     }
                 }
             }
-            match self.depth.distance_to_seed.cmp(&other.depth.distance_to_seed) {
-                Ordering::Equal => self.depth.depth_on_website.cmp(&other.depth.depth_on_website),
-                other => other
+            match self
+                .depth
+                .distance_to_seed
+                .cmp(&other.depth.distance_to_seed)
+            {
+                Ordering::Equal => self
+                    .depth
+                    .depth_on_website
+                    .cmp(&other.depth.depth_on_website),
+                other => other,
             }
         }
     }
@@ -257,7 +269,6 @@ impl PartialOrd for UrlWithDepth {
     }
 }
 
-
 impl Deref for UrlWithDepth {
     type Target = AtraUri;
 
@@ -265,7 +276,6 @@ impl Deref for UrlWithDepth {
         &self.url
     }
 }
-
 
 impl AsRef<AtraUri> for UrlWithDepth {
     fn as_ref(&self) -> &AtraUri {
@@ -292,9 +302,10 @@ mod test {
     use crate::url::{AtraOriginProvider, UrlWithDepth};
 
     #[test]
-    fn base_only_changes_if_not_given(){
+    fn base_only_changes_if_not_given() {
         let base = UrlWithDepth::from_seed("https://www.example.com/").unwrap();
-        let created = UrlWithDepth::with_base(&base, "https://www.siemens.com/lookup?v=20").unwrap();
+        let created =
+            UrlWithDepth::with_base(&base, "https://www.siemens.com/lookup?v=20").unwrap();
         assert_eq!(Some("www.siemens.com".into()), created.url.atra_origin());
         let created = UrlWithDepth::with_base(&base, "lookup?v=20").unwrap();
         assert_eq!(Some("www.example.com".into()), created.url.atra_origin());
@@ -302,42 +313,67 @@ mod test {
     }
 
     #[test]
-    fn depth_on_website_goes_up_if_on_same_domain(){
+    fn depth_on_website_goes_up_if_on_same_domain() {
         let base = UrlWithDepth::from_seed("https://www.example.com/").unwrap();
-        let created1 = UrlWithDepth::with_base(&base, "https://www.example.com/lookup?v=20").unwrap();
+        let created1 =
+            UrlWithDepth::with_base(&base, "https://www.example.com/lookup?v=20").unwrap();
         assert_eq!(Some("www.example.com".into()), created1.url.atra_origin());
         assert_eq!(base.depth + (1, 0, 1), created1.depth);
-        let created2 = UrlWithDepth::with_base(&created1, "https://www.example.com/test?v=20").unwrap();
+        let created2 =
+            UrlWithDepth::with_base(&created1, "https://www.example.com/test?v=20").unwrap();
         assert_eq!(created1.depth + (1, 0, 1), created2.depth);
     }
 
     #[test]
-    fn distance_to_seed_goes_up_if_not_same_domain(){
+    fn distance_to_seed_goes_up_if_not_same_domain() {
         let base = UrlWithDepth::from_seed("https://www.example.com/").unwrap();
-        let created1 = UrlWithDepth::with_base(&base, "https://www.siemens.com/lookup?v=20").unwrap();
+        let created1 =
+            UrlWithDepth::with_base(&base, "https://www.siemens.com/lookup?v=20").unwrap();
         assert_eq!(Some("www.siemens.com".into()), created1.url.atra_origin());
         assert_eq!(Depth::ZERO + (0, 1, 1), created1.depth);
-        let created2 = UrlWithDepth::with_base(&created1, "https://www.siemens.com/test?v=20").unwrap();
+        let created2 =
+            UrlWithDepth::with_base(&created1, "https://www.siemens.com/test?v=20").unwrap();
         assert_eq!(created1.depth + (1, 0, 1), created2.depth);
-        let created3 = UrlWithDepth::with_base(&created2, "https://www.google.com/test?v=20").unwrap();
-        assert_eq!(Depth::ZERO + (0, created2.depth.distance_to_seed + 1, created2.depth.total_distance_to_seed + 1), created3.depth);
+        let created3 =
+            UrlWithDepth::with_base(&created2, "https://www.google.com/test?v=20").unwrap();
+        assert_eq!(
+            Depth::ZERO
+                + (
+                    0,
+                    created2.depth.distance_to_seed + 1,
+                    created2.depth.total_distance_to_seed + 1
+                ),
+            created3.depth
+        );
     }
 
     #[test]
     fn can_serialize_and_deserialize_nonhuman() {
         let base = UrlWithDepth::from_seed("https://www.example.com/").unwrap();
-        let created1 = UrlWithDepth::with_base(&base, "https://www.siemens.com/lookup?v=20").unwrap();
+        let created1 =
+            UrlWithDepth::with_base(&base, "https://www.siemens.com/lookup?v=20").unwrap();
         let serialized = bincode::serialize(&created1).unwrap();
         let deserialized1: UrlWithDepth = bincode::deserialize(&serialized).unwrap();
-        assert!(created1.is_exactly_same_as(&deserialized1), "Failed: \n  {:?}\n  !=\n  {:?}", created1, deserialized1)
+        assert!(
+            created1.is_exactly_same_as(&deserialized1),
+            "Failed: \n  {:?}\n  !=\n  {:?}",
+            created1,
+            deserialized1
+        )
     }
 
     #[test]
     fn can_serialize_and_deserialize_human() {
         let base = UrlWithDepth::from_seed("https://www.example.com/").unwrap();
-        let created1 = UrlWithDepth::with_base(&base, "https://www.siemens.com/lookup?v=20").unwrap();
+        let created1 =
+            UrlWithDepth::with_base(&base, "https://www.siemens.com/lookup?v=20").unwrap();
         let serialized = serde_json::to_string(&created1).unwrap();
         let deserialized1: UrlWithDepth = serde_json::from_str(&serialized).unwrap();
-        assert!(created1.is_exactly_same_as(&deserialized1), "Failed: \n  {:?}\n  !=\n  {:?}", created1, deserialized1)
+        assert!(
+            created1.is_exactly_same_as(&deserialized1),
+            "Failed: \n  {:?}\n  !=\n  {:?}",
+            created1,
+            deserialized1
+        )
     }
 }

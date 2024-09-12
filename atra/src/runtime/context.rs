@@ -12,7 +12,6 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-
 use crate::runtime::OptionalAtraHandle;
 use crate::runtime::UnsafeShutdownGuard;
 
@@ -20,17 +19,14 @@ use crate::runtime::UnsafeShutdownGuard;
 #[derive(Debug, Clone)]
 pub struct RuntimeContext {
     shutdown_guard: UnsafeShutdownGuard,
-    handle: OptionalAtraHandle
+    handle: OptionalAtraHandle,
 }
 
 impl RuntimeContext {
-    pub fn new(
-        shutdown_guard: UnsafeShutdownGuard,
-        handle: OptionalAtraHandle
-    ) -> Self {
-        Self{
+    pub fn new(shutdown_guard: UnsafeShutdownGuard, handle: OptionalAtraHandle) -> Self {
+        Self {
             shutdown_guard,
-            handle
+            handle,
         }
     }
 

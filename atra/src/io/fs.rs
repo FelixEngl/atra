@@ -12,17 +12,16 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::fmt::Debug;
-use std::io;
-use std::io::ErrorKind;
-use camino::{Utf8PathBuf, Utf8Path};
-use data_encoding::{BASE64URL_NOPAD};
-use tokio::sync::Mutex;
 use crate::io::errors::{ErrorWithPath, ToErrorWithPath};
 use crate::io::templating::{file_name_template, FileNameTemplate, FileNameTemplateArgs};
 use crate::io::unique_path_provider::{UniquePathProvider, UniquePathProviderWithTemplate};
 use crate::stores::warc::WarcFilePathProvider;
-
+use camino::{Utf8Path, Utf8PathBuf};
+use data_encoding::BASE64URL_NOPAD;
+use std::fmt::Debug;
+use std::io;
+use std::io::ErrorKind;
+use tokio::sync::Mutex;
 
 pub trait AtraFS {
     /// Creates a unique path to a fresh data file.
@@ -34,9 +33,11 @@ pub trait AtraFS {
     /// Deletes a datafile
     fn cleanup_data_file(&self, name: impl AsRef<Utf8Path> + Debug) -> io::Result<()>;
 
-    async fn create_worker_file_provider(&self, worker_id: usize) -> Result<WorkerFileSystemAccess, ErrorWithPath>;
+    async fn create_worker_file_provider(
+        &self,
+        worker_id: usize,
+    ) -> Result<WorkerFileSystemAccess, ErrorWithPath>;
 }
-
 
 /// Provides the paths in the application
 #[derive(Debug)]
@@ -60,32 +61,26 @@ impl FileSystemAccess {
             std::fs::create_dir_all(&collection_root).to_error_with_path(&collection_root)?;
         }
 
-        let template_base =
-            file_name_template!(service _ crawl_job_id).unwrap();
-
+        let template_base = file_name_template!(service _ crawl_job_id).unwrap();
 
         if !big_file_folder.exists() {
             std::fs::create_dir_all(&big_file_folder).to_error_with_path(&collection_root)?;
         }
 
-        let path_provider_big_file =
-            UniquePathProvider::new(big_file_folder)
-                .with_template(file_name_template!(arg!@"url64" _ timestamp64 _ serial ".dat").unwrap());
+        let path_provider_big_file = UniquePathProvider::new(big_file_folder).with_template(
+            file_name_template!(arg!@"url64" _ timestamp64 _ serial ".dat").unwrap(),
+        );
 
-        Ok(
-            Self {
-                collection_root,
-                worker_base: template_base,
-                big_file: path_provider_big_file,
-                filesystem_lock: Mutex::new(()),
-            }
-        )
+        Ok(Self {
+            collection_root,
+            worker_base: template_base,
+            big_file: path_provider_big_file,
+            filesystem_lock: Mutex::new(()),
+        })
     }
 }
 
-
 impl AtraFS for FileSystemAccess {
-
     /// Creates a unique path to a fresh data file.
     fn create_unique_path_for_dat_file(&self, url: &str) -> Utf8PathBuf {
         let mut args = FileNameTemplateArgs::with_capacity(1);
@@ -98,7 +93,6 @@ impl AtraFS for FileSystemAccess {
         self.big_file.root().join(name)
     }
 
-
     /// Deletes a datafile
     fn cleanup_data_file(&self, name: impl AsRef<Utf8Path> + Debug) -> io::Result<()> {
         log::debug!("Delete the file {name:?}");
@@ -106,25 +100,26 @@ impl AtraFS for FileSystemAccess {
         std::fs::remove_file(path)
     }
 
-    async fn create_worker_file_provider(&self, worker_id: usize) -> Result<WorkerFileSystemAccess, ErrorWithPath> {
+    async fn create_worker_file_provider(
+        &self,
+        worker_id: usize,
+    ) -> Result<WorkerFileSystemAccess, ErrorWithPath> {
         let _ = self.filesystem_lock.lock().await;
         WorkerFileSystemAccess::new(
             self.collection_root.clone(),
             self.worker_base.clone(),
-            worker_id
+            worker_id,
         )
     }
 }
 
-
 /// A worker bound access for writing warcs
 #[derive(Debug)]
 pub struct WorkerFileSystemAccess {
-    provider: UniquePathProviderWithTemplate
+    provider: UniquePathProviderWithTemplate,
 }
 
 impl WorkerFileSystemAccess {
-
     pub fn new(
         collection_root: Utf8PathBuf,
         worker_base: FileNameTemplate,
@@ -135,15 +130,14 @@ impl WorkerFileSystemAccess {
             std::fs::create_dir_all(&worker_root).to_error_with_path(&worker_root)?;
         }
         let provider = UniquePathProvider::new(&worker_root).with_template(
-            file_name_template!(ref worker_base _ worker_id _ timestamp64 _ serial ".warc").unwrap()
+            file_name_template!(ref worker_base _ worker_id _ timestamp64 _ serial ".warc")
+                .unwrap(),
         );
-        Ok(
-            Self {
-                // worker_root,
-                // worker_base,
-                provider
-            }
-        )
+        Ok(Self {
+            // worker_root,
+            // worker_base,
+            provider,
+        })
     }
 }
 
@@ -167,7 +161,7 @@ impl WarcFilePathProvider for WorkerFileSystemAccess {
                                 result,
                                 io::Error::new(ErrorKind::AlreadyExists, "The path was already generated once, this should not be happening!")
                             )
-                        )
+                        );
                     } else {
                         last = Some(result);
                     }

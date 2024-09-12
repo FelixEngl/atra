@@ -3,14 +3,13 @@ use std::marker::PhantomData;
 
 #[cfg(RUSTC_IS_NIGHTLY)]
 #[feature(str_internals)]
-pub use core::str::utf8_char_width;
+pub use core::str::next_code_point;
 #[cfg(RUSTC_IS_NIGHTLY)]
 #[feature(str_internals)]
-pub use core::str::next_code_point;
+pub use core::str::utf8_char_width;
 use std::collections::VecDeque;
 use std::str::Utf8Error;
 use thiserror::Error;
-
 
 /// A decoded character with some meta information about its context.
 #[derive(Debug, Copy, Clone)]
@@ -24,7 +23,10 @@ pub struct DecodedChar {
 impl DecodedChar {
     #[inline(always)]
     pub const fn new(c: char, invalid_encounters: usize) -> Self {
-        Self { ch: c, invalid_encounters }
+        Self {
+            ch: c,
+            invalid_encounters,
+        }
     }
 
     #[inline(always)]
@@ -58,7 +60,6 @@ mod char_ct {
 
     const CONT_MASK: u8 = 0b0011_1111;
 
-
     /// Given a first byte, determines how many bytes are in this UTF-8 character.
     #[inline]
     pub const fn utf8_char_width(b: u8) -> usize {
@@ -86,7 +87,7 @@ mod char_ct {
     ///
     /// `bytes` must produce a valid UTF-8-like (UTF-8 or WTF-8) string
     #[inline]
-    pub unsafe fn next_code_point<'a, I: Iterator<Item=&'a u8>>(bytes: &mut I) -> Option<u32> {
+    pub unsafe fn next_code_point<'a, I: Iterator<Item = &'a u8>>(bytes: &mut I) -> Option<u32> {
         // Decode UTF-8
         let x = *bytes.next()?;
         if x < 128 {
@@ -123,9 +124,9 @@ mod char_ct {
     }
 }
 
-#[cfg(not(RUSTC_IS_NIGHTLY))]
-pub use char_ct::{utf8_char_width, next_code_point};
 use crate::toolkit::utf8::Utf8ReaderError::InvalidSequence;
+#[cfg(not(RUSTC_IS_NIGHTLY))]
+pub use char_ct::{next_code_point, utf8_char_width};
 
 #[derive(Debug, Error)]
 pub enum Utf8ReaderError {
@@ -136,7 +137,6 @@ pub enum Utf8ReaderError {
     #[error("An invalid marker was found!")]
     InvalidSequence,
 }
-
 
 /// Tries to read something as an utf8, stops when failing
 pub struct Utf8Reader<'a, I> {
@@ -161,10 +161,13 @@ impl<'a, I> Utf8Reader<'a, I> {
 
 impl<'a, I> From<RobustUtf8Reader<'a, I>> for Utf8Reader<'a, I> {
     fn from(value: RobustUtf8Reader<'a, I>) -> Self {
-        Self { inner: value, invalid_seq_error: false, stopped: false }
+        Self {
+            inner: value,
+            invalid_seq_error: false,
+            stopped: false,
+        }
     }
 }
-
 
 impl<'a, I> Iterator for Utf8Reader<'a, I>
 where
@@ -185,24 +188,20 @@ where
                 self.stopped = true;
                 None
             }
-            Some(next) => {
-                match next {
-                    Ok(DecodedChar { ch: value, invalid_encounters: 0 }) => {
-                        Some(Ok(value))
-                    }
-                    Ok(DecodedChar { ch: value, .. }) => {
-                        self.invalid_seq_error = true;
-                        Some(Ok(value))
-                    }
-                    Err(value) => {
-                        Some(Err(value.into()))
-                    }
+            Some(next) => match next {
+                Ok(DecodedChar {
+                    ch: value,
+                    invalid_encounters: 0,
+                }) => Some(Ok(value)),
+                Ok(DecodedChar { ch: value, .. }) => {
+                    self.invalid_seq_error = true;
+                    Some(Ok(value))
                 }
-            }
+                Err(value) => Some(Err(value.into())),
+            },
         }
     }
 }
-
 
 /// Tries to read a reader as utf8. Iff it is not capable to read something as character it skips
 /// to the next
@@ -218,7 +217,12 @@ const MIN_MEMORY_SIZE: usize = 4;
 
 impl<'a, R> RobustUtf8Reader<'a, R> {
     pub fn new(input: R) -> Self {
-        Self { input, stopped: false, memory: VecDeque::with_capacity(MEMORY_CAPACITY), _lifeline: PhantomData }
+        Self {
+            input,
+            stopped: false,
+            memory: VecDeque::with_capacity(MEMORY_CAPACITY),
+            _lifeline: PhantomData,
+        }
     }
 
     pub fn stopped(&self) -> bool {
@@ -235,7 +239,10 @@ where
             Ok(())
         } else {
             let mut buf = [0u8; MEMORY_CAPACITY];
-            match self.input.read(&mut buf[0..MEMORY_CAPACITY - self.memory.len()]) {
+            match self
+                .input
+                .read(&mut buf[0..MEMORY_CAPACITY - self.memory.len()])
+            {
                 Ok(read) => {
                     if read != 0 {
                         for value in buf.iter().take(read) {
@@ -246,9 +253,7 @@ where
                 Err(err) if err.kind() == ErrorKind::UnexpectedEof => {
                     // Consume eof
                 }
-                Err(other) => {
-                    return Err(other)
-                }
+                Err(other) => return Err(other),
             }
 
             Ok(())
@@ -295,7 +300,6 @@ where
     }
 }
 
-
 impl<'a, R> Iterator for RobustUtf8Reader<'a, R>
 where
     R: Read,
@@ -324,77 +328,71 @@ where
                             let expected_char_width = utf8_char_width(byte0);
                             debug_assert_ne!(expected_char_width, 1);
                             match expected_char_width {
-                                2 => {
-                                    match self.fill_buffer(&mut buf[1..=1]) {
-                                        Ok(0) => {
-                                            debug_assert!(self.memory.is_empty());
-                                            self.stopped = true;
-                                            return None;
-                                        }
-                                        Ok(1) => {}
-                                        Err(err) => {
-                                            return Some(Err(err))
-                                        }
-                                        Ok(_) => unreachable!()
+                                2 => match self.fill_buffer(&mut buf[1..=1]) {
+                                    Ok(0) => {
+                                        debug_assert!(self.memory.is_empty());
+                                        self.stopped = true;
+                                        return None;
                                     }
-                                }
-                                3 => {
-                                    match self.fill_buffer(&mut buf[1..3]) {
-                                        Ok(0) => {
-                                            debug_assert!(self.memory.is_empty());
-                                            self.stopped = true;
-                                            return None;
-                                        }
-                                        Ok(1) => {
-                                            self.push_back_to_front(&buf[1..=1]);
-                                            invalid_encounters += 1;
-                                            continue;
-                                        }
-                                        Ok(2) => {}
-                                        Err(err) => {
-                                            return Some(Err(err))
-                                        }
-                                        Ok(_) => unreachable!()
+                                    Ok(1) => {}
+                                    Err(err) => return Some(Err(err)),
+                                    Ok(_) => unreachable!(),
+                                },
+                                3 => match self.fill_buffer(&mut buf[1..3]) {
+                                    Ok(0) => {
+                                        debug_assert!(self.memory.is_empty());
+                                        self.stopped = true;
+                                        return None;
                                     }
-                                }
-                                4 => {
-                                    match self.fill_buffer(&mut buf[1..4]) {
-                                        Ok(0) => {
-                                            debug_assert!(self.memory.is_empty());
-                                            self.stopped = true;
-                                            return None;
-                                        }
-                                        Ok(1) => {
-                                            self.push_back_to_front(&buf[1..=1]);
-                                            invalid_encounters += 1;
-                                            continue;
-                                        }
-                                        Ok(2) => {
-                                            self.push_back_to_front(&buf[1..=2]);
-                                            invalid_encounters += 1;
-                                            continue;
-                                        }
-                                        Ok(3) => {}
-                                        Err(err) => {
-                                            return Some(Err(err))
-                                        }
-                                        Ok(_) => unreachable!()
+                                    Ok(1) => {
+                                        self.push_back_to_front(&buf[1..=1]);
+                                        invalid_encounters += 1;
+                                        continue;
                                     }
-                                }
+                                    Ok(2) => {}
+                                    Err(err) => return Some(Err(err)),
+                                    Ok(_) => unreachable!(),
+                                },
+                                4 => match self.fill_buffer(&mut buf[1..4]) {
+                                    Ok(0) => {
+                                        debug_assert!(self.memory.is_empty());
+                                        self.stopped = true;
+                                        return None;
+                                    }
+                                    Ok(1) => {
+                                        self.push_back_to_front(&buf[1..=1]);
+                                        invalid_encounters += 1;
+                                        continue;
+                                    }
+                                    Ok(2) => {
+                                        self.push_back_to_front(&buf[1..=2]);
+                                        invalid_encounters += 1;
+                                        continue;
+                                    }
+                                    Ok(3) => {}
+                                    Err(err) => return Some(Err(err)),
+                                    Ok(_) => unreachable!(),
+                                },
                                 _ => {
                                     invalid_encounters += 1;
                                     continue;
                                 }
                             }
                             unsafe {
-                                match next_code_point(&mut buf.iter()).map(char::from_u32).flatten() {
+                                match next_code_point(&mut buf.iter())
+                                    .map(char::from_u32)
+                                    .flatten()
+                                {
                                     None => {
                                         self.push_back_to_front(&buf[1..expected_char_width]);
                                         invalid_encounters += 1;
                                         continue;
                                     }
                                     Some(value) => {
-                                        return Some(Ok(DecodedChar::new(value, invalid_encounters)))
+                                        return Some(Ok(DecodedChar::new(
+                                            value,
+                                            invalid_encounters,
+                                        )))
                                     }
                                 }
                             }
@@ -418,9 +416,9 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::io::Cursor;
-    use itertools::Itertools;
     use crate::toolkit::utf8::{DecodedChar, RobustUtf8Reader, Utf8Reader};
+    use itertools::Itertools;
+    use std::io::Cursor;
 
     #[test]
     fn test_normal() {
@@ -447,7 +445,10 @@ mod test {
         v.push(0b1000_0000);
         let cursor = RobustUtf8Reader::new(Cursor::new(v));
         for (value, c_original) in cursor.zip_eq(s.chars()) {
-            let DecodedChar { ch: value, invalid_encounters: err } = value.unwrap();
+            let DecodedChar {
+                ch: value,
+                invalid_encounters: err,
+            } = value.unwrap();
             println!("{c_original}: {value} - {err}");
             assert_eq!(c_original, value);
         }

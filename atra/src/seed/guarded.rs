@@ -12,31 +12,33 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use crate::seed::BasicSeed;
-use crate::url::{AtraOriginProvider, UrlWithDepth};
 use crate::seed::error::SeedCreationError;
 use crate::seed::unguarded::UnguardedSeed;
-use crate::url::AtraUrlOrigin;
+use crate::seed::BasicSeed;
 use crate::url::guard::{UrlGuard, UrlGuardian};
+use crate::url::AtraUrlOrigin;
+use crate::url::{AtraOriginProvider, UrlWithDepth};
 
 /// A guarded version, it is keeping the guard for the host information.
 /// The lifetime depends on
 pub struct GuardedSeed<'a, 'guard: 'a, T: UrlGuardian> {
     host_guard: &'a UrlGuard<'guard, T>,
-    url: &'a UrlWithDepth
+    url: &'a UrlWithDepth,
 }
 
 impl<'a, 'guard: 'a, T: UrlGuardian> GuardedSeed<'a, 'guard, T> {
-
     /// Creates a guarded seed from a guard and a url
-    pub fn new(host_guard: &'a UrlGuard<'guard, T>, url: &'a UrlWithDepth) -> Result<Self, SeedCreationError> {
+    pub fn new(
+        host_guard: &'a UrlGuard<'guard, T>,
+        url: &'a UrlWithDepth,
+    ) -> Result<Self, SeedCreationError> {
         if let Some(host) = url.atra_origin() {
             if host.eq(host_guard.origin()) {
-                Ok(unsafe{Self::new_unchecked(host_guard, url)})
+                Ok(unsafe { Self::new_unchecked(host_guard, url) })
             } else {
                 Err(SeedCreationError::GuardAndUrlDifferInOrigin {
                     origin_from_url: host.clone(),
-                    origin_from_guard: host_guard.origin().to_owned()
+                    origin_from_guard: host_guard.origin().to_owned(),
                 })
             }
         } else {
@@ -45,11 +47,11 @@ impl<'a, 'guard: 'a, T: UrlGuardian> GuardedSeed<'a, 'guard, T> {
     }
 
     /// Creates the new url but does not do any host to guard checks.
-    pub unsafe fn new_unchecked(host_guard: &'a UrlGuard<'guard, T>, url: &'a UrlWithDepth) -> Self {
-        Self {
-            host_guard,
-            url
-        }
+    pub unsafe fn new_unchecked(
+        host_guard: &'a UrlGuard<'guard, T>,
+        url: &'a UrlWithDepth,
+    ) -> Self {
+        Self { host_guard, url }
     }
 
     /// Removes the dependency from the guard.
@@ -60,23 +62,27 @@ impl<'a, 'guard: 'a, T: UrlGuardian> GuardedSeed<'a, 'guard, T> {
 }
 
 impl<'a, 'guard: 'a, T: UrlGuardian> BasicSeed for GuardedSeed<'a, 'guard, T> {
-    #[inline] fn url(&self) -> &UrlWithDepth {
+    #[inline]
+    fn url(&self) -> &UrlWithDepth {
         self.url
     }
 
-    #[inline] fn origin(&self) -> &AtraUrlOrigin {
+    #[inline]
+    fn origin(&self) -> &AtraUrlOrigin {
         &self.host_guard.origin()
     }
 }
 
 impl<'a, 'guard: 'a, T: UrlGuardian> AsRef<UrlWithDepth> for GuardedSeed<'a, 'guard, T> {
-    #[inline] fn as_ref(&self) -> &UrlWithDepth {
+    #[inline]
+    fn as_ref(&self) -> &UrlWithDepth {
         self.url()
     }
 }
 
 impl<'a, 'guard: 'a, T: UrlGuardian> AsRef<AtraUrlOrigin> for GuardedSeed<'a, 'guard, T> {
-    #[inline] fn as_ref(&self) -> &AtraUrlOrigin {
+    #[inline]
+    fn as_ref(&self) -> &AtraUrlOrigin {
         self.origin()
     }
 }

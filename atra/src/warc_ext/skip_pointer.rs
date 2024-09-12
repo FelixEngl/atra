@@ -15,8 +15,6 @@
 use camino::{Utf8Path, Utf8PathBuf};
 use serde::{Deserialize, Serialize};
 
-
-
 /// A pointer to the start of an entry in a warc [file]
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct WarcSkipPointer {
@@ -29,8 +27,12 @@ pub struct WarcSkipPointer {
 }
 
 impl WarcSkipPointer {
-    pub fn new(position: u64, warc_header_offset: u32, body_octet_count: u64,) -> Self {
-        Self { position, body_octet_count, warc_header_offset }
+    pub fn new(position: u64, warc_header_offset: u32, body_octet_count: u64) -> Self {
+        Self {
+            position,
+            body_octet_count,
+            warc_header_offset,
+        }
     }
 
     pub fn position(&self) -> u64 {
@@ -50,7 +52,7 @@ impl WarcSkipPointer {
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct WarcSkipPointerWithPath {
     path: Utf8PathBuf,
-    skip_pointer: WarcSkipPointer
+    skip_pointer: WarcSkipPointer,
 }
 
 impl WarcSkipPointerWithPath {
@@ -76,7 +78,15 @@ impl WarcSkipPointerWithPath {
         Self { path, skip_pointer }
     }
 
-    pub fn create(path: Utf8PathBuf, position: u64, warc_header_offset: u32, body_octet_count: u64) -> Self {
-        Self::new(path, WarcSkipPointer::new(position, warc_header_offset, body_octet_count))
+    pub fn create(
+        path: Utf8PathBuf,
+        position: u64,
+        warc_header_offset: u32,
+        body_octet_count: u64,
+    ) -> Self {
+        Self::new(
+            path,
+            WarcSkipPointer::new(position, warc_header_offset, body_octet_count),
+        )
     }
 }

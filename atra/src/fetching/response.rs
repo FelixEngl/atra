@@ -12,13 +12,13 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::str::FromStr;
-use reqwest::header::HeaderMap;
-use reqwest::StatusCode;
 use crate::data::RawVecData;
-use crate::fetching::{FetchedRequestData};
+use crate::fetching::FetchedRequestData;
 use crate::url::AtraUri;
 use crate::url::UrlWithDepth;
+use reqwest::header::HeaderMap;
+use reqwest::StatusCode;
+use std::str::FromStr;
 
 /// The response for a request
 #[derive(Debug)]
@@ -74,10 +74,7 @@ impl ResponseData {
         }
     }
 
-    pub fn new(
-        page_response: FetchedRequestData,
-        url: UrlWithDepth,
-    ) -> Self {
+    pub fn new(page_response: FetchedRequestData, url: UrlWithDepth) -> Self {
         Self {
             content: page_response.content,
             url,

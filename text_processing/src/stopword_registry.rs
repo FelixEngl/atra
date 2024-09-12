@@ -12,29 +12,28 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+use camino::Utf8PathBuf;
+use compact_str::{CompactString, ToCompactString};
+use iso_stopwords::iso_stopwords_for;
+use isolang::Language;
+use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
-use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
+use std::convert::TryFrom;
 use std::fmt::Debug;
+use std::fs::File;
 use std::hash::Hash;
 use std::io;
-use std::ops::Deref;
-use std::sync::{Arc, RwLock};
-use compact_str::{CompactString, ToCompactString};
-use isolang::Language;
-use serde::{Deserialize, Serialize};
-use unicode_normalization::UnicodeNormalization;
-use std::convert::TryFrom;
-use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::ops::Deref;
 use std::path::Path;
-use camino::{Utf8PathBuf};
-use itertools::Itertools;
+use std::sync::{Arc, RwLock};
 use thiserror::Error;
-use iso_stopwords::iso_stopwords_for;
+use unicode_normalization::UnicodeNormalization;
 
 use crate::configs::StopwordRegistryConfig;
-
 
 /// A registry for stopwords.
 /// May have multiple repositories.
@@ -44,11 +43,11 @@ use crate::configs::StopwordRegistryConfig;
 #[derive(Debug, Default, Clone)]
 pub struct StopWordRegistry {
     cached_stop_words: Arc<RwLock<HashMap<Language, Arc<StopWordList>>>>,
-    repositories: Arc<RwLock<Vec<StopWordRepository>>>
+    repositories: Arc<RwLock<Vec<StopWordRepository>>>,
 }
 
 impl StopWordRegistry {
-    pub fn initialize(cfg: &StopwordRegistryConfig) -> Result<Self, io::Error>  {
+    pub fn initialize(cfg: &StopwordRegistryConfig) -> Result<Self, io::Error> {
         let new = Self::default();
         new.repositories.write().unwrap().extend(cfg.to_vec());
         Ok(new)
@@ -77,11 +76,10 @@ impl StopWordRegistry {
         drop(lock);
         let mut lock = self.cached_stop_words.write().unwrap();
         match lock.entry(language.clone()) {
-            Entry::Occupied(value) => {
-                Some(value.get().clone())
-            }
+            Entry::Occupied(value) => Some(value.get().clone()),
             Entry::Vacant(value) => {
-                let raw = self.load_stop_words(&language)?
+                let raw = self
+                    .load_stop_words(&language)?
                     .into_iter()
                     .map(CompactString::from)
                     .collect();
@@ -91,22 +89,20 @@ impl StopWordRegistry {
     }
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StopWordList {
     raw: HashSet<CompactString>,
-    normalized: HashSet<CompactString>
+    normalized: HashSet<CompactString>,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum ContainsKind {
     Raw,
     Normalized,
-    Both
+    Both,
 }
 
 impl StopWordList {
-
     pub fn new(mut raw: HashSet<CompactString>, mut normalized: HashSet<CompactString>) -> Self {
         raw.shrink_to_fit();
         normalized.shrink_to_fit();
@@ -132,11 +128,12 @@ impl StopWordList {
     pub fn contains<Q: ?Sized>(&self, kind: ContainsKind, value: &Q) -> bool
     where
         CompactString: Borrow<Q>,
-        Q: Hash + Eq, {
+        Q: Hash + Eq,
+    {
         match kind {
-            ContainsKind::Raw => {self.contains_raw(value)}
-            ContainsKind::Normalized => {self.contains_normalized(value)}
-            ContainsKind::Both => {self.contains_both(value)}
+            ContainsKind::Raw => self.contains_raw(value),
+            ContainsKind::Normalized => self.contains_normalized(value),
+            ContainsKind::Both => self.contains_both(value),
         }
     }
 
@@ -144,7 +141,8 @@ impl StopWordList {
     pub fn contains_both<Q: ?Sized>(&self, value: &Q) -> bool
     where
         CompactString: Borrow<Q>,
-        Q: Hash + Eq, {
+        Q: Hash + Eq,
+    {
         self.contains_raw(value) || self.contains_normalized(value)
     }
 
@@ -152,7 +150,8 @@ impl StopWordList {
     pub fn contains_raw<Q: ?Sized>(&self, value: &Q) -> bool
     where
         CompactString: Borrow<Q>,
-        Q: Hash + Eq, {
+        Q: Hash + Eq,
+    {
         self.raw.contains(value)
     }
 
@@ -160,13 +159,17 @@ impl StopWordList {
     pub fn contains_normalized<Q: ?Sized>(&self, value: &Q) -> bool
     where
         CompactString: Borrow<Q>,
-        Q: Hash + Eq, {
+        Q: Hash + Eq,
+    {
         self.normalized.contains(value)
     }
 }
 
-impl<Q> Extend<Q> for StopWordList where Q: ToCompactString {
-    fn extend<T: IntoIterator<Item=Q>>(&mut self, iter: T) {
+impl<Q> Extend<Q> for StopWordList
+where
+    Q: ToCompactString,
+{
+    fn extend<T: IntoIterator<Item = Q>>(&mut self, iter: T) {
         for value in iter.into_iter() {
             let word = value.to_compact_string();
             let normalized = word.nfc().to_compact_string();
@@ -178,16 +181,19 @@ impl<Q> Extend<Q> for StopWordList where Q: ToCompactString {
     }
 }
 
-
-
-
-
 #[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
 #[serde(try_from = "StopWordRepositoryDev", into = "StopWordRepositoryDev")]
 pub enum StopWordRepository {
     IsoDefault,
-    DirRepo { with_iso_default: bool, dir: Utf8PathBuf },
-    File { with_iso_default: bool, language: Language, file: Utf8PathBuf },
+    DirRepo {
+        with_iso_default: bool,
+        dir: Utf8PathBuf,
+    },
+    File {
+        with_iso_default: bool,
+        language: Language,
+        file: Utf8PathBuf,
+    },
 }
 
 #[derive(Debug, Error)]
@@ -200,16 +206,32 @@ impl TryFrom<StopWordRepositoryDev> for StopWordRepository {
 
     fn try_from(value: StopWordRepositoryDev) -> Result<Self, Self::Error> {
         match value {
-            StopWordRepositoryDev { with_iso_default, dir: Some(dir), file: None, language: None } => {
-                Ok(Self::DirRepo {with_iso_default, dir})
-            }
-            StopWordRepositoryDev { with_iso_default, dir: None, file: Some(file), language: Some(language) } => {
-                Ok(Self::File {with_iso_default, file, language})
-            }
-            StopWordRepositoryDev { with_iso_default: true, dir: None, file: None, language: None } => {
-                Ok(Self::IsoDefault)
-            }
-            err => Err(StopWordRepositoryConversionError(err))
+            StopWordRepositoryDev {
+                with_iso_default,
+                dir: Some(dir),
+                file: None,
+                language: None,
+            } => Ok(Self::DirRepo {
+                with_iso_default,
+                dir,
+            }),
+            StopWordRepositoryDev {
+                with_iso_default,
+                dir: None,
+                file: Some(file),
+                language: Some(language),
+            } => Ok(Self::File {
+                with_iso_default,
+                file,
+                language,
+            }),
+            StopWordRepositoryDev {
+                with_iso_default: true,
+                dir: None,
+                file: None,
+                language: None,
+            } => Ok(Self::IsoDefault),
+            err => Err(StopWordRepositoryConversionError(err)),
         }
     }
 }
@@ -217,7 +239,11 @@ impl TryFrom<StopWordRepositoryDev> for StopWordRepository {
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(default)]
 struct StopWordRepositoryDev {
-    #[serde(skip_serializing_if = "std::ops::Not::not", rename = "iso_default", default = "_default_with_iso_default")]
+    #[serde(
+        skip_serializing_if = "std::ops::Not::not",
+        rename = "iso_default",
+        default = "_default_with_iso_default"
+    )]
     with_iso_default: bool,
     #[serde(skip_serializing_if = "Option::is_none", alias = "directory")]
     dir: Option<Utf8PathBuf>,
@@ -234,28 +260,29 @@ fn _default_with_iso_default() -> bool {
 impl From<StopWordRepository> for StopWordRepositoryDev {
     fn from(value: StopWordRepository) -> Self {
         match value {
-            StopWordRepository::IsoDefault => {
-                StopWordRepositoryDev {
-                    with_iso_default: true,
-                    dir: None,
-                    ..Default::default()
-                }
-            }
-            StopWordRepository::DirRepo { dir, with_iso_default} => {
-                StopWordRepositoryDev {
-                    dir: Some(dir),
-                    with_iso_default: with_iso_default,
-                    ..Default::default()
-                }
-            }
-            StopWordRepository::File { file, language, with_iso_default } => {
-                StopWordRepositoryDev {
-                    file: Some(file),
-                    language: Some(language),
-                    with_iso_default: with_iso_default,
-                    ..Default::default()
-                }
-            }
+            StopWordRepository::IsoDefault => StopWordRepositoryDev {
+                with_iso_default: true,
+                dir: None,
+                ..Default::default()
+            },
+            StopWordRepository::DirRepo {
+                dir,
+                with_iso_default,
+            } => StopWordRepositoryDev {
+                dir: Some(dir),
+                with_iso_default: with_iso_default,
+                ..Default::default()
+            },
+            StopWordRepository::File {
+                file,
+                language,
+                with_iso_default,
+            } => StopWordRepositoryDev {
+                file: Some(file),
+                language: Some(language),
+                with_iso_default: with_iso_default,
+                ..Default::default()
+            },
         }
     }
 }
@@ -267,7 +294,11 @@ pub trait StopWordListRepository {
 
 impl StopWordListRepository for StopWordRepository {
     fn load_raw_stop_words(&self, language: &Language) -> Option<Vec<String>> {
-        fn load_file(file: impl AsRef<Path>, with_iso_default: bool, language: &Language) -> Option<Vec<String>> {
+        fn load_file(
+            file: impl AsRef<Path>,
+            with_iso_default: bool,
+            language: &Language,
+        ) -> Option<Vec<String>> {
             let mut result = BufReader::new(File::open(file).ok()?)
                 .lines()
                 .collect::<Result<Vec<_>, _>>()
@@ -281,19 +312,29 @@ impl StopWordListRepository for StopWordRepository {
         }
 
         fn load_stopwords(language: &Language) -> Option<Vec<String>> {
-            Some(iso_stopwords_for(language)?.into_iter().map(|value| str::to_owned(*value)).collect_vec())
+            Some(
+                iso_stopwords_for(language)?
+                    .into_iter()
+                    .map(|value| str::to_owned(*value))
+                    .collect_vec(),
+            )
         }
 
         match self {
-            StopWordRepository::IsoDefault => {
-                load_stopwords(language)
-            }
-            StopWordRepository::DirRepo { dir, with_iso_default } => {
+            StopWordRepository::IsoDefault => load_stopwords(language),
+            StopWordRepository::DirRepo {
+                dir,
+                with_iso_default,
+            } => {
                 if dir.exists() {
                     let file = dir.join(format!("{}.txt", language.to_639_3()));
                     if file.exists() {
                         load_file(file, *with_iso_default, language)
-                    } else if let Some(file) = language.to_639_1().map(|value| dir.join(format!("{}.txt", value))).filter(|p| p.exists()) {
+                    } else if let Some(file) = language
+                        .to_639_1()
+                        .map(|value| dir.join(format!("{}.txt", value)))
+                        .filter(|p| p.exists())
+                    {
                         load_file(file, *with_iso_default, language)
                     } else {
                         log::warn!("The file {} does not exist! Falling back to iso only if selected for the repo!", file);
@@ -312,7 +353,11 @@ impl StopWordListRepository for StopWordRepository {
                     }
                 }
             }
-            StopWordRepository::File { file, language: file_lang, with_iso_default } => {
+            StopWordRepository::File {
+                file,
+                language: file_lang,
+                with_iso_default,
+            } => {
                 if language != file_lang {
                     None
                 } else if file.exists() {
@@ -329,4 +374,3 @@ impl StopWordListRepository for StopWordRepository {
         }
     }
 }
-

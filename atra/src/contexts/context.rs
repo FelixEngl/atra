@@ -17,7 +17,6 @@ use traits::*;
 /// A trait for marking a context trait
 pub trait BaseContext {}
 
-
 macro_rules! create_context_trait {
     ($($name: ident),+ $(,)?) => {
         /// The context for a crawl context, collecting all needed taits in one.
@@ -47,41 +46,38 @@ create_context_trait! {
     SupportsWorkerId,
 }
 
-
 pub mod traits {
-    use std::collections::HashSet;
-    use std::error::Error;
-    use std::time::Duration;
+    use crate::blacklist::lists::BlackList;
     use crate::config::Configs;
+    use crate::contexts::BaseContext;
     use crate::crawl::CrawlResult;
-    use crate::seed::BasicSeed;
     use crate::crawl::SlimCrawlResult;
     use crate::extraction::ExtractedLink;
+    use crate::gdbr::identifier::GdbrRegistry;
+    use crate::io::fs::AtraFS;
     use crate::link_state::{LinkState, LinkStateType};
+    use crate::queue::polling::UrlQueuePollResult;
     use crate::robots::RobotsManager;
+    use crate::runtime::ShutdownReceiver;
+    use crate::seed::BasicSeed;
+    use crate::url::guard::UrlGuardian;
     use crate::url::queue::UrlQueue;
     use crate::url::{UrlWithDepth, UrlWithGuard};
     use crate::web_graph::WebGraphManager;
+    use std::collections::HashSet;
+    use std::error::Error;
+    use std::time::Duration;
     use text_processing::stopword_registry::StopWordRegistry;
-    use crate::blacklist::lists::BlackList;
-    use crate::contexts::{BaseContext};
-    use crate::gdbr::identifier::{GdbrRegistry};
-    use crate::io::fs::AtraFS;
-    use crate::queue::polling::UrlQueuePollResult;
-    use crate::runtime::ShutdownReceiver;
-    use crate::url::guard::UrlGuardian;
 
     /// A marker interface for applying the context trait iff appropriate
     pub trait ContextDelegate {}
 
-    impl<T> BaseContext for T where T: ContextDelegate{}
-
+    impl<T> BaseContext for T where T: ContextDelegate {}
 
     /// A context marking a context as compatible with async tasks.
     /// Can basically do nothing alone and is only a helper interface for the
     /// required interfaces.
     pub trait AsyncContext: BaseContext + Send + Sync + 'static {}
-
 
     pub trait SupportsLinkSeeding: BaseContext {
         type Error: std::error::Error + Send + Sync;
@@ -91,25 +87,40 @@ pub mod traits {
 
         /// Register outgoing & data links.
         /// Also returns a list of all urls existing on the seed, that can be registered.
-        async fn handle_links(&self, from: &UrlWithDepth, links: &HashSet<ExtractedLink>) -> Result<Vec<UrlWithDepth>, Self::Error>;
+        async fn handle_links(
+            &self,
+            from: &UrlWithDepth,
+            links: &HashSet<ExtractedLink>,
+        ) -> Result<Vec<UrlWithDepth>, Self::Error>;
     }
 
     /// Used when some kind of link management happens
     pub trait SupportsLinkState: BaseContext {
-
         type Error: std::error::Error + Send + Sync;
 
         /// The number of crawled websites
         fn crawled_websites(&self) -> Result<u64, Self::Error>;
 
         /// Sets the state of the link
-        async fn update_link_state(&self, url: &UrlWithDepth, state: LinkStateType) -> Result<(), Self::Error>;
+        async fn update_link_state(
+            &self,
+            url: &UrlWithDepth,
+            state: LinkStateType,
+        ) -> Result<(), Self::Error>;
 
         /// Sets the state of the link with a payload
-        async fn update_link_state_with_payload(&self, url: &UrlWithDepth, state: LinkStateType, payload: Vec<u8>) -> Result<(), Self::Error>;
+        async fn update_link_state_with_payload(
+            &self,
+            url: &UrlWithDepth,
+            state: LinkStateType,
+            payload: Vec<u8>,
+        ) -> Result<(), Self::Error>;
 
         /// Gets the state of the current url
-        async fn get_link_state(&self, url: &UrlWithDepth) -> Result<Option<LinkState>, Self::Error>;
+        async fn get_link_state(
+            &self,
+            url: &UrlWithDepth,
+        ) -> Result<Option<LinkState>, Self::Error>;
 
         /// Checks if there are any crawable links. [max_age] denotes the maximum amount of time since
         /// the last search
@@ -176,25 +187,20 @@ pub mod traits {
         fn fs(&self) -> &Self::FileSystem;
     }
 
-
     /// The context supports webgraphs
     pub trait SupportsWebGraph: BaseContext {
         /// The manager for the link net
         type WebGraphManager: WebGraphManager;
 
-
         /// Returns the link net manager
         fn web_graph_manager(&self) -> &Self::WebGraphManager;
     }
 
-
     /// The context needed for tokenizing to work
     pub trait SupportsStopwordsRegistry: BaseContext {
-
         /// Returns the sopword registry
         fn stopword_registry(&self) -> Option<&StopWordRegistry>;
     }
-
 
     pub trait SupportsGdbrRegistry: BaseContext {
         type Registry: GdbrRegistry;
@@ -207,10 +213,16 @@ pub mod traits {
         type Error: std::error::Error + Send + Sync;
 
         /// Retrieve a single crawled website but without the body
-        async fn retrieve_slim_crawled_website(&self, url: &UrlWithDepth) -> Result<Option<SlimCrawlResult>, Self::Error>;
+        async fn retrieve_slim_crawled_website(
+            &self,
+            url: &UrlWithDepth,
+        ) -> Result<Option<SlimCrawlResult>, Self::Error>;
 
         /// Store a crawl result
-        async fn store_slim_crawled_website(&self, result: SlimCrawlResult) -> Result<(), Self::Error>;
+        async fn store_slim_crawled_website(
+            &self,
+            result: SlimCrawlResult,
+        ) -> Result<(), Self::Error>;
     }
 
     pub trait SupportsCrawlResults: BaseContext {
@@ -220,24 +232,29 @@ pub mod traits {
         async fn store_crawled_website(&self, result: &CrawlResult) -> Result<(), Self::Error>;
 
         /// Get the complete crawled website
-        async fn retrieve_crawled_website(&self, url: &UrlWithDepth) -> Result<Option<CrawlResult>, Self::Error>;
+        async fn retrieve_crawled_website(
+            &self,
+            url: &UrlWithDepth,
+        ) -> Result<Option<CrawlResult>, Self::Error>;
     }
 
     /// A trait that allows polling for a context that satisfies the basic
     /// requirements for it.
     pub trait SupportsPolling: BaseContext {
-
         type Guardian: UrlGuardian;
 
         type Error: Error;
 
         /// Tries to poll the next free url.
-        async fn poll_next_free_url<'a>(&'a self, shutdown_handle: impl ShutdownReceiver, max_miss: Option<u64>) -> UrlQueuePollResult<UrlWithGuard<'a, Self::Guardian>, Self::Error>;
+        async fn poll_next_free_url<'a>(
+            &'a self,
+            shutdown_handle: impl ShutdownReceiver,
+            max_miss: Option<u64>,
+        ) -> UrlQueuePollResult<UrlWithGuard<'a, Self::Guardian>, Self::Error>;
     }
 
     /// A trait for a context that supports worker ID
     pub trait SupportsWorkerId: BaseContext {
         fn worker_id(&self) -> usize;
     }
-
 }

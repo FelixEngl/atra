@@ -1,12 +1,12 @@
-use std::collections::hash_map::Entry;
-use std::collections::{HashMap, VecDeque};
+use crate::contexts::traits::SupportsFileSystemAccess;
+use crate::format::mime::MimeType;
+use crate::fetching::ResponseData;
 use file_format::FileFormat;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
-use crate::contexts::traits::SupportsFileSystemAccess;
-use crate::format::mime::MimeType;
-use crate::response::ResponseData;
+use std::collections::hash_map::Entry;
+use std::collections::{HashMap, VecDeque};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum DetectedFileFormat {
@@ -17,19 +17,19 @@ pub enum DetectedFileFormat {
 impl DetectedFileFormat {
     pub fn most_probable_file_format(&self) -> &FileFormat {
         match self {
-            DetectedFileFormat::Unambiguous(value) | DetectedFileFormat::Ambiguous(value, _, _) => value,
+            DetectedFileFormat::Unambiguous(value) | DetectedFileFormat::Ambiguous(value, _, _) => {
+                value
+            }
         }
     }
 }
-
 
 /// Infers the file format for some kind of data.
 pub(crate) fn infer_file_formats(
     page: &ResponseData,
     mime: Option<&MimeType>,
-    context: &impl SupportsFileSystemAccess
+    context: &impl SupportsFileSystemAccess,
 ) -> Option<DetectedFileFormat> {
-
     let mut formats = HashMap::new();
     if let Ok(Some(value)) = page.content.cursor(context) {
         match FileFormat::from_reader(value) {
@@ -44,7 +44,7 @@ pub(crate) fn infer_file_formats(
 
     if let Some(mime) = mime {
         for mim in mime.iter() {
-            if let Some(infered) =  FileFormat::from_media_type(mim.essence_str()) {
+            if let Some(infered) = FileFormat::from_media_type(mim.essence_str()) {
                 for inf in infered {
                     match formats.entry(*inf) {
                         Entry::Occupied(mut value) => {
@@ -74,18 +74,22 @@ pub(crate) fn infer_file_formats(
         }
     }
 
-
     match formats.len() {
-        0 => {
-            None
-        }
-        1 => {
-            Some(DetectedFileFormat::Unambiguous(formats.into_keys().exactly_one().unwrap()))
-        }
+        0 => None,
+        1 => Some(DetectedFileFormat::Unambiguous(
+            formats.into_keys().exactly_one().unwrap(),
+        )),
         _ => {
-            let mut result: VecDeque<_> = formats.into_iter().sorted_by(|(_, cta), (_, ctb)| ctb.cmp(cta)).collect();
+            let mut result: VecDeque<_> = formats
+                .into_iter()
+                .sorted_by(|(_, cta), (_, ctb)| ctb.cmp(cta))
+                .collect();
             let (most_probable, ct) = result.pop_front().unwrap();
-            Some(DetectedFileFormat::Ambiguous(most_probable, ct, SmallVec::from_slice(result.make_contiguous())))
+            Some(DetectedFileFormat::Ambiguous(
+                most_probable,
+                ct,
+                SmallVec::from_slice(result.make_contiguous()),
+            ))
         }
     }
 }

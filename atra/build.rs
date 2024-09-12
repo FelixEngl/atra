@@ -39,4 +39,3 @@ fn main() {
     //     println!("cargo:rustc-cfg=compiler_has_important_bugfix");
     // }
 }
-

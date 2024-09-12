@@ -12,15 +12,15 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+use crate::url::guard::entry::GuardEntry;
+use crate::url::guard::{GuardPoisonedError, UrlGuardian};
+use crate::url::AtraOriginProvider;
+use crate::url::AtraUrlOrigin;
+use crate::url::Depth;
+use crate::url::UrlWithDepth;
 use std::fmt;
 use std::marker::PhantomData;
 use std::time::SystemTime;
-use crate::url::Depth;
-use crate::url::AtraOriginProvider;
-use crate::url::AtraUrlOrigin;
-use crate::url::guard::entry::GuardEntry;
-use crate::url::guard::{GuardPoisonedError, UrlGuardian};
-use crate::url::UrlWithDepth;
 
 /// A guard that works basically like a Mutex or RwLock guard.
 /// Allows to block a domain until the guard is dropped.
@@ -30,11 +30,11 @@ pub struct UrlGuard<'a, T: UrlGuardian> {
     pub(super) origin: AtraUrlOrigin,
     pub(super) origin_manager: *const T,
     pub(super) entry: GuardEntry,
-    pub(super) _marker: PhantomData<&'a T>
+    pub(super) _marker: PhantomData<&'a T>,
 }
 
-unsafe impl<'a, T: UrlGuardian> Sync for UrlGuard<'a, T>{}
-unsafe impl<'a, T: UrlGuardian> Send for UrlGuard<'a, T>{}
+unsafe impl<'a, T: UrlGuardian> Sync for UrlGuard<'a, T> {}
+unsafe impl<'a, T: UrlGuardian> Send for UrlGuard<'a, T> {}
 
 impl<'a, T: UrlGuardian> fmt::Debug for UrlGuard<'a, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -47,10 +47,11 @@ impl<'a, T: UrlGuardian> fmt::Debug for UrlGuard<'a, T> {
 }
 
 impl<'a, T: UrlGuardian> UrlGuard<'a, T> {
-
     /// Checks the guard is poisoned.
     pub async fn check_for_poison(&self) -> Result<(), GuardPoisonedError> {
-        unsafe{&*self.origin_manager }.check_if_poisoned(self).await
+        unsafe { &*self.origin_manager }
+            .check_if_poisoned(self)
+            .await
     }
 
     /// When was the guard reserved?
@@ -87,6 +88,8 @@ impl<'a, T: UrlGuardian> UrlGuard<'a, T> {
 
 impl<'a, T: UrlGuardian> Drop for UrlGuard<'a, T> {
     fn drop(&mut self) {
-        unsafe{ (&*self.origin_manager).release(self.origin.clone()); }
+        unsafe {
+            (&*self.origin_manager).release(self.origin.clone());
+        }
     }
 }

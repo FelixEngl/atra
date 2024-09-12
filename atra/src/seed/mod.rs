@@ -12,20 +12,18 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-mod input;
 mod error;
 mod guarded;
-mod unguarded;
+mod input;
 mod provider;
+mod unguarded;
 
+use crate::url::{AtraUrlOrigin, UrlWithDepth};
+pub use error::SeedCreationError;
+pub use guarded::GuardedSeed;
 pub use input::lines::read_seeds;
 pub use input::seed_data::SeedDefinition;
-pub use guarded::GuardedSeed;
 pub use unguarded::UnguardedSeed;
-pub use error::SeedCreationError;
-use crate::url::{UrlWithDepth, AtraUrlOrigin};
-
-
 
 /// The seed of a crawl task
 pub trait BasicSeed {

@@ -12,39 +12,39 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::cmp::min;
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use itertools::Itertools;
-use liblinear::solver::L2R_L2LOSS_SVR;
-use time::{OffsetDateTime};
-use tokio::sync::{Mutex};
-use tokio::sync::broadcast::Receiver;
 use crate::blacklist::PolyBlackList;
 use crate::config::Configs;
-use crate::contexts::{Context};
+use crate::contexts::local::LinkHandlingError;
+use crate::contexts::traits::*;
+use crate::contexts::Context;
 use crate::crawl::result::CrawlResult;
 use crate::crawl::seed::Seed;
 use crate::crawl::slim::{SlimCrawlResult, StoredDataHint};
-use crate::link_state::{LinkState, LinkStateDBError, LinkStateType};
 use crate::database_error::DatabaseError;
-use crate::web_graph::{WebGraphEntry, LinkNetError, WebGraphManager};
-use crate::queue::QueueError;
-use crate::robots::{InMemoryRobotsManager, ShareableRobotsManager};
-use crate::url::queue::{EnqueueCalled, UrlQueue, UrlQueueElement, UrlQueueElementWeak};
-use crate::contexts::errors::LinkHandlingError;
-use crate::contexts::traits::*;
 use crate::extraction::ExtractedLink;
-use crate::io::fs::FileSystemAccess;
-use crate::origin::AtraOriginProvider;
-use crate::origin::managers::InMemoryUrlGuardian;
-use crate::url::atra_uri::AtraUri;
-use text_processing::tf_idf::{Idf, Tf};
-use text_processing::stopword_registry::StopWordRegistry;
-use crate::raw::RawVecData;
 use crate::gdbr::identifier::GdbrIdentifierRegistry;
+use crate::io::fs::FileSystemAccess;
+use crate::link_state::{LinkState, LinkStateDBError, LinkStateType};
+use crate::origin::managers::InMemoryUrlGuardian;
+use crate::origin::AtraOriginProvider;
+use crate::queue::QueueError;
+use crate::raw::RawVecData;
+use crate::robots::{InMemoryRobotsManager, ShareableRobotsManager};
+use crate::url::atra_uri::AtraUri;
+use crate::url::queue::{EnqueueCalled, UrlQueue, UrlQueueElement, UrlQueueElementWeak};
 use crate::url::UrlWithDepth;
+use crate::web_graph::{LinkNetError, WebGraphEntry, WebGraphManager};
+use itertools::Itertools;
+use liblinear::solver::L2R_L2LOSS_SVR;
+use std::cmp::min;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use text_processing::stopword_registry::StopWordRegistry;
+use text_processing::tf_idf::{Idf, Tf};
+use time::OffsetDateTime;
+use tokio::sync::broadcast::Receiver;
+use tokio::sync::Mutex;
 
 #[derive(Debug)]
 pub struct InMemoryContext {
@@ -61,10 +61,8 @@ pub struct InMemoryContext {
     links_queue: InMemoryLinkQueue,
     link_net_manager: InMemoryLinkNetManager,
     stop_word_registry: StopWordRegistry,
-    gdbr_registry: Option<GdbrIdentifierRegistry<Tf, Idf, L2R_L2LOSS_SVR>>
+    gdbr_registry: Option<GdbrIdentifierRegistry<Tf, Idf, L2R_L2LOSS_SVR>>,
 }
-
-
 
 impl InMemoryContext {
     pub fn new(configs: Configs) -> Self {
@@ -82,7 +80,7 @@ impl InMemoryContext {
             host_manager: Default::default(),
             started_at: OffsetDateTime::now_utc(),
             link_net_manager: InMemoryLinkNetManager::default(),
-            gdbr_registry: None
+            gdbr_registry: None,
         }
     }
 
@@ -93,12 +91,18 @@ impl InMemoryContext {
         }
     }
 
-    pub fn get_all_crawled_websites(self) -> (HashMap<AtraUri, CrawlResult>, HashMap<AtraUri, LinkState>) {
-        let data = self.crawled_websites.into_inner().into_iter().map(|value| (value.0, value.1.inflate(None))).collect();
+    pub fn get_all_crawled_websites(
+        self,
+    ) -> (HashMap<AtraUri, CrawlResult>, HashMap<AtraUri, LinkState>) {
+        let data = self
+            .crawled_websites
+            .into_inner()
+            .into_iter()
+            .map(|value| (value.0, value.1.inflate(None)))
+            .collect();
         let found = self.state.into_inner();
         (data, found)
     }
-
 }
 
 impl Default for InMemoryContext {
@@ -115,38 +119,55 @@ impl SupportsLinkSeeding for InMemoryContext {
     type Error = LinkHandlingError;
 
     async fn register_seed<S: Seed>(&self, seed: &S) -> Result<(), LinkHandlingError> {
-        self.link_net_manager.add(
-            WebGraphEntry::create_seed(seed)
-        ).await?;
+        self.link_net_manager
+            .add(WebGraphEntry::create_seed(seed))
+            .await?;
         Ok(())
     }
 
-
-    async fn handle_links(&self, from: &UrlWithDepth, links: &HashSet<ExtractedLink>) -> Result<Vec<UrlWithDepth>, LinkHandlingError> {
-
+    async fn handle_links(
+        &self,
+        from: &UrlWithDepth,
+        links: &HashSet<ExtractedLink>,
+    ) -> Result<Vec<UrlWithDepth>, LinkHandlingError> {
         let mut for_queue = Vec::with_capacity(links.len() / 2);
         let mut for_insert = Vec::with_capacity(links.len() / 2);
         for link in links {
             self.ct_found_websites.fetch_add(1, Ordering::Relaxed);
             match link {
-                ExtractedLink::OnSeed{url, ..} => {
-                    self.link_net_manager.add(WebGraphEntry::create_link(from, url)).await.unwrap();
+                ExtractedLink::OnSeed { url, .. } => {
+                    self.link_net_manager
+                        .add(WebGraphEntry::create_link(from, url))
+                        .await
+                        .unwrap();
                     for_insert.push(url.clone());
                 }
-                ExtractedLink::Outgoing{url, ..} => {
-                    self.link_net_manager.add(WebGraphEntry::create_link(from, url)).await.unwrap();
+                ExtractedLink::Outgoing { url, .. } => {
+                    self.link_net_manager
+                        .add(WebGraphEntry::create_link(from, url))
+                        .await
+                        .unwrap();
                     if self.get_link_state(url).await?.is_none() {
-                        self.update_link_state(url, LinkStateType::Discovered).await?;
+                        self.update_link_state(url, LinkStateType::Discovered)
+                            .await?;
                         if let Some(origin) = url.atra_origin() {
-                            if self.configs.crawl().budget.get_budget_for(&origin).is_in_budget(url) {
+                            if self
+                                .configs
+                                .crawl()
+                                .budget
+                                .get_budget_for(&origin)
+                                .is_in_budget(url)
+                            {
                                 for_queue.push(UrlQueueElement::new(false, 0, false, url.clone()));
                             }
                         }
                     }
                 }
-                ExtractedLink::Data{ base, url, ..} => {
-                    self.data_urls.lock().await.push((base.clone(), url.clone()))
-                }
+                ExtractedLink::Data { base, url, .. } => self
+                    .data_urls
+                    .lock()
+                    .await
+                    .push((base.clone(), url.clone())),
             }
         }
         if !for_queue.is_empty() {
@@ -154,18 +175,20 @@ impl SupportsLinkSeeding for InMemoryContext {
         }
         Ok(for_insert)
     }
-
 }
 
 impl SupportsLinkState for InMemoryContext {
     type Error = LinkStateDBError;
 
-
     fn crawled_websites(&self) -> Result<u64, LinkStateDBError> {
         Ok(self.ct_crawled_websites.load(Ordering::Relaxed) as u64)
     }
 
-    async fn update_link_state(&self, url: &UrlWithDepth, state: LinkStateType) -> Result<(), LinkStateDBError> {
+    async fn update_link_state(
+        &self,
+        url: &UrlWithDepth,
+        state: LinkStateType,
+    ) -> Result<(), LinkStateDBError> {
         let mut lock = self.state.write().await;
         let raw_url = url.url();
         if let Some(target) = lock.get_mut(raw_url) {
@@ -176,7 +199,12 @@ impl SupportsLinkState for InMemoryContext {
         Ok(())
     }
 
-    async fn update_link_state_with_payload(&self, url: &UrlWithDepth, state: LinkStateType, payload: Vec<u8>) -> Result<(), LinkStateDBError> {
+    async fn update_link_state_with_payload(
+        &self,
+        url: &UrlWithDepth,
+        state: LinkStateType,
+        payload: Vec<u8>,
+    ) -> Result<(), LinkStateDBError> {
         let mut lock = self.state.write().await;
         let raw_url = url.url();
         if let Some(target) = lock.get_mut(raw_url) {
@@ -187,14 +215,20 @@ impl SupportsLinkState for InMemoryContext {
         Ok(())
     }
 
-    async fn get_link_state(&self, url: &UrlWithDepth) -> Result<Option<LinkState>, LinkStateDBError> {
+    async fn get_link_state(
+        &self,
+        url: &UrlWithDepth,
+    ) -> Result<Option<LinkState>, LinkStateDBError> {
         let lock = self.state.read().await;
         Ok(lock.get(url.url()).map(|value| value.clone()))
     }
 
     async fn check_if_there_are_any_crawlable_links(&self, max_age: std::time::Duration) -> bool {
         let lock = self.state.read().await;
-        lock.iter().any(|value | value.1.typ < LinkStateType::ProcessedAndStored || OffsetDateTime::now_utc() - value.1.timestamp > max_age)
+        lock.iter().any(|value| {
+            value.1.typ < LinkStateType::ProcessedAndStored
+                || OffsetDateTime::now_utc() - value.1.timestamp > max_age
+        })
     }
 }
 
@@ -253,7 +287,6 @@ impl SupportsFileSystemAccess for InMemoryContext {
     type FileSystem = ();
 
     fn fs(&self) -> &FileSystemAccess {
-
         panic!("Not supported by in memory actions!")
     }
 }
@@ -275,7 +308,6 @@ impl SupportsStopwordsRegistry for InMemoryContext {
 impl SupportsGdbrRegistry for InMemoryContext {
     type Registry = GdbrIdentifierRegistry<Tf, Idf, L2R_L2LOSS_SVR>;
 
-
     fn gdbr_registry(&self) -> Option<&Self::Registry> {
         self.gdbr_registry.as_ref()
     }
@@ -284,7 +316,10 @@ impl SupportsGdbrRegistry for InMemoryContext {
 impl SupportsSlimCrawlResults for InMemoryContext {
     type Error = DatabaseError;
 
-    async fn retrieve_slim_crawled_website(&self, url: &UrlWithDepth) -> Result<Option<SlimCrawlResult>, DatabaseError> {
+    async fn retrieve_slim_crawled_website(
+        &self,
+        url: &UrlWithDepth,
+    ) -> Result<Option<SlimCrawlResult>, DatabaseError> {
         let crawled = self.crawled_websites.read().await;
         if let Some(found) = crawled.get(url.url()) {
             Ok(Some(found.clone()))
@@ -293,7 +328,10 @@ impl SupportsSlimCrawlResults for InMemoryContext {
         }
     }
 
-    async fn store_slim_crawled_website(&self, result: SlimCrawlResult) -> Result<(), DatabaseError> {
+    async fn store_slim_crawled_website(
+        &self,
+        result: SlimCrawlResult,
+    ) -> Result<(), DatabaseError> {
         self.ct_crawled_websites.fetch_add(1, Ordering::Relaxed);
         let mut crawled = self.crawled_websites.write().await;
         crawled.insert(result.meta.url.url().clone(), result);
@@ -306,24 +344,28 @@ impl SupportsCrawlResults for InMemoryContext {
 
     async fn store_crawled_website(&self, result: &CrawlResult) -> Result<(), DatabaseError> {
         let hint = match &result.content {
-            RawVecData::None => {StoredDataHint::None}
-            RawVecData::InMemory { data } => {StoredDataHint::InMemory(data.clone())}
-            RawVecData::ExternalFile { file } => {StoredDataHint::External(file.clone())}
+            RawVecData::None => StoredDataHint::None,
+            RawVecData::InMemory { data } => StoredDataHint::InMemory(data.clone()),
+            RawVecData::ExternalFile { file } => StoredDataHint::External(file.clone()),
         };
         let slim = SlimCrawlResult::new(result, hint);
         self.store_slim_crawled_website(slim).await?;
         Ok(())
     }
 
-    async fn retrieve_crawled_website(&self, url: &UrlWithDepth) -> Result<Option<CrawlResult>, DatabaseError> {
-        self.retrieve_slim_crawled_website(url).await.map(|value| value.map(|value| value.inflate(None)))
+    async fn retrieve_crawled_website(
+        &self,
+        url: &UrlWithDepth,
+    ) -> Result<Option<CrawlResult>, DatabaseError> {
+        self.retrieve_slim_crawled_website(url)
+            .await
+            .map(|value| value.map(|value| value.inflate(None)))
     }
 }
 
-
 #[derive(Debug, Default, Clone)]
 pub struct InMemoryLinkNetManager {
-    link_net: Arc<Mutex<Vec<WebGraphEntry>>>
+    link_net: Arc<Mutex<Vec<WebGraphEntry>>>,
 }
 
 impl WebGraphManager for InMemoryLinkNetManager {
@@ -336,40 +378,61 @@ impl WebGraphManager for InMemoryLinkNetManager {
 #[derive(Debug, Clone)]
 pub struct InMemoryLinkQueue {
     links_queue: Arc<Mutex<VecDeque<UrlQueueElement>>>,
-    broadcast: tokio::sync::broadcast::Sender<EnqueueCalled>
+    broadcast: tokio::sync::broadcast::Sender<EnqueueCalled>,
 }
 
 impl Default for InMemoryLinkQueue {
     fn default() -> Self {
         Self {
             links_queue: Arc::default(),
-            broadcast: tokio::sync::broadcast::Sender::new(1)
+            broadcast: tokio::sync::broadcast::Sender::new(1),
         }
     }
 }
 
 impl UrlQueue for InMemoryLinkQueue {
-
     async fn enqueue_seed(&self, url: &str) -> Result<(), QueueError> {
-        self.enqueue(UrlQueueElementWeak::new(true, 0, false, &UrlWithDepth::from_seed(url).unwrap())).await
+        self.enqueue(UrlQueueElementWeak::new(
+            true,
+            0,
+            false,
+            &UrlWithDepth::from_seed(url).unwrap(),
+        ))
+        .await
     }
 
     /// Enqueues all [urls] at distance 0
-    async fn enqueue_seeds(&self, urls: impl IntoIterator<Item = impl AsRef<str>> + Clone) -> Result<(), QueueError> {
+    async fn enqueue_seeds(
+        &self,
+        urls: impl IntoIterator<Item = impl AsRef<str>> + Clone,
+    ) -> Result<(), QueueError> {
         self.enqueue_all(
             urls.into_iter()
-                .map(|s| UrlWithDepth::from_seed(s.as_ref()).map(|value| UrlQueueElement::new(true, 0, false, value)))
-                .collect::<Result<Vec<_>, _>>().unwrap()
-        ).await
+                .map(|s| {
+                    UrlWithDepth::from_seed(s.as_ref())
+                        .map(|value| UrlQueueElement::new(true, 0, false, value))
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap(),
+        )
+        .await
     }
 
     async fn enqueue<'a>(&self, entry: UrlQueueElementWeak<'a>) -> Result<(), QueueError> {
         let mut lock = self.links_queue.lock().await;
-        lock.push_back(UrlQueueElement::new(entry.is_seed, entry.age + 1, entry.host_was_in_use, entry.target.clone()));
+        lock.push_back(UrlQueueElement::new(
+            entry.is_seed,
+            entry.age + 1,
+            entry.host_was_in_use,
+            entry.target.clone(),
+        ));
         Ok(())
     }
 
-    async fn enqueue_all<E: Into<UrlQueueElement>>(&self, entries: impl IntoIterator<Item=E> + Clone) -> Result<(), QueueError> {
+    async fn enqueue_all<E: Into<UrlQueueElement>>(
+        &self,
+        entries: impl IntoIterator<Item = E> + Clone,
+    ) -> Result<(), QueueError> {
         let mut lock = self.links_queue.lock().await;
         lock.extend(entries.into_iter().map(|value| value.into()));
         Ok(())
@@ -400,6 +463,3 @@ impl UrlQueue for InMemoryLinkQueue {
         self.broadcast.subscribe()
     }
 }
-
-
-

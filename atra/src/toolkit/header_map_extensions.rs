@@ -16,12 +16,12 @@
 pub mod header_map {
     use reqwest::header::{GetAll, HeaderName, InvalidHeaderValue};
     use reqwest::header::{HeaderMap, HeaderValue};
-    use serde::{Deserialize};
     use serde::de::{Deserializer, Error, MapAccess, Unexpected, Visitor};
+    use serde::Deserialize;
     use serde::{Serialize, Serializer};
+    use smallvec::SmallVec;
     use std::borrow::Cow;
     use std::fmt;
-    use smallvec::SmallVec;
 
     pub struct ToSeq<'a>(pub GetAll<'a, HeaderValue>);
 
@@ -29,7 +29,7 @@ pub mod header_map {
     #[serde(untagged)]
     enum SecureHeaderValue<'a> {
         String(Cow<'a, str>),
-        Opaque { opaque: Cow<'a, [u8]> }
+        Opaque { opaque: Cow<'a, [u8]> },
     }
 
     #[derive(Deserialize, Serialize)]
@@ -42,12 +42,8 @@ pub mod header_map {
     impl SecureHeaderValue<'_> {
         fn as_header_value(&self) -> Result<HeaderValue, InvalidHeaderValue> {
             match self {
-                SecureHeaderValue::String(value) => {
-                    HeaderValue::from_str(&value)
-                }
-                SecureHeaderValue::Opaque{ opaque } => {
-                    HeaderValue::from_bytes(&opaque)
-                }
+                SecureHeaderValue::String(value) => HeaderValue::from_str(&value),
+                SecureHeaderValue::Opaque { opaque } => HeaderValue::from_bytes(&opaque),
             }
         }
     }
@@ -58,7 +54,7 @@ pub mod header_map {
                 Self::String(Cow::Borrowed(s))
             } else {
                 Self::Opaque {
-                    opaque: Cow::Borrowed(value.as_bytes())
+                    opaque: Cow::Borrowed(value.as_bytes()),
                 }
             }
         }
@@ -67,23 +63,22 @@ pub mod header_map {
     impl<'a> Serialize for ToSeq<'a> {
         fn serialize<S: Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
             if ser.is_human_readable() {
-                let data =
-                    self
-                        .0
-                        .iter()
-                        .map(|value| SecureHeaderValue::from(value))
-                        .collect::<SmallVec<[SecureHeaderValue; 8]>>();
+                let data = self
+                    .0
+                    .iter()
+                    .map(|value| SecureHeaderValue::from(value))
+                    .collect::<SmallVec<[SecureHeaderValue; 8]>>();
                 if ser.is_human_readable() && data.len() == 1 {
-                    return data[0].serialize(ser)
+                    return data[0].serialize(ser);
                 }
                 data.serialize(ser)
             } else {
                 self.0
                     .iter()
-                    .map(|value| value.as_bytes()).collect::<SmallVec<[&[u8]; 8]>>()
+                    .map(|value| value.as_bytes())
+                    .collect::<SmallVec<[&[u8]; 8]>>()
                     .serialize(ser)
             }
-
         }
     }
 
@@ -95,8 +90,6 @@ pub mod header_map {
                 .map(|k| (k.as_str(), ToSeq(headers.get_all(k)))),
         )
     }
-
-
 
     pub struct HeaderMapVisitor {
         pub is_human_readable: bool,
@@ -111,19 +104,20 @@ pub mod header_map {
         }
 
         fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
-            where
-                M: MapAccess<'de>,
+        where
+            M: MapAccess<'de>,
         {
             let mut map = HeaderMap::with_capacity(access.size_hint().unwrap_or(0));
 
             if !self.is_human_readable {
-                while let Some((key, data)) = access.next_entry::<Cow<str>, SmallVec<[Cow<[u8]>; 8]>>()? {
+                while let Some((key, data)) =
+                    access.next_entry::<Cow<str>, SmallVec<[Cow<[u8]>; 8]>>()?
+                {
                     let key = HeaderName::from_bytes(key.as_bytes())
                         .map_err(|_| Error::invalid_value(Unexpected::Str(&key), &self))?;
                     for val in data {
-                        let val = HeaderValue::from_bytes(&val).map_err(
-                            |_| Error::invalid_value(Unexpected::Bytes(&val), &self)
-                        )?;
+                        let val = HeaderValue::from_bytes(&val)
+                            .map_err(|_| Error::invalid_value(Unexpected::Bytes(&val), &self))?;
                         map.append(&key, val);
                     }
                 }
@@ -133,35 +127,27 @@ pub mod header_map {
                         .map_err(|_| Error::invalid_value(Unexpected::Str(&key), &self))?;
                     match val {
                         OneOrMore::One(val) => {
-                            let val = val
-                                .as_header_value()
-                                .map_err(|_err|
-                                    match val {
-                                        SecureHeaderValue::String(value) => {
-                                            Error::invalid_value(Unexpected::Str(&value), &self)
-                                        }
-                                        SecureHeaderValue::Opaque { opaque } => {
-                                            Error::invalid_value(Unexpected::Bytes(&opaque), &self)
-                                        }
-                                    }
-                                )?;
+                            let val = val.as_header_value().map_err(|_err| match val {
+                                SecureHeaderValue::String(value) => {
+                                    Error::invalid_value(Unexpected::Str(&value), &self)
+                                }
+                                SecureHeaderValue::Opaque { opaque } => {
+                                    Error::invalid_value(Unexpected::Bytes(&opaque), &self)
+                                }
+                            })?;
 
                             map.insert(key, val);
                         }
                         OneOrMore::Many(arr) => {
                             for val in arr {
-                                let val = val
-                                    .as_header_value()
-                                    .map_err(|_err|
-                                        match val {
-                                            SecureHeaderValue::String(value) => {
-                                                Error::invalid_value(Unexpected::Str(&value), &self)
-                                            }
-                                            SecureHeaderValue::Opaque { opaque } => {
-                                                Error::invalid_value(Unexpected::Bytes(&opaque), &self)
-                                            }
-                                        }
-                                    )?;
+                                let val = val.as_header_value().map_err(|_err| match val {
+                                    SecureHeaderValue::String(value) => {
+                                        Error::invalid_value(Unexpected::Str(&value), &self)
+                                    }
+                                    SecureHeaderValue::Opaque { opaque } => {
+                                        Error::invalid_value(Unexpected::Bytes(&opaque), &self)
+                                    }
+                                })?;
                                 map.append(&key, val);
                             }
                         }
@@ -174,8 +160,8 @@ pub mod header_map {
 
     /// Implementation detail.
     pub fn deserialize<'de, D>(de: D) -> Result<HeaderMap, D::Error>
-        where
-            D: Deserializer<'de>,
+    where
+        D: Deserializer<'de>,
     {
         let is_human_readable = de.is_human_readable();
         de.deserialize_map(HeaderMapVisitor { is_human_readable })
@@ -183,21 +169,21 @@ pub mod header_map {
 }
 
 pub mod optional_header_map {
-    use std::fmt::Formatter;
-    use reqwest::header::HeaderMap;
-    use serde::{Deserializer, Serialize, Serializer};
-    use serde::de::{Error, Visitor};
     use crate::toolkit::header_map_extensions::header_map;
+    use reqwest::header::HeaderMap;
+    use serde::de::{Error, Visitor};
+    use serde::{Deserializer, Serialize, Serializer};
+    use std::fmt::Formatter;
 
     #[derive(Serialize)]
     #[repr(transparent)]
     #[serde(transparent)]
-    struct SomeHeaderMap<'a>(
-        #[serde(with = "header_map")]
-        &'a HeaderMap
-    );
+    struct SomeHeaderMap<'a>(#[serde(with = "header_map")] &'a HeaderMap);
 
-    pub fn serialize<S: Serializer>(headers: &Option<HeaderMap>, ser: S) -> Result<S::Ok, S::Error> {
+    pub fn serialize<S: Serializer>(
+        headers: &Option<HeaderMap>,
+        ser: S,
+    ) -> Result<S::Ok, S::Error> {
         if let Some(headers) = headers {
             ser.serialize_some(&SomeHeaderMap(headers))
         } else {
@@ -214,18 +200,24 @@ pub mod optional_header_map {
             formatter.write_str("lots of things can go wrong with Optional<HeaderMap>")
         }
 
-        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error> where D: Deserializer<'de> {
+        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
             Ok(Some(header_map::deserialize(deserializer)?))
         }
 
-        fn visit_none<E>(self) -> Result<Self::Value, E> where E: Error {
-            return Ok(None)
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: Error,
+        {
+            return Ok(None);
         }
     }
 
     pub fn deserialize<'de, D>(de: D) -> Result<Option<HeaderMap>, D::Error>
-        where
-            D: Deserializer<'de>,
+    where
+        D: Deserializer<'de>,
     {
         de.deserialize_option(OptionalHeaderMapVisitor)
     }

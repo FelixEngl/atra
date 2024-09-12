@@ -12,18 +12,18 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-pub mod queue;
-mod url_with_depth;
 mod atra_uri;
 pub mod cleaner;
+pub mod guard;
 mod guarded;
 mod origin;
-pub mod guard;
+pub mod queue;
+mod url_with_depth;
 
 mod depth;
 
+pub use atra_uri::*;
 pub use depth::*;
 pub use guarded::UrlWithGuard;
-pub use atra_uri::*;
-pub use url_with_depth::UrlWithDepth;
 pub use origin::*;
+pub use url_with_depth::UrlWithDepth;

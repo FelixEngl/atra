@@ -12,13 +12,13 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::io::Read;
+use crate::io::errors::ErrorWithPath;
 use camino::Utf8PathBuf;
+#[cfg(test)]
+use mockall::automock;
+use std::io::Read;
 use warc::header::WarcHeader;
 use warc::writer::WarcWriterError;
-#[cfg(test)]
-use mockall::{automock};
-use crate::io::errors::ErrorWithPath;
 
 /// A writer for WARC files
 #[cfg_attr(test, automock)]
@@ -41,7 +41,6 @@ pub trait SpecialWarcWriter {
     /// Returns the number of bytes written. (including the tail)
     fn write_body_complete(&mut self, buf: &[u8]) -> Result<usize, WarcWriterError>;
 
-
     /// Writes a body to the file
     /// Returns the number of bytes written. (including the tail)
     #[cfg_attr(test, mockall::concretize)]
@@ -53,7 +52,10 @@ pub trait SpecialWarcWriter {
 
     /// Forwards to the next file, iff the number of bytes written is greater than [max_bytes_written]
     /// Returns the path to the finalized file.
-    fn forward_if_filesize(&mut self, max_bytes_written: usize) -> Result<Option<Utf8PathBuf>, ErrorWithPath> {
+    fn forward_if_filesize(
+        &mut self,
+        max_bytes_written: usize,
+    ) -> Result<Option<Utf8PathBuf>, ErrorWithPath> {
         if max_bytes_written <= self.bytes_written() {
             self.forward().map(|value| Some(value))
         } else {
@@ -65,5 +67,3 @@ pub trait SpecialWarcWriter {
     /// Returns the path to the finalized file.
     fn forward(&mut self) -> Result<Utf8PathBuf, ErrorWithPath>;
 }
-
-

@@ -1,38 +1,36 @@
-use std::borrow::Cow;
-use data_encoding::{BASE64};
-use uuid::Uuid;
-use itertools::{Itertools, Position};
-use reqwest::header::{CONTENT_TYPE};
-use ubyte::{ToByteUnit};
 use crate::crawl::CrawlResult;
-use crate::toolkit::digest::labeled_xxh128_digest;
+use crate::data::RawVecData;
 use crate::format::supported::InterpretedProcessibleFileFormat;
 use crate::io::file_owner::FileOwner;
-use warc::media_type::{parse_media_type};
-use warc::header::{WarcHeader};
-use warc::field::{UriLikeFieldValue};
-use warc::record_type::WarcRecordType;
-use warc::truncated_reason::TruncatedReason;
-use warc::writer::WarcWriterError as WarcWriterErrorExt;
-use crate::data::RawVecData;
+use crate::toolkit::digest::labeled_xxh128_digest;
 use crate::warc_ext::errors::WriterError;
 use crate::warc_ext::instructions::WarcSkipInstruction;
 use crate::warc_ext::skip_pointer::{WarcSkipPointer, WarcSkipPointerWithPath};
 use crate::warc_ext::special_writer::SpecialWarcWriter;
+use data_encoding::BASE64;
+use itertools::{Itertools, Position};
+use reqwest::header::CONTENT_TYPE;
+use std::borrow::Cow;
+use ubyte::ToByteUnit;
+use uuid::Uuid;
+use warc::field::UriLikeFieldValue;
+use warc::header::WarcHeader;
+use warc::media_type::parse_media_type;
+use warc::record_type::WarcRecordType;
+use warc::truncated_reason::TruncatedReason;
+use warc::writer::WarcWriterError as WarcWriterErrorExt;
 
 macro_rules! log_consume {
-    ($e: expr) => {
-        {
-            log::trace!(stringify!($e))
+    ($e: expr) => {{
+        log::trace!(stringify!($e))
+    }
+    match $e {
+        Ok(_) => {}
+        Err(err) => {
+            const ERR_HINT: &str = stringify!($e);
+            log::error!("Error at {ERR_HINT}: {err}");
         }
-        match $e {
-            Ok(_) => {}
-            Err(err) => {
-                const ERR_HINT: &str = stringify!($e);
-                log::error!("Error at {ERR_HINT}: {err}");
-            }
-        }
-    };
+    }};
 }
 
 /// Packs the header
@@ -60,13 +58,19 @@ fn pack_header(page: &CrawlResult) -> Vec<u8> {
     output
 }
 
-
-
 /// Creates a war entry
-pub fn write_warc<W: SpecialWarcWriter>(worker_warc_writer: &mut W, content: &CrawlResult) -> Result<WarcSkipInstruction, WriterError> {
+pub fn write_warc<W: SpecialWarcWriter>(
+    worker_warc_writer: &mut W,
+    content: &CrawlResult,
+) -> Result<WarcSkipInstruction, WriterError> {
     let mut builder = WarcHeader::new();
     log_consume!(builder.warc_type(WarcRecordType::Response));
-    let first_id = Uuid::new_v5(&Uuid::NAMESPACE_URL, (&content.meta.url).as_str().as_bytes()).as_urn().to_string();
+    let first_id = Uuid::new_v5(
+        &Uuid::NAMESPACE_URL,
+        (&content.meta.url).as_str().as_bytes(),
+    )
+    .as_urn()
+    .to_string();
     log_consume!(builder.warc_record_id_string(&first_id));
     log_consume!(builder.date(content.meta.created_at));
 
@@ -75,10 +79,11 @@ pub fn write_warc<W: SpecialWarcWriter>(worker_warc_writer: &mut W, content: &Cr
     }
 
     if let Some(ref redir) = content.meta.final_redirect_destination {
-        let urilike = unsafe{UriLikeFieldValue::from_string_unchecked(redir)};
+        let urilike = unsafe { UriLikeFieldValue::from_string_unchecked(redir) };
         log_consume!(builder.target_uri(urilike));
     } else {
-        let urilike_page = unsafe{UriLikeFieldValue::from_string_unchecked(&content.meta.url.as_str())};
+        let urilike_page =
+            unsafe { UriLikeFieldValue::from_string_unchecked(&content.meta.url.as_str()) };
         log_consume!(builder.target_uri(urilike_page));
     }
 
@@ -98,9 +103,7 @@ pub fn write_warc<W: SpecialWarcWriter>(worker_warc_writer: &mut W, content: &Cr
 
     let found = if let Some(ref found) = found_ll {
         match parse_media_type::<true>(found.as_bytes()) {
-            Ok(value) => {
-                value.1
-            }
+            Ok(value) => value.1,
             Err(err) => {
                 log::error!("Failed to parse media type: {err}");
                 content.meta.file_information.get_best_media_type_for_warc()
@@ -109,8 +112,6 @@ pub fn write_warc<W: SpecialWarcWriter>(worker_warc_writer: &mut W, content: &Cr
     } else {
         content.meta.file_information.get_best_media_type_for_warc()
     };
-
-
 
     log_consume!(builder.content_type(found));
 
@@ -132,11 +133,11 @@ pub fn write_warc<W: SpecialWarcWriter>(worker_warc_writer: &mut W, content: &Cr
                     skip_pointer_path,
                     position,
                     warc_header_offset as u32,
-                    header_signature_octet_count as u64
+                    header_signature_octet_count as u64,
                 ),
                 header_signature_octet_count as u32,
-                false
-            ))
+                false,
+            ));
         }
         RawVecData::None => {
             log::trace!("Warc-Write: No Payload");
@@ -150,11 +151,11 @@ pub fn write_warc<W: SpecialWarcWriter>(worker_warc_writer: &mut W, content: &Cr
                     skip_pointer_path,
                     skip_position,
                     warc_header_offset as u32,
-                    header_signature_octet_count as u64
+                    header_signature_octet_count as u64,
                 ),
                 header_signature_octet_count as u32,
-                false
-            ))
+                false,
+            ));
         }
 
         RawVecData::InMemory { data } => {
@@ -170,11 +171,11 @@ pub fn write_warc<W: SpecialWarcWriter>(worker_warc_writer: &mut W, content: &Cr
                         skip_pointer_path,
                         skip_position,
                         warc_header_offset as u32,
-                        header_signature_octet_count as u64
+                        header_signature_octet_count as u64,
                     ),
                     header_signature_octet_count as u32,
-                    false
-                ))
+                    false,
+                ));
             } else {
                 //todo: Base64
                 data
@@ -182,15 +183,17 @@ pub fn write_warc<W: SpecialWarcWriter>(worker_warc_writer: &mut W, content: &Cr
         }
     };
 
-
     let mut body = header;
 
     let (data, is_base64) = match content.meta.file_information.format {
         InterpretedProcessibleFileFormat::Unknown => {
             log_consume!(builder.atra_is_base64(true));
-            (Cow::Owned(BASE64.encode(data.as_slice()).into_bytes()), true)
+            (
+                Cow::Owned(BASE64.encode(data.as_slice()).into_bytes()),
+                true,
+            )
         }
-        _ => (Cow::Borrowed(data.as_slice()), false)
+        _ => (Cow::Borrowed(data.as_slice()), false),
     };
 
     body.extend_from_slice(&data);
@@ -201,7 +204,11 @@ pub fn write_warc<W: SpecialWarcWriter>(worker_warc_writer: &mut W, content: &Cr
         log::trace!("Warc chunk mode!");
         let mut skip_pointers = Vec::new();
         log_consume!(builder.payload_digest_bytes(digest));
-        for (position, (idx, value)) in body.chunks(1.gigabytes().as_u64() as usize).enumerate().with_position() {
+        for (position, (idx, value)) in body
+            .chunks(1.gigabytes().as_u64() as usize)
+            .enumerate()
+            .with_position()
+        {
             let mut sub_builder = builder.clone();
             match position {
                 Position::First => {
@@ -209,18 +216,24 @@ pub fn write_warc<W: SpecialWarcWriter>(worker_warc_writer: &mut W, content: &Cr
                     log_consume!(sub_builder.header_length(header_signature_octet_count as u64));
                 }
                 Position::Middle => {
-                    log_consume!(sub_builder.warc_record_id_string(&Uuid::new_v4().as_urn().to_string()));
+                    log_consume!(
+                        sub_builder.warc_record_id_string(&Uuid::new_v4().as_urn().to_string())
+                    );
                     log_consume!(sub_builder.warc_type(WarcRecordType::Continuation));
                 }
                 Position::Last => {
-                    log_consume!(sub_builder.warc_record_id_string(&Uuid::new_v4().as_urn().to_string()));
+                    log_consume!(
+                        sub_builder.warc_record_id_string(&Uuid::new_v4().as_urn().to_string())
+                    );
                     log_consume!(sub_builder.warc_type(WarcRecordType::Continuation));
                     log_consume!(sub_builder.segment_total_length(body.len() as u64));
                 }
                 Position::Only => {
                     // Combination of first and last
                     log_consume!(sub_builder.header_length(header_signature_octet_count as u64));
-                    log_consume!(sub_builder.warc_record_id_string(&Uuid::new_v4().as_urn().to_string()));
+                    log_consume!(
+                        sub_builder.warc_record_id_string(&Uuid::new_v4().as_urn().to_string())
+                    );
                     log_consume!(sub_builder.warc_type(WarcRecordType::Continuation));
                     log_consume!(sub_builder.segment_total_length(body.len() as u64));
                 }
@@ -234,17 +247,19 @@ pub fn write_warc<W: SpecialWarcWriter>(worker_warc_writer: &mut W, content: &Cr
             let (skip_pointer_path, skip_position) = worker_warc_writer.get_skip_pointer()?;
             let warc_header_offset = worker_warc_writer.write_header(sub_builder)?;
             worker_warc_writer.write_body_complete(&value)?;
-            skip_pointers.push(
-                WarcSkipPointerWithPath::create(
-                    skip_pointer_path,
-                    skip_position,
-                    warc_header_offset as u32,
-                    content_length
-                )
-            );
+            skip_pointers.push(WarcSkipPointerWithPath::create(
+                skip_pointer_path,
+                skip_position,
+                warc_header_offset as u32,
+                content_length,
+            ));
             let _ = worker_warc_writer.forward_if_filesize(1.gigabytes().as_u64() as usize);
         }
-        Ok(WarcSkipInstruction::new_multi(skip_pointers, header_signature_octet_count as u32, is_base64))
+        Ok(WarcSkipInstruction::new_multi(
+            skip_pointers,
+            header_signature_octet_count as u32,
+            is_base64,
+        ))
     } else {
         log::trace!("Warc normal mode!");
         log_consume!(builder.header_length(header_signature_octet_count as u64));
@@ -260,10 +275,10 @@ pub fn write_warc<W: SpecialWarcWriter>(worker_warc_writer: &mut W, content: &Cr
                 skip_pointer_path,
                 skip_position,
                 warc_header_offset as u32,
-                body.len() as u64
+                body.len() as u64,
             ),
             header_signature_octet_count as u32,
-            is_base64
-        ))
+            is_base64,
+        ));
     }
 }

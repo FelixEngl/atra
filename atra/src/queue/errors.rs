@@ -12,8 +12,8 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use thiserror::Error;
 use crate::url::ParseError;
+use thiserror::Error;
 
 /// Error of an url queue file
 #[derive(Debug, Error)]

@@ -24,16 +24,16 @@ use isolang::Language::Deu;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ubyte::ByteUnit;
-use whatlang::{Info, Script};
 use whatlang::Script::Latin;
-use xml::EventReader;
+use whatlang::{Info, Script};
 use xml::reader::{ParserConfig2, XmlEvent};
+use xml::EventReader;
 
 use crate::contexts::traits::SupportsConfigs;
 use crate::data::Decoded;
-use crate::format::AtraFileInformation;
 use crate::format::supported::InterpretedProcessibleFileFormat;
-use crate::response::ResponseData;
+use crate::format::AtraFileInformation;
+use crate::fetching::ResponseData;
 use crate::toolkit::isolang_ext::ToIsoLang;
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone)]
@@ -60,13 +60,14 @@ impl LanguageInformation {
     }
 
     pub const fn new(script: Script, lang: Language, confidence: f64) -> Self {
-        Self { script, lang, confidence }
+        Self {
+            script,
+            lang,
+            confidence,
+        }
     }
 
-    pub const fn with_confidence(
-        script: Script,
-        lang: Language,
-    ) -> Self {
+    pub const fn with_confidence(script: Script, lang: Language) -> Self {
         Self::new(script, lang, 1f64)
     }
 }
@@ -97,16 +98,24 @@ pub fn detect_language<'a>(
 ) -> Result<Option<LanguageInformation>, std::io::Error> {
     const MAX_IN_MEMORY_FOR_LANG: u64 = 1u64 * ByteUnit::MB.as_u64();
 
-    fn create_limited_sample_file_reader(context: &impl SupportsConfigs, path: impl AsRef<Path>) -> std::io::Result<impl Read> {
+    fn create_limited_sample_file_reader(
+        context: &impl SupportsConfigs,
+        path: impl AsRef<Path>,
+    ) -> std::io::Result<impl Read> {
         let max_bytes = if let Some(mfs) = context.configs().crawl.max_file_size {
             min(mfs.get(), MAX_IN_MEMORY_FOR_LANG)
         } else {
             MAX_IN_MEMORY_FOR_LANG
         };
-        Ok(BufReader::new(File::options().read(true).open(path)?.take(max_bytes)))
+        Ok(BufReader::new(
+            File::options().read(true).open(path)?.take(max_bytes),
+        ))
     }
 
-    fn read_sample_file(context: &impl SupportsConfigs, path: impl AsRef<Path>) -> std::io::Result<Vec<u8>> {
+    fn read_sample_file(
+        context: &impl SupportsConfigs,
+        path: impl AsRef<Path>,
+    ) -> std::io::Result<Vec<u8>> {
         let mut reader = create_limited_sample_file_reader(context, path)?;
         let mut v = Vec::new();
         reader.read_to_end(&mut v)?;
@@ -114,30 +123,27 @@ pub fn detect_language<'a>(
     }
 
     match file_type.format {
-        InterpretedProcessibleFileFormat::HTML => {
-            match decoded {
-                Decoded::InMemory { data, .. } => {
-                    let text = scraper::html::Html::parse_document(data.as_str()).root_element().text().collect::<String>();
-                    Ok(whatlang::detect(&text).map(From::from))
-                }
-                _ => Ok(None)
+        InterpretedProcessibleFileFormat::HTML => match decoded {
+            Decoded::InMemory { data, .. } => {
+                let text = scraper::html::Html::parse_document(data.as_str())
+                    .root_element()
+                    .text()
+                    .collect::<String>();
+                Ok(whatlang::detect(&text).map(From::from))
             }
-        }
+            _ => Ok(None),
+        },
         InterpretedProcessibleFileFormat::PlainText
         | InterpretedProcessibleFileFormat::StructuredPlainText
-        | InterpretedProcessibleFileFormat::Decodeable => {
-            match decoded {
-                Decoded::InMemory { data, .. } => {
-                    Ok(whatlang::detect(&data).map(From::from))
-                }
-                Decoded::OffMemory { reference, .. } => {
-                    let data = read_sample_file(context, reference)?;
-                    let text = String::from_utf8_lossy(&data);
-                    Ok(whatlang::detect(&text).map(From::from))
-                }
-                Decoded::None => Ok(None)
+        | InterpretedProcessibleFileFormat::Decodeable => match decoded {
+            Decoded::InMemory { data, .. } => Ok(whatlang::detect(&data).map(From::from)),
+            Decoded::OffMemory { reference, .. } => {
+                let data = read_sample_file(context, reference)?;
+                let text = String::from_utf8_lossy(&data);
+                Ok(whatlang::detect(&text).map(From::from))
             }
-        }
+            Decoded::None => Ok(None),
+        },
         InterpretedProcessibleFileFormat::JSON => {
             fn extract_string(value: Value) -> String {
                 let mut result = String::new();
@@ -152,9 +158,7 @@ pub fn detect_language<'a>(
                         Value::Array(values) => {
                             q.extend(values);
                         }
-                        Value::Object(obj) => {
-                            q.extend(obj.into_iter().map(|(_, v)| v))
-                        }
+                        Value::Object(obj) => q.extend(obj.into_iter().map(|(_, v)| v)),
                         _ => {}
                     }
                 }
@@ -178,7 +182,7 @@ pub fn detect_language<'a>(
                         Ok(whatlang::detect(&text).map(From::from))
                     }
                 }
-                Decoded::None => Ok(None)
+                Decoded::None => Ok(None),
             }
         }
         InterpretedProcessibleFileFormat::XML => {
@@ -203,14 +207,15 @@ pub fn detect_language<'a>(
                 .ignore_comments(true);
 
             match decoded {
-                Decoded::InMemory { data, .. } => {
-                    Ok(analyze_xml(EventReader::new_with_config(data.as_bytes(), cfg)))
-                }
+                Decoded::InMemory { data, .. } => Ok(analyze_xml(EventReader::new_with_config(
+                    data.as_bytes(),
+                    cfg,
+                ))),
                 Decoded::OffMemory { reference, .. } => {
                     let reader = create_limited_sample_file_reader(context, reference)?;
                     Ok(analyze_xml(EventReader::new_with_config(reader, cfg)))
                 }
-                Decoded::None => Ok(None)
+                Decoded::None => Ok(None),
             }
         }
         InterpretedProcessibleFileFormat::RTF => {
@@ -223,15 +228,13 @@ pub fn detect_language<'a>(
             }
 
             match decoded {
-                Decoded::InMemory { data, .. } => {
-                    Ok(analyze_rdf(data))
-                }
+                Decoded::InMemory { data, .. } => Ok(analyze_rdf(data)),
                 Decoded::OffMemory { reference, .. } => {
                     let data = read_sample_file(context, reference)?;
                     let text = String::from_utf8_lossy(&data);
                     Ok(analyze_rdf(&text))
                 }
-                Decoded::None => Ok(None)
+                Decoded::None => Ok(None),
             }
         }
         InterpretedProcessibleFileFormat::OOXML => {
@@ -242,6 +245,6 @@ pub fn detect_language<'a>(
             // todo: Needs unpacking and handling
             Ok(None)
         }
-        _ => Ok(None)
+        _ => Ok(None),
     }
 }

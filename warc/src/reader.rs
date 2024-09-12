@@ -15,26 +15,26 @@
 use std::cmp::min;
 use std::fmt::{Debug, Formatter};
 use std::io;
-use std::io::{Read};
+use std::io::Read;
 
-use nom::{Needed};
 use nom::error::ErrorKind;
-use strum::{EnumString};
+use nom::Needed;
+use strum::EnumString;
 use thiserror::Error;
 use ubyte::ByteUnit;
 
 use crate::field::{WarcFieldName, WarcFieldValue};
 use crate::header::{RequiredFieldError, WarcHeader};
 use crate::parser::{parse_warc_header, peek_warc_version, WarcVersionPeek};
-use crate::states::State;
 use crate::reader::ReadTarget::Header;
+use crate::states::State;
 
 pub struct WarcCursor<T> {
     inner: T,
     backlog: Vec<u8>,
     current_header: Option<WarcHeader>,
     current_bytes_in_body: u64,
-    state: State
+    state: State,
 }
 
 impl<T: Debug> Debug for WarcCursor<T> {
@@ -49,15 +49,14 @@ impl<T: Debug> Debug for WarcCursor<T> {
     }
 }
 
-
 impl<T> WarcCursor<T> {
     pub fn new(inner: T) -> Self {
-        Self{
+        Self {
             inner,
             backlog: Vec::new(),
             current_header: None,
             current_bytes_in_body: 0,
-            state: State::ExpectHeader
+            state: State::ExpectHeader,
         }
     }
 
@@ -75,20 +74,21 @@ impl<T> WarcCursor<T> {
 
     pub fn in_read_body_state(&self) -> bool {
         match self.state {
-            State::ExpectHeader => {false}
-            State::ExpectBody => {true}
-            State::InBody => {true}
-            // State::Corrupt(_) => {false}
+            State::ExpectHeader => false,
+            State::ExpectBody => true,
+            State::InBody => true, // State::Corrupt(_) => {false}
         }
     }
 
-     pub fn backlog_shrink(&mut self) { self.backlog.shrink_to_fit() }
+    pub fn backlog_shrink(&mut self) {
+        self.backlog.shrink_to_fit()
+    }
 
-     pub fn backlog_len(&self) -> usize {
+    pub fn backlog_len(&self) -> usize {
         self.backlog.len()
     }
 
-     pub fn backlog_capacity(&self) -> usize {
+    pub fn backlog_capacity(&self) -> usize {
         self.backlog.capacity()
     }
 
@@ -123,19 +123,19 @@ pub enum WarcCursorReadError {
     #[error("Expected the body to end with \\r\\n\\r\\n but it ended with {1:?}!")]
     BadRecordEnd((usize, bool), Vec<u8>),
     #[error(transparent)]
-    IOError(#[from] io::Error)
+    IOError(#[from] io::Error),
 }
-
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, EnumString)]
 pub enum ReadTarget {
     Header,
-    Body
+    Body,
 }
 
-
-impl<T> WarcCursor<T> where T: Read {
-
+impl<T> WarcCursor<T>
+where
+    T: Read,
+{
     // pub fn goto_next_entry(&mut self) -> Result<Option<&WarcHeader>, WarcCursorReadError> {
     //     if self.in_read_header_state() {
     //         return unsafe{self.read_header()};
@@ -161,11 +161,12 @@ impl<T> WarcCursor<T> where T: Read {
         if loaded == 0 {
             Ok(true)
         } else {
-            unsafe { self.add_to_backlog(&buf[..loaded]); }
+            unsafe {
+                self.add_to_backlog(&buf[..loaded]);
+            }
             Ok(false)
         }
     }
-
 
     unsafe fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.backlog.is_empty() {
@@ -188,10 +189,13 @@ impl<T> WarcCursor<T> where T: Read {
 
     pub unsafe fn read_header(&mut self) -> Result<Option<&WarcHeader>, WarcCursorReadError> {
         if self.state != State::ExpectHeader {
-            return Err(WarcCursorReadError::IllegalReadCall(ReadTarget::Body, self.state))
+            return Err(WarcCursorReadError::IllegalReadCall(
+                ReadTarget::Body,
+                self.state,
+            ));
         }
         let mut current_data = Vec::with_capacity(1024 * 8);
-        let mut buffer = [0u8; 1024*8];
+        let mut buffer = [0u8; 1024 * 8];
         let mut needed: Option<Needed> = None;
         let mut peek_success = false;
         loop {
@@ -203,39 +207,35 @@ impl<T> WarcCursor<T> where T: Read {
                     Ok(None)
                 } else {
                     Err(WarcCursorReadError::UnexpectedEos(Header, after))
-                }
+                };
             }
             current_data.extend_from_slice(&buffer[..bytes_read]);
             if !peek_success {
                 match peek_warc_version(&current_data) {
-                    WarcVersionPeek::NotEnoughBytes => {
-                        continue
-                    }
+                    WarcVersionPeek::NotEnoughBytes => continue,
                     WarcVersionPeek::NotFound => {
                         self.add_to_backlog(&current_data);
-                        return Err(WarcCursorReadError::NotAHeader(current_data))
+                        return Err(WarcCursorReadError::NotAHeader(current_data));
                     }
                     WarcVersionPeek::StartsCorrectly(needs_more) => {
                         if !needs_more {
                             self.add_to_backlog(&current_data);
-                            return Err(WarcCursorReadError::NotAHeader(current_data))
+                            return Err(WarcCursorReadError::NotAHeader(current_data));
                         }
                     }
                     WarcVersionPeek::FirstDigit(needs_more) => {
                         if !needs_more {
                             self.add_to_backlog(&current_data);
-                            return Err(WarcCursorReadError::NotAHeader(current_data))
+                            return Err(WarcCursorReadError::NotAHeader(current_data));
                         }
                     }
                     WarcVersionPeek::Dot(needs_more) => {
                         if !needs_more {
                             self.add_to_backlog(&current_data);
-                            return Err(WarcCursorReadError::NotAHeader(current_data))
+                            return Err(WarcCursorReadError::NotAHeader(current_data));
                         }
                     }
-                    WarcVersionPeek::Complete => {
-                        peek_success = true
-                    }
+                    WarcVersionPeek::Complete => peek_success = true,
                 }
             }
             match parse_warc_header(&current_data) {
@@ -243,51 +243,50 @@ impl<T> WarcCursor<T> where T: Read {
                     self.add_to_backlog(left);
                     self.current_header = Some(read);
                     self.state = State::ExpectBody;
-                    return Ok(self.current_header.as_ref())
+                    return Ok(self.current_header.as_ref());
                 }
-                Err(err) => {
-                    match err {
-                        nom::Err::Incomplete(n) => {
-                            needed = Some(n);
-                        }
-                        nom::Err::Error(err) => {
-                            self.add_to_backlog(&current_data);
-                            return Err(WarcCursorReadError::NomError(err.code, current_data))
-                        }
-                        nom::Err::Failure(fail) => {
-                            self.add_to_backlog(&current_data);
-                            return Err(WarcCursorReadError::NomFailure(fail.code, current_data))
-                        }
+                Err(err) => match err {
+                    nom::Err::Incomplete(n) => {
+                        needed = Some(n);
                     }
-                }
+                    nom::Err::Error(err) => {
+                        self.add_to_backlog(&current_data);
+                        return Err(WarcCursorReadError::NomError(err.code, current_data));
+                    }
+                    nom::Err::Failure(fail) => {
+                        self.add_to_backlog(&current_data);
+                        return Err(WarcCursorReadError::NomFailure(fail.code, current_data));
+                    }
+                },
             }
         }
     }
 
-    pub unsafe fn get_current_header(&mut self) -> Result<Option<&WarcHeader>, WarcCursorReadError> {
-        Ok(
-            if self.state == State::ExpectHeader  {
-                self.read_header()?
-            } else {
-                self.current_header.as_ref()
-            }
-        )
+    pub unsafe fn get_current_header(
+        &mut self,
+    ) -> Result<Option<&WarcHeader>, WarcCursorReadError> {
+        Ok(if self.state == State::ExpectHeader {
+            self.read_header()?
+        } else {
+            self.current_header.as_ref()
+        })
     }
 
     unsafe fn set_current_bytes_in_body(&mut self) -> Result<(), WarcCursorReadError> {
-        if self.current_bytes_in_body == 0  {
+        if self.current_bytes_in_body == 0 {
             let header = self.get_current_header()?;
 
             if let Some(header) = header {
                 self.current_bytes_in_body = match header.get_content_length() {
-                    Ok(found) => {
-                        *found
-                    }
+                    Ok(found) => *found,
                     Err(RequiredFieldError::NotFound(field_name)) => {
                         return Err(WarcCursorReadError::RequiredFieldMissing(field_name))
                     }
                     Err(RequiredFieldError::WrongType(field_name, problem)) => {
-                        return Err(WarcCursorReadError::RequiredFieldHasIllegalValue(field_name, problem.clone()))
+                        return Err(WarcCursorReadError::RequiredFieldHasIllegalValue(
+                            field_name,
+                            problem.clone(),
+                        ))
                     }
                 };
             }
@@ -296,19 +295,21 @@ impl<T> WarcCursor<T> where T: Read {
         Ok(())
     }
 
-
-
     /// Returns the number of bytes read.
     pub unsafe fn read_body(&mut self, buf: &mut [u8]) -> Result<usize, WarcCursorReadError> {
         if self.get_current_header()?.is_none() {
-            return Ok(0)
+            return Ok(0);
         }
 
         self.set_current_bytes_in_body()?;
 
         match self.state {
             State::ExpectHeader => {
-                return Err(WarcCursorReadError::BadStateError(ReadTarget::Body, self.state, "Currently expecting a header!"))
+                return Err(WarcCursorReadError::BadStateError(
+                    ReadTarget::Body,
+                    self.state,
+                    "Currently expecting a header!",
+                ))
             }
             // State::Corrupt(message) => {
             //     return Err(WarcCursorReadError::BadStateError(ReadTarget::Body, self.state, message))
@@ -326,13 +327,19 @@ impl<T> WarcCursor<T> where T: Read {
             let mut end_buffer = [0u8; 4];
             let end_good = self.read(end_buffer.as_mut_slice())?;
             if end_good == 4 {
-                if !end_buffer.eq(b"\r\n\r\n")  {
-                    Err(WarcCursorReadError::BadRecordEnd((read, false), end_buffer.to_vec()))
+                if !end_buffer.eq(b"\r\n\r\n") {
+                    Err(WarcCursorReadError::BadRecordEnd(
+                        (read, false),
+                        end_buffer.to_vec(),
+                    ))
                 } else {
                     Ok(read)
                 }
             } else {
-                Err(WarcCursorReadError::BadRecordEnd((read, false), end_buffer.to_vec()))
+                Err(WarcCursorReadError::BadRecordEnd(
+                    (read, false),
+                    end_buffer.to_vec(),
+                ))
             }
         } else {
             self.state = State::InBody;
@@ -341,16 +348,14 @@ impl<T> WarcCursor<T> where T: Read {
     }
 
     pub unsafe fn read_body_complete(&mut self) -> Result<Vec<u8>, WarcCursorReadError> {
-        let mut buffer = [0u8; 1024*8];
+        let mut buffer = [0u8; 1024 * 8];
         let mut read_data = Vec::new();
         loop {
             match self.read_body(&mut buffer) {
                 Ok(read) => {
                     read_data.extend_from_slice(&buffer[..read]);
                     match self.state {
-                        State::ExpectHeader => {
-                            break
-                        }
+                        State::ExpectHeader => break,
                         // State::Corrupt(message) => {
                         //     return Err(WarcCursorReadError::BadStateError(ReadTarget::Body, self.state, message))
                         // }
@@ -359,11 +364,9 @@ impl<T> WarcCursor<T> where T: Read {
                 }
                 Err(WarcCursorReadError::BadRecordEnd((read, _), _)) => {
                     read_data.extend_from_slice(&buffer[..read]);
-                    break
+                    break;
                 }
-                Err(other) => {
-                    return Err(other)
-                }
+                Err(other) => return Err(other),
             }
         }
         Ok(read_data)
@@ -371,25 +374,28 @@ impl<T> WarcCursor<T> where T: Read {
 
     pub fn read_entry(&mut self) -> Result<Option<(WarcHeader, Body<T>)>, WarcCursorReadError> {
         if self.state != State::ExpectHeader {
-            return Err(WarcCursorReadError::BadStateError(Header, self.state, "When reading an entry, the state has to be expecting a header first!"))
+            return Err(WarcCursorReadError::BadStateError(
+                Header,
+                self.state,
+                "When reading an entry, the state has to be expecting a header first!",
+            ));
         }
         unsafe {
             match self.get_current_header()? {
-                None => {Ok(None)}
+                None => Ok(None),
                 Some(header) => {
                     let header = header.clone();
                     self.set_current_bytes_in_body()?;
                     if self.current_bytes_in_body > ByteUnit::Megabyte(10).as_u64() {
-                        return Ok(Some((header, Body::Complete(self.read_body_complete()?))))
+                        return Ok(Some((header, Body::Complete(self.read_body_complete()?))));
                     } else {
-                        return Ok(Some((header, Body::Partial(BodyReader::new(self)))))
+                        return Ok(Some((header, Body::Partial(BodyReader::new(self)))));
                     }
                 }
             }
         }
     }
 }
-
 
 // impl<T> WarcCursor<T> where T: Seek {
 //     unsafe fn clear_all_states(&mut self) {
@@ -412,16 +418,13 @@ impl<T> WarcCursor<T> where T: Read {
 
 pub enum Body<'a, T: Read> {
     Complete(Vec<u8>),
-    Partial(BodyReader<'a, T>)
+    Partial(BodyReader<'a, T>),
 }
-
 
 impl<'a, T: Read> Body<'a, T> {
     pub fn load_completely(self) -> Result<Vec<u8>, WarcCursorReadError> {
         match self {
-            Body::Complete(value) => {
-                Ok(value)
-            }
+            Body::Complete(value) => Ok(value),
             Body::Partial(mut value) => {
                 let mut data = Vec::new();
                 while let Some(dat) = value.read_next()? {
@@ -436,7 +439,7 @@ impl<'a, T: Read> Body<'a, T> {
 pub struct BodyReader<'a, T: Read> {
     parent: &'a mut WarcCursor<T>,
     bytes_read: usize,
-    buffer: [u8; 1024*8],
+    buffer: [u8; 1024 * 8],
 }
 
 impl<'a, T: Read + Debug> Debug for BodyReader<'a, T> {
@@ -449,23 +452,26 @@ impl<'a, T: Read + Debug> Debug for BodyReader<'a, T> {
     }
 }
 
-impl<'a, T> BodyReader<'a, T> where T: Read {
+impl<'a, T> BodyReader<'a, T>
+where
+    T: Read,
+{
     fn new(parent: &'a mut WarcCursor<T>) -> Self {
         Self {
             parent,
-            buffer: [0u8; 1024*8],
-            bytes_read: 0
+            buffer: [0u8; 1024 * 8],
+            bytes_read: 0,
         }
     }
 
     pub fn read_next(&mut self) -> Result<Option<&[u8]>, WarcCursorReadError> {
         if !self.parent.in_read_body_state() {
-            return Ok(None)
+            return Ok(None);
         }
         unsafe {
             let bytes_read = self.parent.read_body(&mut self.buffer)?;
             self.bytes_read = bytes_read;
-            return Ok(Some(&self.buffer[..bytes_read]))
+            return Ok(Some(&self.buffer[..bytes_read]));
         }
     }
 
@@ -485,9 +491,9 @@ impl<'a, T> BodyReader<'a, T> where T: Read {
 
 #[cfg(test)]
 mod test {
-    use std::io::Cursor;
     use crate::warc::reader::{WarcCursor, WarcCursorReadError};
     use crate::warc::writer::test::build_test_warc;
+    use std::io::Cursor;
 
     #[test]
     fn can_read() {
@@ -499,16 +505,16 @@ mod test {
             Ok(result) => {
                 let (header, body) = result.expect("Why none?");
                 println!("Header:\n---\n---{header}---\n---");
-                println!("Body:\n---\n---{}---\n---", unsafe{String::from_utf8_unchecked(body.load_completely().unwrap())});
+                println!("Body:\n---\n---{}---\n---", unsafe {
+                    String::from_utf8_unchecked(body.load_completely().unwrap())
+                });
             }
-            Err(err) => {
-                match err {
-                    WarcCursorReadError::NotAHeader(value) => {
-                        panic!("NAH {}", unsafe{String::from_utf8_unchecked(value)})
-                    }
-                    others => panic!("{}", others)
+            Err(err) => match err {
+                WarcCursorReadError::NotAHeader(value) => {
+                    panic!("NAH {}", unsafe { String::from_utf8_unchecked(value) })
                 }
-            }
+                others => panic!("{}", others),
+            },
         }
 
         println!("\n\n");
@@ -517,16 +523,16 @@ mod test {
             Ok(result) => {
                 let (header, body) = result.expect("Why none?");
                 println!("Header:\n---\n---{header}---\n---");
-                println!("Body:\n---\n---{}---\n---", unsafe{String::from_utf8_unchecked(body.load_completely().unwrap())});
+                println!("Body:\n---\n---{}---\n---", unsafe {
+                    String::from_utf8_unchecked(body.load_completely().unwrap())
+                });
             }
-            Err(err) => {
-                match err {
-                    WarcCursorReadError::NotAHeader(value) => {
-                        panic!("NAH {}", unsafe{String::from_utf8_unchecked(value)})
-                    }
-                    others => panic!("{}", others)
+            Err(err) => match err {
+                WarcCursorReadError::NotAHeader(value) => {
+                    panic!("NAH {}", unsafe { String::from_utf8_unchecked(value) })
                 }
-            }
+                others => panic!("{}", others),
+            },
         }
 
         println!("{}", cursor.eos().unwrap());

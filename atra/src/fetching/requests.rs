@@ -12,20 +12,20 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::io::{Read, Seek, Write};
-use std::net::SocketAddr;
-use std::num::{IntErrorKind};
-use reqwest::header::{CONTENT_LENGTH, CONTENT_TYPE, HeaderMap};
-use reqwest::{IntoUrl, StatusCode};
-use log;
-use tempfile::NamedTempFile;
-use tokio_stream::StreamExt;
-use ubyte::ToByteUnit;
 use crate::client::Client;
 use crate::client::Result;
 use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
 use crate::data::{RawData, RawVecData};
 use crate::io::fs::AtraFS;
+use log;
+use reqwest::header::{HeaderMap, CONTENT_LENGTH, CONTENT_TYPE};
+use reqwest::{IntoUrl, StatusCode};
+use std::io::{Read, Seek, Write};
+use std::net::SocketAddr;
+use std::num::IntErrorKind;
+use tempfile::NamedTempFile;
+use tokio_stream::StreamExt;
+use ubyte::ToByteUnit;
 
 /// The response of a fetch.
 #[derive(Debug, Default)]
@@ -42,13 +42,12 @@ pub struct FetchedRequestData {
     /// The remote address
     pub address: Option<SocketAddr>,
     /// Set if there was an error
-    pub defect: bool
+    pub defect: bool,
 }
 
-
-
 impl FetchedRequestData {
-    #[cfg(test)] pub fn new(
+    #[cfg(test)]
+    pub fn new(
         content: RawVecData,
         headers: Option<HeaderMap>,
         status_code: StatusCode,
@@ -67,11 +66,16 @@ impl FetchedRequestData {
     }
 }
 
-
 /// Perform a network request to a resource extracting all content
-pub async fn fetch_request<C, U: IntoUrl>(context: &C, client: &Client, target_url: U) -> Result<FetchedRequestData>
-where C: SupportsConfigs + SupportsFileSystemAccess,
-      U: IntoUrl{
+pub async fn fetch_request<C, U: IntoUrl>(
+    context: &C,
+    client: &Client,
+    target_url: U,
+) -> Result<FetchedRequestData>
+where
+    C: SupportsConfigs + SupportsFileSystemAccess,
+    U: IntoUrl,
+{
     let target_url_str = target_url.as_str();
     match client.get(target_url_str).send().await {
         Ok(res) => {
@@ -91,13 +95,13 @@ where C: SupportsConfigs + SupportsFileSystemAccess,
                     if let Some(size_hint) = headers.get(CONTENT_LENGTH) {
                         if let Ok(length) = size_hint.to_str() {
                             match length.parse::<u64>() {
-                                Ok(length) => {
-                                    Some(length)
-                                }
+                                Ok(length) => Some(length),
                                 Err(err) => {
                                     match err.kind() {
                                         IntErrorKind::Empty => {
-                                            log::warn!("{target_url_str}: The content-length of is empty.")
+                                            log::warn!(
+                                                "{target_url_str}: The content-length of is empty."
+                                            )
                                         }
                                         IntErrorKind::InvalidDigit => {
                                             log::warn!("{target_url_str}: The content-length has invalid digits: {length}")
@@ -122,32 +126,27 @@ where C: SupportsConfigs + SupportsFileSystemAccess,
                         None
                     }
                 }
-                found => found
+                found => found,
             };
-
-
 
             if let Some(found) = content_length_in_bytes {
                 if let Some(max_size) = context.configs().crawl().max_file_size {
                     can_download = found <= max_size.get();
                 }
-                can_download_in_memory = found <= context.configs().system().max_file_size_in_memory;
+                can_download_in_memory =
+                    found <= context.configs().system().max_file_size_in_memory;
             } else {
                 // todo: make something better???
                 match headers.get(CONTENT_TYPE) {
                     None => {}
-                    Some(value) => {
-                        match value.to_str() {
-                            Ok(value) => {
-                                can_download_in_memory = value.to_lowercase().contains("text/html");
-                            }
-                            Err(_) => {}
+                    Some(value) => match value.to_str() {
+                        Ok(value) => {
+                            can_download_in_memory = value.to_lowercase().contains("text/html");
                         }
-                    }
+                        Err(_) => {}
+                    },
                 }
             }
-
-
 
             let headers = Some(headers.clone());
             let status_code = res.status();
@@ -161,7 +160,7 @@ where C: SupportsConfigs + SupportsFileSystemAccess,
                     } else {
                         RawData::None
                     }
-                } else  {
+                } else {
                     match NamedTempFile::new() {
                         Ok(mut temp) => {
                             let mut stream = res.bytes_stream();
@@ -176,7 +175,7 @@ where C: SupportsConfigs + SupportsFileSystemAccess,
                                             Err(err) => {
                                                 defect = true;
                                                 log::error!("{target_url_str}: Had an error while writing to tempfile {temp:?}! {err}");
-                                                break
+                                                break;
                                             }
                                             _ => {}
                                         }
@@ -184,7 +183,7 @@ where C: SupportsConfigs + SupportsFileSystemAccess,
                                     Err(err) => {
                                         defect = true;
                                         log::error!("{target_url_str}: Had an error while downloading the stream to tempfile {temp:?}! {err}");
-                                        break
+                                        break;
                                     }
                                 }
                             }
@@ -194,7 +193,8 @@ where C: SupportsConfigs + SupportsFileSystemAccess,
                                     defect = true;
                                     log::warn!("{target_url_str}: Number of bytes downloaded {bytes_downloaded} differs from bytes written to tempfile {}", meta.len());
                                 }
-                                if meta.len() <= context.configs().system().max_file_size_in_memory {
+                                if meta.len() <= context.configs().system().max_file_size_in_memory
+                                {
                                     match temp.rewind() {
                                         Ok(_) => {
                                             let mut buf = Vec::with_capacity(meta.len() as usize);
@@ -212,7 +212,11 @@ where C: SupportsConfigs + SupportsFileSystemAccess,
                                                 Err(err) => {
                                                     defect = true;
                                                     log::warn!("{target_url_str}: Had an error while reading the temp file {temp:?}: {err}");
-                                                    let path = context.fs().create_unique_path_for_dat_file(target_url_str);
+                                                    let path = context
+                                                        .fs()
+                                                        .create_unique_path_for_dat_file(
+                                                            target_url_str,
+                                                        );
                                                     match temp.persist(&path) {
                                                         Ok(_) => {}
                                                         Err(err) => {
@@ -224,13 +228,17 @@ where C: SupportsConfigs + SupportsFileSystemAccess,
                                             }
                                         }
                                         Err(err) => {
-                                            log::error!("Failed to work with temp file {:?}: {err}", temp);
+                                            log::error!(
+                                                "Failed to work with temp file {:?}: {err}",
+                                                temp
+                                            );
                                             RawData::None
                                         }
                                     }
-
                                 } else {
-                                    let path = context.fs().create_unique_path_for_dat_file(target_url_str);
+                                    let path = context
+                                        .fs()
+                                        .create_unique_path_for_dat_file(target_url_str);
                                     match temp.persist(&path) {
                                         Ok(_) => {}
                                         Err(err) => {
@@ -241,7 +249,8 @@ where C: SupportsConfigs + SupportsFileSystemAccess,
                                     RawData::from_external(path)
                                 }
                             } else {
-                                let path = context.fs().create_unique_path_for_dat_file(target_url_str);
+                                let path =
+                                    context.fs().create_unique_path_for_dat_file(target_url_str);
                                 match temp.persist(&path) {
                                     Ok(_) => {}
                                     Err(err) => {
@@ -263,16 +272,14 @@ where C: SupportsConfigs + SupportsFileSystemAccess,
                 RawData::None
             };
 
-            Ok(
-                FetchedRequestData {
-                    headers,
-                    final_url: rd,
-                    status_code,
-                    address,
-                    content,
-                    defect,
-                }
-            )
+            Ok(FetchedRequestData {
+                headers,
+                final_url: rd,
+                status_code,
+                address,
+                content,
+                defect,
+            })
         }
         Err(error) => {
             log::debug!("error fetching {} - {}", target_url.as_str(), error);

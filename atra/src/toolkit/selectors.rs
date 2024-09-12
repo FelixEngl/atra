@@ -19,8 +19,6 @@ macro_rules! static_selector {
     };
 }
 
-
-
 #[macro_export]
 macro_rules! static_selectors {
     ($visibility: vis [$($name: ident = $selector: literal)+]) => {
@@ -29,4 +27,3 @@ macro_rules! static_selectors {
         )+
     };
 }
-

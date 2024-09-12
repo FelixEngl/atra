@@ -12,7 +12,7 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use strum::{EnumString, AsRefStr, Display};
+use strum::{AsRefStr, Display, EnumString};
 
 #[derive(Clone, Debug, PartialEq, EnumString, AsRefStr, Display)]
 pub enum TruncatedReason {

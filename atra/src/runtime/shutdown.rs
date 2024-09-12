@@ -12,12 +12,12 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+use log::info;
 use std::fmt::{Display, Formatter};
 use std::sync::atomic::{AtomicBool, Ordering};
-use log::{info};
 use thiserror::Error;
-use tokio::sync::{broadcast, mpsc};
 use tokio::sync::broadcast::error::{RecvError, SendError};
+use tokio::sync::{broadcast, mpsc};
 
 // Inspired by https://github.com/tokio-rs/mini-redis/blob/master/src/shutdown.rs
 // But we work wit an atomic to make is a little easier
@@ -39,18 +39,13 @@ impl ShutdownReceiver for ShutdownPhantom {
     }
 
     fn weak_handle<'a>(&'a self) -> ShutdownHandle<'a, ShutdownPhantom> {
-        ShutdownHandle {
-            shutdown: &self,
-        }
+        ShutdownHandle { shutdown: &self }
     }
 }
-
-
 
 /// A simple trait for receiving a shutdown command
 #[allow(refining_impl_trait)]
 pub trait ShutdownReceiver: Clone {
-
     /// Returns `true` if the shutdown signal has been received.
     fn is_shutdown(&self) -> bool;
 
@@ -58,11 +53,9 @@ pub trait ShutdownReceiver: Clone {
     fn weak_handle<'a>(&'a self) -> ShutdownHandle<'a, impl ShutdownReceiver>;
 }
 
-
 /// A simple signal class for a shutdown sender
 #[derive(Debug, Clone)]
 pub struct ShutdownSignal;
-
 
 #[derive(Debug, Clone)]
 pub struct GracefulShutdownSignal;
@@ -72,7 +65,7 @@ pub struct GracefulShutdownSignal;
 #[derive(Debug, Clone)]
 pub struct GracefulShutdownGuard {
     /// Not used but needed
-    _sender: mpsc::Sender<GracefulShutdownSignal>
+    _sender: mpsc::Sender<GracefulShutdownSignal>,
 }
 
 impl GracefulShutdownGuard {
@@ -85,14 +78,14 @@ impl GracefulShutdownGuard {
 #[derive(Debug, Clone)]
 pub enum UnsafeShutdownGuard {
     Guarded(GracefulShutdownGuard),
-    Unguarded
+    Unguarded,
 }
 
 /// Acts as a barrier for a [GracefulShutdownGuard]
 #[repr(transparent)]
 #[derive(Debug)]
-pub struct GracefulShutdownBarrier{
-    receiver: mpsc::Receiver<GracefulShutdownSignal>
+pub struct GracefulShutdownBarrier {
+    receiver: mpsc::Receiver<GracefulShutdownSignal>,
 }
 
 impl GracefulShutdownBarrier {
@@ -103,18 +96,18 @@ impl GracefulShutdownBarrier {
     }
 }
 
-
 /// Sends a shutdown [ShutdownSignal] to all [ShutdownSignalReceiver]
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct ShutdownSignalSender {
-    sender: broadcast::Sender<ShutdownSignal>
+    sender: broadcast::Sender<ShutdownSignal>,
 }
 
 impl ShutdownSignalSender {
     /// Tries to notify all receivers.
     /// Returns an error if the shutdoen signal fails.
-    #[allow(dead_code)] pub async fn notify(&self) -> Result<usize, SendError<ShutdownSignal>> {
+    #[allow(dead_code)]
+    pub async fn notify(&self) -> Result<usize, SendError<ShutdownSignal>> {
         self.sender.send(ShutdownSignal)
     }
 }
@@ -123,34 +116,39 @@ impl ShutdownSignalSender {
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct ShutdownSignalReceiver {
-    receiver: broadcast::Receiver<ShutdownSignal>
+    receiver: broadcast::Receiver<ShutdownSignal>,
 }
 
 impl ShutdownSignalReceiver {
     /// Waits for a shutdown signal or fails
-    #[allow(dead_code)] pub async fn recv(&mut self) -> Result<ShutdownSignal, RecvError> {
+    #[allow(dead_code)]
+    pub async fn recv(&mut self) -> Result<ShutdownSignal, RecvError> {
         self.receiver.recv().await
     }
 }
 
 impl Clone for ShutdownSignalReceiver {
-    fn clone(&self) -> Self { Self { receiver: self.receiver.resubscribe() } }
+    fn clone(&self) -> Self {
+        Self {
+            receiver: self.receiver.resubscribe(),
+        }
+    }
 }
 
-
 /// Creates the tools for graceful shutdown handling
-pub fn graceful_shutdown() -> (ShutdownSignalSender, GracefulShutdown, GracefulShutdownBarrier) {
+pub fn graceful_shutdown() -> (
+    ShutdownSignalSender,
+    GracefulShutdown,
+    GracefulShutdownBarrier,
+) {
     let (shutdown_sender, shutdown) = shutdown();
 
     let (sender, receiver) = mpsc::channel(1);
 
     (
         shutdown_sender,
-        GracefulShutdown::new(
-            shutdown,
-            GracefulShutdownGuard{_sender:sender}
-        ),
-        GracefulShutdownBarrier{receiver}
+        GracefulShutdown::new(shutdown, GracefulShutdownGuard { _sender: sender }),
+        GracefulShutdownBarrier { receiver },
     )
 }
 
@@ -158,12 +156,10 @@ pub fn graceful_shutdown() -> (ShutdownSignalSender, GracefulShutdown, GracefulS
 pub fn shutdown() -> (ShutdownSignalSender, Shutdown) {
     let (sender, receiver) = broadcast::channel(1);
     (
-        ShutdownSignalSender {sender},
-        Shutdown::new(ShutdownSignalReceiver {receiver})
+        ShutdownSignalSender { sender },
+        Shutdown::new(ShutdownSignalReceiver { receiver }),
     )
 }
-
-
 
 /// Basically a shutdown, but it holds a reference to a shutdown_complete_tx
 #[derive(Debug, Clone)]
@@ -176,10 +172,7 @@ pub struct GracefulShutdown {
 
 impl GracefulShutdown {
     fn new(shutdown: Shutdown, guard: GracefulShutdownGuard) -> Self {
-        Self {
-            shutdown,
-            guard
-        }
+        Self { shutdown, guard }
     }
 
     delegate::delegate! {
@@ -189,22 +182,26 @@ impl GracefulShutdown {
     }
 
     /// Downgrades the [GracefulShutdown] to a [Shutdown]
-    #[allow(dead_code)] pub fn downgrade(self) -> Shutdown {
+    #[allow(dead_code)]
+    pub fn downgrade(self) -> Shutdown {
         self.shutdown
     }
 
     /// Returns a copy of the shutdown instance
-    #[allow(dead_code)] pub fn new_shutdown_instance(&self) -> Shutdown {
+    #[allow(dead_code)]
+    pub fn new_shutdown_instance(&self) -> Shutdown {
         self.shutdown.clone()
     }
 
     /// Returns a copy of the guard
-    #[allow(dead_code)] pub fn new_guard_instance(&self) -> GracefulShutdownGuard {
+    #[allow(dead_code)]
+    pub fn new_guard_instance(&self) -> GracefulShutdownGuard {
         self.guard.clone()
     }
 
     /// Returns the inner value
-    #[allow(dead_code)] pub fn into_inner(self) -> (Shutdown, GracefulShutdownGuard) {
+    #[allow(dead_code)]
+    pub fn into_inner(self) -> (Shutdown, GracefulShutdownGuard) {
         (self.shutdown, self.guard)
     }
 
@@ -262,13 +259,14 @@ impl Shutdown {
     }
 
     /// Upgrades a [Shutdown] to a[GracefulShutdown]
-    #[allow(dead_code)] pub fn upgrade(self, guard: GracefulShutdownGuard) -> GracefulShutdown {
+    #[allow(dead_code)]
+    pub fn upgrade(self, guard: GracefulShutdownGuard) -> GracefulShutdown {
         GracefulShutdown::new(self, guard)
     }
 
-
     /// Receive the shutdown notice, waiting if necessary.
-    #[allow(dead_code)] pub async fn recv(&mut self) {
+    #[allow(dead_code)]
+    pub async fn recv(&mut self) {
         // If the shutdown signal has already been received, then return
         // immediately.
         if self.is_shutdown() {
@@ -282,9 +280,9 @@ impl Shutdown {
         self.is_shutdown.store(true, Ordering::Release);
     }
 
-
     /// Returns a weak shutdown handle
-    #[allow(dead_code)] fn subscribe<'a>(&'a self) -> ShutdownHandle<'a, Shutdown> {
+    #[allow(dead_code)]
+    fn subscribe<'a>(&'a self) -> ShutdownHandle<'a, Shutdown> {
         ShutdownHandle { shutdown: self }
     }
 }
@@ -297,9 +295,7 @@ impl ShutdownReceiver for Shutdown {
     }
 
     fn weak_handle<'a>(&'a self) -> ShutdownHandle<'a, Shutdown> {
-        ShutdownHandle {
-            shutdown: self
-        }
+        ShutdownHandle { shutdown: self }
     }
 }
 
@@ -317,24 +313,25 @@ impl Clone for Shutdown {
 
         Self {
             notify,
-            is_shutdown: AtomicBool::new(is_shutdown_after_resubscribe)
+            is_shutdown: AtomicBool::new(is_shutdown_after_resubscribe),
         }
     }
 }
 
-
 /// A simple handle for a shutdown. Depends on some kind of shutdown
 #[derive(Debug)]
 pub struct ShutdownHandle<'a, T: ShutdownReceiver> {
-    shutdown: &'a T
+    shutdown: &'a T,
 }
 
-unsafe impl<T: ShutdownReceiver> Sync for ShutdownHandle<'_, T>{}
-unsafe impl<T: ShutdownReceiver> Send for ShutdownHandle<'_, T>{}
+unsafe impl<T: ShutdownReceiver> Sync for ShutdownHandle<'_, T> {}
+unsafe impl<T: ShutdownReceiver> Send for ShutdownHandle<'_, T> {}
 
 impl<T: ShutdownReceiver> Clone for ShutdownHandle<'_, T> {
     fn clone(&self) -> Self {
-        Self{shutdown: self.shutdown}
+        Self {
+            shutdown: self.shutdown,
+        }
     }
 }
 
@@ -347,6 +344,8 @@ impl<T: ShutdownReceiver> ShutdownReceiver for ShutdownHandle<'_, T> {
     }
 
     fn weak_handle<'a>(&'a self) -> ShutdownHandle<'a, T> {
-        ShutdownHandle { shutdown: self.shutdown }
+        ShutdownHandle {
+            shutdown: self.shutdown,
+        }
     }
 }

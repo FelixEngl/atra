@@ -12,19 +12,19 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+use crate::queue::QueueError;
+use crate::url::guard::GuardianError;
+use crate::url::queue::UrlQueueElement;
 use std::error::Error;
 use std::fmt::Debug;
 use thiserror::Error;
-use crate::queue::QueueError;
-use crate::url::queue::{UrlQueueElement};
-use crate::url::guard::GuardianError;
 
 /// The result of the GuardedSeedUrlProvider extraction.
 /// Helps to interpret what happened
 pub enum UrlQueuePollResult<T, E: Error> {
     Ok(T),
     Abort(AbortCause),
-    Err(QueueExtractionError<E>)
+    Err(QueueExtractionError<E>),
 }
 
 /// The abort cause for something. Can be used as error, but it can also be used for simple fallthrough.
@@ -39,7 +39,7 @@ pub enum AbortCause {
     #[error("The element does not have a host.")]
     NoHost(UrlQueueElement),
     #[error("Shutdown")]
-    Shutdown
+    Shutdown,
 }
 
 /// All possible errors that can happen when retrieving a provider

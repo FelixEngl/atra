@@ -12,13 +12,13 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+use crate::config::Configs;
+use log::LevelFilter;
 use log4rs::append::console::ConsoleAppender;
 use log4rs::append::file::FileAppender;
-use log4rs::Config;
 use log4rs::config::{Appender, Logger, Root};
 use log4rs::encode::pattern::PatternEncoder;
-use log::LevelFilter;
-use crate::config::Configs;
+use log4rs::Config;
 
 /// Configure the logging
 pub fn configure_logging(configs: &Configs) {
@@ -31,13 +31,17 @@ pub fn configure_logging(configs: &Configs) {
     let config = if configs.system.log_to_file {
         println!("Logging to file!");
         let file_logger = FileAppender::builder()
-            .encoder(Box::new(PatternEncoder::new("{l}@Thread{I} - {d} - {m}{n}")))
+            .encoder(Box::new(PatternEncoder::new(
+                "{l}@Thread{I} - {d} - {m}{n}",
+            )))
             .build(configs.paths.root_path().join("out.log"))
             .unwrap();
         config.appender(Appender::builder().build("out", Box::new(file_logger)))
     } else {
         let console_logger = ConsoleAppender::builder()
-            .encoder(Box::new(PatternEncoder::new("{l}@Thread{I} - {d} - {m}{n}")))
+            .encoder(Box::new(PatternEncoder::new(
+                "{l}@Thread{I} - {d} - {m}{n}",
+            )))
             .build();
         config.appender(Appender::builder().build("out", Box::new(console_logger)))
     };

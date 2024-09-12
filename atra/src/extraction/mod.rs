@@ -13,12 +13,11 @@
 //limitations under the License.
 
 pub mod extractor;
-pub mod links;
-pub mod marker;
 pub mod extractor_method;
 mod html;
 mod js;
+pub mod links;
+pub mod marker;
 mod raw;
 
-pub use links::{ExtractedLink};
-
+pub use links::ExtractedLink;

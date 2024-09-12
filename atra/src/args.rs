@@ -23,8 +23,8 @@ use time::Duration;
 use ubyte::ToByteUnit;
 
 use crate::application::ApplicationMode;
-use crate::config::{BudgetSetting, Configs};
 use crate::config::crawl::{CookieSettings, RedirectPolicy, UserAgent};
+use crate::config::{BudgetSetting, Configs};
 use crate::extraction::extractor::Extractor;
 use crate::seed::SeedDefinition;
 
@@ -40,7 +40,6 @@ pub struct AtraArgs {
     #[command(subcommand)]
     pub mode: Option<RunMode>,
 }
-
 
 #[derive(Subcommand, Debug)]
 pub enum RunMode {
@@ -95,27 +94,38 @@ pub enum RunMode {
     // CLUSTER,
 }
 
-
 #[derive(Debug)]
 pub enum ConsumedArgs {
     RunConfig(ApplicationMode, SeedDefinition, Configs),
     Nothing,
 }
 
-
 /// Consumes the args and returns everything necessary to execute Atra
 pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
     if let Some(mode) = args.mode {
         match mode {
-            RunMode::SINGLE { session_name, absolute, agent, seeds, depth, timeout, log_level, log_to_file } => {
-                let mut configs = Configs::discover_or_default().expect("Expected some kind of config!");
+            RunMode::SINGLE {
+                session_name,
+                absolute,
+                agent,
+                seeds,
+                depth,
+                timeout,
+                log_level,
+                log_to_file,
+            } => {
+                let mut configs =
+                    Configs::discover_or_default().expect("Expected some kind of config!");
 
-                configs.paths.root = configs.paths.root_path().join(
-                    format!("single_{}_{}",
-                            data_encoding::BASE32.encode(&time::OffsetDateTime::now_utc().unix_timestamp_nanos().to_be_bytes()),
-                            data_encoding::BASE32.encode(&rand::random::<u64>().to_be_bytes()),
-                    )
-                );
+                configs.paths.root = configs.paths.root_path().join(format!(
+                    "single_{}_{}",
+                    data_encoding::BASE32.encode(
+                        &time::OffsetDateTime::now_utc()
+                            .unix_timestamp_nanos()
+                            .to_be_bytes()
+                    ),
+                    data_encoding::BASE32.encode(&rand::random::<u64>().to_be_bytes()),
+                ));
 
                 configs.crawl.user_agent = agent;
 
@@ -127,13 +137,15 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
                     BudgetSetting::Absolute {
                         depth,
                         recrawl_interval: None,
-                        request_timeout: timeout.map(|value| Duration::saturating_seconds_f64(value)),
+                        request_timeout: timeout
+                            .map(|value| Duration::saturating_seconds_f64(value)),
                     }
                 } else {
                     BudgetSetting::SeedOnly {
                         depth_on_website: depth,
                         recrawl_interval: None,
-                        request_timeout: timeout.map(|value| Duration::saturating_seconds_f64(value)),
+                        request_timeout: timeout
+                            .map(|value| Duration::saturating_seconds_f64(value)),
                     }
                 };
 
@@ -141,24 +153,31 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
 
                 configs.system.log_to_file = log_to_file;
 
-                ConsumedArgs::RunConfig(
-                    ApplicationMode::Single,
-                    seeds,
-                    configs,
-                )
+                ConsumedArgs::RunConfig(ApplicationMode::Single, seeds, configs)
             }
-            RunMode::MULTI { session_name, seeds, config: configs_folder, threads, override_log_level: log_level, log_to_file } => {
+            RunMode::MULTI {
+                session_name,
+                seeds,
+                config: configs_folder,
+                threads,
+                override_log_level: log_level,
+                log_to_file,
+            } => {
                 let mut configs = match configs_folder {
-                    None => { Configs::discover_or_default() }
-                    Some(path) => { Configs::load_from(path) }
-                }.expect("Expected some kind of config!");
+                    None => Configs::discover_or_default(),
+                    Some(path) => Configs::load_from(path),
+                }
+                .expect("Expected some kind of config!");
 
-                configs.paths.root = configs.paths.root_path().join(
-                    format!("multi_{}_{}",
-                            data_encoding::BASE32.encode(&time::OffsetDateTime::now_utc().unix_timestamp_nanos().to_be_bytes()),
-                            data_encoding::BASE32.encode(&rand::random::<u64>().to_be_bytes()),
-                    )
-                );
+                configs.paths.root = configs.paths.root_path().join(format!(
+                    "multi_{}_{}",
+                    data_encoding::BASE32.encode(
+                        &time::OffsetDateTime::now_utc()
+                            .unix_timestamp_nanos()
+                            .to_be_bytes()
+                    ),
+                    data_encoding::BASE32.encode(&rand::random::<u64>().to_be_bytes()),
+                ));
 
                 configs.system.log_to_file = log_to_file;
 
@@ -205,17 +224,32 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
             let mut cookies = CookieSettings::default();
             cookies.default = Some("Cookie String".to_string());
             let mut cookie_hash = HashMap::new();
-            cookie_hash.insert(CaseInsensitiveString::new(b"example.com"), "Cookie String".to_string());
-            cookie_hash.insert(CaseInsensitiveString::new(b"example.de"), "Cookie String".to_string());
+            cookie_hash.insert(
+                CaseInsensitiveString::new(b"example.com"),
+                "Cookie String".to_string(),
+            );
+            cookie_hash.insert(
+                CaseInsensitiveString::new(b"example.de"),
+                "Cookie String".to_string(),
+            );
             cookies.per_host = Some(cookie_hash);
             cfg.crawl.cookies = Some(cookies);
 
             let mut header_map = HeaderMap::new();
-            header_map.insert(reqwest::header::CONTENT_LENGTH, HeaderValue::from_static("10_000"));
-            header_map.insert(reqwest::header::CONTENT_TYPE, HeaderValue::from_static("html/text"));
+            header_map.insert(
+                reqwest::header::CONTENT_LENGTH,
+                HeaderValue::from_static("10_000"),
+            );
+            header_map.insert(
+                reqwest::header::CONTENT_TYPE,
+                HeaderValue::from_static("html/text"),
+            );
             cfg.crawl.headers = Some(header_map);
 
-            cfg.crawl.proxies = Some(vec!["www.example.com:2020".to_string(), "www.example.com:2021".to_string()]);
+            cfg.crawl.proxies = Some(vec![
+                "www.example.com:2020".to_string(),
+                "www.example.com:2021".to_string(),
+            ]);
             cfg.crawl.tld = true;
 
             cfg.crawl.delay = Some(Duration::milliseconds(100));
@@ -227,24 +261,33 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
             };
 
             let mut hash = HashMap::new();
-            hash.insert(CaseInsensitiveString::new(b"example.com"), BudgetSetting::Normal {
-                depth: 3,
-                depth_on_website: 5,
-                recrawl_interval: Some(Duration::days(7)),
-                request_timeout: Some(Duration::seconds(10)),
-            });
+            hash.insert(
+                CaseInsensitiveString::new(b"example.com"),
+                BudgetSetting::Normal {
+                    depth: 3,
+                    depth_on_website: 5,
+                    recrawl_interval: Some(Duration::days(7)),
+                    request_timeout: Some(Duration::seconds(10)),
+                },
+            );
 
-            hash.insert(CaseInsensitiveString::new(b"example.de"), BudgetSetting::Absolute {
-                depth: 3,
-                recrawl_interval: Some(Duration::days(7)),
-                request_timeout: Some(Duration::seconds(10)),
-            });
+            hash.insert(
+                CaseInsensitiveString::new(b"example.de"),
+                BudgetSetting::Absolute {
+                    depth: 3,
+                    recrawl_interval: Some(Duration::days(7)),
+                    request_timeout: Some(Duration::seconds(10)),
+                },
+            );
 
-            hash.insert(CaseInsensitiveString::new(b"example.org"), BudgetSetting::SeedOnly {
-                depth_on_website: 5,
-                recrawl_interval: Some(Duration::days(7)),
-                request_timeout: Some(Duration::seconds(10)),
-            });
+            hash.insert(
+                CaseInsensitiveString::new(b"example.org"),
+                BudgetSetting::SeedOnly {
+                    depth_on_website: 5,
+                    recrawl_interval: Some(Duration::days(7)),
+                    request_timeout: Some(Duration::seconds(10)),
+                },
+            );
 
             cfg.crawl.budget.per_host = Some(hash);
 
@@ -258,7 +301,6 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
             cfg.crawl.link_extractors = Extractor::default();
 
             cfg.crawl.decode_big_files_up_to = Some(200.megabytes().as_u64());
-
 
             ConsumedArgs::Nothing
         } else {

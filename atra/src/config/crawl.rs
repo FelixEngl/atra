@@ -14,22 +14,22 @@
 
 // Inspired by spider_rs
 
-use std::collections::HashMap;
-use std::num::{NonZeroU64};
-use case_insensitive_string::CaseInsensitiveString;
-use time::Duration;
-use reqwest::header::{HeaderMap};
+use crate::extraction::extractor::Extractor;
+use crate::gdbr::identifier::GdbrIdentifierRegistryConfig;
 use crate::toolkit::header_map_extensions::optional_header_map;
+use crate::url::UrlWithDepth;
+use case_insensitive_string::CaseInsensitiveString;
+use reqwest::header::HeaderMap;
 use serde;
 use serde::{Deserialize, Serialize};
-use strum::{Display};
+use std::collections::HashMap;
+use std::num::NonZeroU64;
+use strum::Display;
 use strum::EnumString;
-use thiserror::Error;
-use crate::extraction::extractor::{Extractor};
-use crate::gdbr::identifier::GdbrIdentifierRegistryConfig;
-use text_processing::tf_idf::{Idf, Tf};
 use text_processing::configs::StopwordRegistryConfig;
-use crate::url::UrlWithDepth;
+use text_processing::tf_idf::{Idf, Tf};
+use thiserror::Error;
+use time::Duration;
 
 /// The general crawling settings for a single
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
@@ -114,7 +114,6 @@ pub struct CrawlConfig {
     pub chrome_settings: Option<ChromeSettings>,
 }
 
-
 impl Default for CrawlConfig {
     fn default() -> Self {
         Self {
@@ -147,7 +146,7 @@ impl Default for CrawlConfig {
             stopword_registry: None,
             gbdr: None,
             #[cfg(feature = "chrome")]
-            chrome_settings: Default::default()
+            chrome_settings: Default::default(),
         }
     }
 }
@@ -156,14 +155,16 @@ impl Default for CrawlConfig {
 #[derive(Debug, Default, Clone, Deserialize, Serialize, Eq, PartialEq)]
 pub struct CookieSettings {
     pub default: Option<String>,
-    pub per_host: Option<HashMap<CaseInsensitiveString, String>>
+    pub per_host: Option<HashMap<CaseInsensitiveString, String>>,
 }
 
 impl CookieSettings {
     /// Checks if the domain has some kind of configured cookie
     pub fn get_cookies_for(&self, domain: &impl AsRef<str>) -> Option<&String> {
         if let Some(ref per_domain) = self.per_host {
-            per_domain.get(&CaseInsensitiveString::from(domain.as_ref())).or_else(|| self.default.as_ref())
+            per_domain
+                .get(&CaseInsensitiveString::from(domain.as_ref()))
+                .or_else(|| self.default.as_ref())
         } else {
             if let Some(ref default) = self.default {
                 Some(default)
@@ -184,7 +185,6 @@ pub enum RedirectPolicy {
     Strict,
 }
 
-
 /// The selected user agent
 #[derive(Debug, Default, Clone, Deserialize, Serialize, EnumString, Display, Eq, PartialEq)]
 pub enum UserAgent {
@@ -197,20 +197,23 @@ pub enum UserAgent {
     Default,
     /// Uses a custom user agent
     #[strum(default, ascii_case_insensitive = true)]
-    Custom(String)
+    Custom(String),
 }
 
-
 impl UserAgent {
-
-    const DEFAULT_UA: &'static str = concat!("Crawler/", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
+    const DEFAULT_UA: &'static str = concat!(
+        "Crawler/",
+        env!("CARGO_PKG_NAME"),
+        "/",
+        env!("CARGO_PKG_VERSION")
+    );
 
     /// Returns the useragent string
     pub fn get_user_agent(&self) -> &str {
         match self {
             UserAgent::Spoof => ua_generator::ua::spoof_ua(),
             UserAgent::Default => UserAgent::DEFAULT_UA,
-            UserAgent::Custom(user_agent) => user_agent
+            UserAgent::Custom(user_agent) => user_agent,
         }
     }
 }
@@ -221,30 +224,23 @@ impl AsRef<str> for UserAgent {
     }
 }
 
-
-
-
 /// The budget for each host.
 #[derive(Debug, Default, Clone, Deserialize, Serialize, Eq, PartialEq)]
 pub struct CrawlBudget {
     pub default: BudgetSetting,
-    pub per_host: Option<HashMap<CaseInsensitiveString, BudgetSetting>>
+    pub per_host: Option<HashMap<CaseInsensitiveString, BudgetSetting>>,
 }
 
 impl CrawlBudget {
-    pub fn get_budget_for(&self, host: &impl AsRef<str>) -> &BudgetSetting
-    {
+    pub fn get_budget_for(&self, host: &impl AsRef<str>) -> &BudgetSetting {
         match self.per_host {
-            None => {
-                &self.default
-            }
-            Some(ref found) => {
-                found.get(&CaseInsensitiveString::from(host.as_ref())).unwrap_or(&self.default)
-            }
+            None => &self.default,
+            Some(ref found) => found
+                .get(&CaseInsensitiveString::from(host.as_ref()))
+                .unwrap_or(&self.default),
         }
     }
 }
-
 
 #[derive(Serialize, Deserialize, Clone)]
 struct BudgetSettingsDef {
@@ -258,38 +254,43 @@ struct BudgetSettingsDef {
     request_timeout: Option<Duration>,
 }
 
-
 impl From<BudgetSetting> for BudgetSettingsDef {
     fn from(value: BudgetSetting) -> Self {
         match value {
-            BudgetSetting::SeedOnly { depth_on_website, request_timeout, recrawl_interval } => {
-                Self {
-                    depth_on_website: Some(depth_on_website),
-                    depth: None,
-                    recrawl_interval,
-                    request_timeout
-                }
-            }
-            BudgetSetting::Normal { depth_on_website, depth, request_timeout, recrawl_interval } => {
-                Self {
-                    depth_on_website: Some(depth_on_website),
-                    depth: Some(depth),
-                    recrawl_interval,
-                    request_timeout
-                }
-            }
-            BudgetSetting::Absolute { depth, request_timeout, recrawl_interval } => {
-                Self {
-                    depth_on_website: None,
-                    depth: Some(depth),
-                    recrawl_interval,
-                    request_timeout
-                }
-            }
+            BudgetSetting::SeedOnly {
+                depth_on_website,
+                request_timeout,
+                recrawl_interval,
+            } => Self {
+                depth_on_website: Some(depth_on_website),
+                depth: None,
+                recrawl_interval,
+                request_timeout,
+            },
+            BudgetSetting::Normal {
+                depth_on_website,
+                depth,
+                request_timeout,
+                recrawl_interval,
+            } => Self {
+                depth_on_website: Some(depth_on_website),
+                depth: Some(depth),
+                recrawl_interval,
+                request_timeout,
+            },
+            BudgetSetting::Absolute {
+                depth,
+                request_timeout,
+                recrawl_interval,
+            } => Self {
+                depth_on_website: None,
+                depth: Some(depth),
+                recrawl_interval,
+                request_timeout,
+            },
         }
     }
 }
-
 
 #[derive(Debug, Error)]
 #[error("The budget is missing any depth field. It needs at least one!")]
@@ -300,40 +301,41 @@ impl TryFrom<BudgetSettingsDef> for BudgetSetting {
 
     fn try_from(value: BudgetSettingsDef) -> Result<Self, Self::Error> {
         match value {
-            BudgetSettingsDef { depth:Some(depth), depth_on_website: Some(depth_on_website), request_timeout, recrawl_interval } => {
-                Ok(
-                    BudgetSetting::Normal {
-                        depth,
-                        depth_on_website,
-                        request_timeout,
-                        recrawl_interval
-                    }
-                )
-            }
-            BudgetSettingsDef { depth_on_website: Some(depth_on_website), request_timeout, recrawl_interval, .. } => {
-                Ok(
-                    BudgetSetting::SeedOnly {
-                        depth_on_website,
-                        request_timeout,
-                        recrawl_interval
-                    }
-                )
-            }
-            BudgetSettingsDef { depth:Some(depth), request_timeout, recrawl_interval, .. } => {
-                Ok(
-                    BudgetSetting::Absolute {
-                        depth,
-                        request_timeout,
-                        recrawl_interval
-                    }
-                )
-            }
-            _ => Err(BudgetSettingsDeserializationError)
+            BudgetSettingsDef {
+                depth: Some(depth),
+                depth_on_website: Some(depth_on_website),
+                request_timeout,
+                recrawl_interval,
+            } => Ok(BudgetSetting::Normal {
+                depth,
+                depth_on_website,
+                request_timeout,
+                recrawl_interval,
+            }),
+            BudgetSettingsDef {
+                depth_on_website: Some(depth_on_website),
+                request_timeout,
+                recrawl_interval,
+                ..
+            } => Ok(BudgetSetting::SeedOnly {
+                depth_on_website,
+                request_timeout,
+                recrawl_interval,
+            }),
+            BudgetSettingsDef {
+                depth: Some(depth),
+                request_timeout,
+                recrawl_interval,
+                ..
+            } => Ok(BudgetSetting::Absolute {
+                depth,
+                request_timeout,
+                recrawl_interval,
+            }),
+            _ => Err(BudgetSettingsDeserializationError),
         }
     }
 }
-
-
 
 /// The budget for the crawled website
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
@@ -367,7 +369,7 @@ pub enum BudgetSetting {
         recrawl_interval: Option<Duration>,
         /// Request max timeout per page. By default the request times out in 15s. Set to None to disable.
         request_timeout: Option<Duration>,
-    }
+    },
 }
 
 impl BudgetSetting {
@@ -381,44 +383,51 @@ impl BudgetSetting {
 
     pub fn get_request_timeout(&self) -> Option<Duration> {
         match self {
-            BudgetSetting::SeedOnly { request_timeout, .. } => {
-                request_timeout
-            }
-            BudgetSetting::Normal { request_timeout, .. } => {
-                request_timeout
-            }
-            BudgetSetting::Absolute { request_timeout, .. } => {
-                request_timeout
-            }
-        }.clone()
+            BudgetSetting::SeedOnly {
+                request_timeout, ..
+            } => request_timeout,
+            BudgetSetting::Normal {
+                request_timeout, ..
+            } => request_timeout,
+            BudgetSetting::Absolute {
+                request_timeout, ..
+            } => request_timeout,
+        }
+        .clone()
     }
 
     pub fn get_recrawl_interval(&self) -> Option<Duration> {
         match self {
-            BudgetSetting::SeedOnly { recrawl_interval, .. } => {
-                recrawl_interval
-            }
-            BudgetSetting::Normal { recrawl_interval, .. } => {
-                recrawl_interval
-            }
-            BudgetSetting::Absolute { recrawl_interval, .. } => {
-                recrawl_interval
-            }
-        }.clone()
+            BudgetSetting::SeedOnly {
+                recrawl_interval, ..
+            } => recrawl_interval,
+            BudgetSetting::Normal {
+                recrawl_interval, ..
+            } => recrawl_interval,
+            BudgetSetting::Absolute {
+                recrawl_interval, ..
+            } => recrawl_interval,
+        }
+        .clone()
     }
 
     /// Returns true, iff the [url] is in the budget
-    pub fn is_in_budget(
-        &self,
-        url: &UrlWithDepth
-    ) -> bool {
+    pub fn is_in_budget(&self, url: &UrlWithDepth) -> bool {
         let url_depth = url.depth();
         match self {
-            BudgetSetting::SeedOnly { depth_on_website: depth, .. } => {
-                url_depth.distance_to_seed == 0 && (0.eq(depth)  || url_depth.depth_on_website.le(depth))
+            BudgetSetting::SeedOnly {
+                depth_on_website: depth,
+                ..
+            } => {
+                url_depth.distance_to_seed == 0
+                    && (0.eq(depth) || url_depth.depth_on_website.le(depth))
             }
-            BudgetSetting::Normal { depth_on_website: depth, depth: depth_distance, .. } => {
-                (0.eq(depth)  || url_depth.depth_on_website.le(depth))
+            BudgetSetting::Normal {
+                depth_on_website: depth,
+                depth: depth_distance,
+                ..
+            } => {
+                (0.eq(depth) || url_depth.depth_on_website.le(depth))
                     && url_depth.distance_to_seed.le(depth_distance)
             }
             BudgetSetting::Absolute { depth, .. } => {
@@ -428,19 +437,16 @@ impl BudgetSetting {
     }
 }
 
-
 impl Default for BudgetSetting {
     fn default() -> Self {
         Self::Normal {
             depth_on_website: 20,
             depth: 3,
             recrawl_interval: None,
-            request_timeout: Some(Duration::seconds(15))
+            request_timeout: Some(Duration::seconds(15)),
         }
     }
 }
-
-
 
 /// Chrome specific settings
 #[cfg(feature = "chrome")]
@@ -471,9 +477,8 @@ pub enum InterceptSettings {
 
         /// Block all images from rendering in Chrome.
         chrome_intercept_block_visuals: bool,
-    }
+    },
 }
-
 
 #[cfg(feature = "chrome")]
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
@@ -522,7 +527,9 @@ impl From<Viewport> for chromiumoxide::handler::viewport::Viewport {
 }
 
 #[cfg(feature = "chrome")]
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Default, EnumString, Display, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Hash, Default, EnumString, Display, Serialize, Deserialize,
+)]
 /// Capture screenshot options for chrome.
 pub enum CaptureScreenshotFormat {
     #[serde(rename = "jpeg")]
@@ -538,7 +545,7 @@ pub enum CaptureScreenshotFormat {
 }
 #[cfg(feature = "chrome")]
 impl From<CaptureScreenshotFormat>
-for chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotFormat
+    for chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotFormat
 {
     fn from(value: CaptureScreenshotFormat) -> Self {
         match value {

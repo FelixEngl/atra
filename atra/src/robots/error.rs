@@ -12,9 +12,9 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+use crate::database::DatabaseError;
 use thiserror::Error;
 use url::ParseError;
-use crate::database_error::DatabaseError;
 
 /// Errors while working with robots.txt
 #[derive(Error, Debug)]
@@ -24,12 +24,11 @@ pub enum RobotsError {
     #[error("The robots.txt parser had some problems.")]
     InvalidRobotsTxt(#[source] anyhow::Error),
     #[error("The client failed to send the request: {0}")]
-    ClientWasNotAbleToSend(#[from] crate::client::Error),
+    ClientWasNotAbleToSend(#[from] crate::client::ClientError),
     #[error("The url had no domain.")]
     NoDomainForUrl,
     #[error("The database had some kind of issue")]
     Database(#[from] DatabaseError),
     #[error("The serialisation had some kind of issue")]
-    Serialisation(#[from] bincode::Error)
+    Serialisation(#[from] bincode::Error),
 }
-

@@ -12,17 +12,17 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
+use crate::format::file_format_detection::DetectedFileFormat;
+use crate::format::mime::MimeType;
+use crate::format::mime_ext;
+use crate::fetching::ResponseData;
+use file_format::{FileFormat, Kind};
+use mime::Mime;
+use serde::{Deserialize, Serialize};
 use std::cmp::max;
 use std::io::Read;
 use std::str::FromStr;
-use file_format::{FileFormat, Kind};
-use mime::{Mime};
-use serde::{Deserialize, Serialize};
-use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
-use crate::format::file_format_detection::DetectedFileFormat;
-use crate::format::mime::{MimeType};
-use crate::format::mime_ext;
-use crate::response::ResponseData;
 
 // https://gonze.com/playlists/playlist-format-survey.html#M3U
 
@@ -55,62 +55,36 @@ pub enum InterpretedProcessibleFileFormat {
 
     /// Usually a binary format. But can be anything that can not be decoded by normal means. (Like a ZIP-File)
     Unsupported,
-    Unknown // todo: Add identifier for binary
+    Unknown, // todo: Add identifier for binary
 }
 
 impl InterpretedProcessibleFileFormat {
-
     pub fn supports_decoding(&self) -> bool {
-        !matches!(self, Self::Unsupported | Self::Unknown | Self::IMAGE | Self::RTF | Self::OOXML | Self::ODF)
+        !matches!(
+            self,
+            Self::Unsupported | Self::Unknown | Self::IMAGE | Self::RTF | Self::OOXML | Self::ODF
+        )
     }
 
     pub fn fallback_mime_type_for_warc(&self) -> &Mime {
         match self {
-            InterpretedProcessibleFileFormat::HTML => {
-                &mime::TEXT_HTML
-            }
-            InterpretedProcessibleFileFormat::PDF => {
-                &mime::APPLICATION_PDF
-            }
-            InterpretedProcessibleFileFormat::JavaScript => {
-                &mime::APPLICATION_JAVASCRIPT
-            }
-            InterpretedProcessibleFileFormat::PlainText => {
-                &mime::TEXT_PLAIN
-            }
-            InterpretedProcessibleFileFormat::JSON => {
-                &mime::APPLICATION_JSON
-            }
-            InterpretedProcessibleFileFormat::XML => {
-                &mime_ext::APPLICATION_XML
-            }
-            InterpretedProcessibleFileFormat::RTF => {
-                &mime_ext::APPLICATION_RTF
-            }
-            InterpretedProcessibleFileFormat::OOXML => {
-                &mime_ext::APPLICATION_OOXML_STAR
-            }
-            InterpretedProcessibleFileFormat::ODF => {
-                &mime_ext::APPLICATION_ODF_STAR
-            }
-            InterpretedProcessibleFileFormat::IMAGE => {
-                &mime::IMAGE_STAR
-            }
-            InterpretedProcessibleFileFormat::SVG => {
-                &mime::IMAGE_SVG
-            }
-            InterpretedProcessibleFileFormat::MP3Url => {
-                &mime_ext::AUDIO_MP3_URL
-            }
+            InterpretedProcessibleFileFormat::HTML => &mime::TEXT_HTML,
+            InterpretedProcessibleFileFormat::PDF => &mime::APPLICATION_PDF,
+            InterpretedProcessibleFileFormat::JavaScript => &mime::APPLICATION_JAVASCRIPT,
+            InterpretedProcessibleFileFormat::PlainText => &mime::TEXT_PLAIN,
+            InterpretedProcessibleFileFormat::JSON => &mime::APPLICATION_JSON,
+            InterpretedProcessibleFileFormat::XML => &mime_ext::APPLICATION_XML,
+            InterpretedProcessibleFileFormat::RTF => &mime_ext::APPLICATION_RTF,
+            InterpretedProcessibleFileFormat::OOXML => &mime_ext::APPLICATION_OOXML_STAR,
+            InterpretedProcessibleFileFormat::ODF => &mime_ext::APPLICATION_ODF_STAR,
+            InterpretedProcessibleFileFormat::IMAGE => &mime::IMAGE_STAR,
+            InterpretedProcessibleFileFormat::SVG => &mime::IMAGE_SVG,
+            InterpretedProcessibleFileFormat::MP3Url => &mime_ext::AUDIO_MP3_URL,
             InterpretedProcessibleFileFormat::StructuredPlainText
-            | InterpretedProcessibleFileFormat::ProgrammingLanguage => {
-                &mime::TEXT_STAR
-            }
+            | InterpretedProcessibleFileFormat::ProgrammingLanguage => &mime::TEXT_STAR,
             InterpretedProcessibleFileFormat::Unsupported
             | InterpretedProcessibleFileFormat::Decodeable
-            | InterpretedProcessibleFileFormat::Unknown => {
-                &mime::APPLICATION_OCTET_STREAM
-            }
+            | InterpretedProcessibleFileFormat::Unknown => &mime::APPLICATION_OCTET_STREAM,
         }
     }
 }
@@ -118,13 +92,15 @@ impl InterpretedProcessibleFileFormat {
 fn html_heuristic(to_check: &[u8]) -> bool {
     #[inline(always)]
     fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-        haystack.windows(needle.len()).position(|window| window == needle)
+        haystack
+            .windows(needle.len())
+            .position(|window| window == needle)
     }
 
     let doctype = find_subsequence(to_check, b"<!DOCTYPE html");
     if let Some(ref doctype) = doctype {
         if 0usize.eq(doctype) {
-            return true
+            return true;
         }
     }
     let html_start = find_subsequence(to_check, b"<html");
@@ -152,8 +128,6 @@ fn html_heuristic(to_check: &[u8]) -> bool {
         false
     }
 }
-
-
 
 macro_rules! supports_method {
     ($(
@@ -192,7 +166,6 @@ macro_rules! supports_fileending_method {
 }
 
 impl InterpretedProcessibleFileFormat {
-
     supports_fileending_method! {
         HTML: "html" | "xhtml" | "htm"
         PDF: "pdf"
@@ -219,26 +192,32 @@ impl InterpretedProcessibleFileFormat {
         StructuredPlainText: (_, "csv", _)
     }
 
-
     /// Tries to guess the supported file type.
     pub fn guess<C>(
         page: &ResponseData,
         mime: Option<&MimeType>,
         file_format: Option<&DetectedFileFormat>,
-        context: &C
-    ) -> InterpretedProcessibleFileFormat where C: SupportsFileSystemAccess + SupportsConfigs {
+        context: &C,
+    ) -> InterpretedProcessibleFileFormat
+    where
+        C: SupportsFileSystemAccess + SupportsConfigs,
+    {
         let mut is_text = false;
 
         if let Some(detected) = file_format {
             let most_probable = detected.most_probable_file_format();
 
             match most_probable {
-                FileFormat::HypertextMarkupLanguage => return InterpretedProcessibleFileFormat::HTML,
+                FileFormat::HypertextMarkupLanguage => {
+                    return InterpretedProcessibleFileFormat::HTML
+                }
                 // TODO: Calendar format
                 FileFormat::Icalendar
                 | FileFormat::Vcalendar
-                | FileFormat:: Vcard
-                | FileFormat::WebVideoTextTracks => return InterpretedProcessibleFileFormat::StructuredPlainText,
+                | FileFormat::Vcard
+                | FileFormat::WebVideoTextTracks => {
+                    return InterpretedProcessibleFileFormat::StructuredPlainText
+                }
 
                 // TODO: Programming Language
                 FileFormat::LuaScript
@@ -250,16 +229,22 @@ impl InterpretedProcessibleFileFormat {
                 | FileFormat::PerlScript
                 | FileFormat::Latex
                 | FileFormat::ClojureScript
-                | FileFormat::WebassemblyText => return InterpretedProcessibleFileFormat::ProgrammingLanguage,
+                | FileFormat::WebassemblyText => {
+                    return InterpretedProcessibleFileFormat::ProgrammingLanguage
+                }
 
                 FileFormat::RichTextFormat => return InterpretedProcessibleFileFormat::RTF,
                 FileFormat::PortableDocumentFormat => return InterpretedProcessibleFileFormat::PDF,
                 FileFormat::ScalableVectorGraphics => return InterpretedProcessibleFileFormat::SVG,
-                FileFormat::ExtensibleMarkupLanguage => return InterpretedProcessibleFileFormat::XML,
+                FileFormat::ExtensibleMarkupLanguage => {
+                    return InterpretedProcessibleFileFormat::XML
+                }
                 FileFormat::OfficeOpenXmlDocument
                 | FileFormat::OfficeOpenXmlDrawing
                 | FileFormat::OfficeOpenXmlPresentation
-                | FileFormat::OfficeOpenXmlSpreadsheet => return InterpretedProcessibleFileFormat::OOXML,
+                | FileFormat::OfficeOpenXmlSpreadsheet => {
+                    return InterpretedProcessibleFileFormat::OOXML
+                }
                 FileFormat::OpendocumentDatabase
                 | FileFormat::OpendocumentFormula
                 | FileFormat::OpendocumentFormulaTemplate
@@ -272,7 +257,9 @@ impl InterpretedProcessibleFileFormat {
                 | FileFormat::OpendocumentText
                 | FileFormat::OpendocumentTextMaster
                 | FileFormat::OpendocumentTextMasterTemplate
-                | FileFormat::OpendocumentTextTemplate => return InterpretedProcessibleFileFormat::ODF,
+                | FileFormat::OpendocumentTextTemplate => {
+                    return InterpretedProcessibleFileFormat::ODF
+                }
 
                 FileFormat::MayaAscii
                 | FileFormat::Model3dAscii
@@ -280,24 +267,34 @@ impl InterpretedProcessibleFileFormat {
                 | FileFormat::DrawingExchangeFormatAscii
                 | FileFormat::PolygonAscii
                 | FileFormat::UniversalSceneDescriptionAscii
-                | FileFormat::StereolithographyAscii => return InterpretedProcessibleFileFormat::PlainText,
+                | FileFormat::StereolithographyAscii => {
+                    return InterpretedProcessibleFileFormat::PlainText
+                }
                 FileFormat::MayaBinary
                 | FileFormat::Model3dBinary
                 | FileFormat::BmfontBinary
                 | FileFormat::DrawingExchangeFormatBinary
                 | FileFormat::PolygonBinary
-                | FileFormat::UniversalSceneDescriptionBinary => return InterpretedProcessibleFileFormat::Unsupported,
+                | FileFormat::UniversalSceneDescriptionBinary => {
+                    return InterpretedProcessibleFileFormat::Unsupported
+                }
                 FileFormat::Mp3Url => return InterpretedProcessibleFileFormat::MP3Url,
                 FileFormat::Empty => return InterpretedProcessibleFileFormat::Unsupported,
                 // FileFormat::PlainText => {/* Plaintext has to be handles below due to HTML etc. */}
                 other => {
                     if other.media_type().contains("+xml") {
-                        return InterpretedProcessibleFileFormat::XML
+                        return InterpretedProcessibleFileFormat::XML;
                     } else {
                         match other.kind() {
                             Kind::Image => return InterpretedProcessibleFileFormat::IMAGE,
                             // TODO: Zip Files etc.
-                            Kind::Executable | Kind::Font | Kind::Archive | Kind::Package | Kind::Compressed | Kind::Disk | Kind::Video => return InterpretedProcessibleFileFormat::Unsupported,
+                            Kind::Executable
+                            | Kind::Font
+                            | Kind::Archive
+                            | Kind::Package
+                            | Kind::Compressed
+                            | Kind::Disk
+                            | Kind::Video => return InterpretedProcessibleFileFormat::Unsupported,
                             _ => {}
                         }
                     }
@@ -308,7 +305,7 @@ impl InterpretedProcessibleFileFormat {
         if let Some(mimes) = mime.map(|value| value.iter()) {
             for mime in mimes {
                 if let Some(by_mime) = Self::mime_2_supported_file_format(mime) {
-                    return by_mime
+                    return by_mime;
                 }
                 if mime.subtype() == mime::TEXT {
                     is_text = true;
@@ -317,26 +314,26 @@ impl InterpretedProcessibleFileFormat {
         }
 
         if let Some(found) = Self::extension_2_supported_file_format(page) {
-            return found
+            return found;
         }
 
         if let Some(file_format) = file_format {
-            let mime = Mime::from_str(file_format.most_probable_file_format().media_type()).expect("The mimes in file_format are always valid!");
+            let mime = Mime::from_str(file_format.most_probable_file_format().media_type())
+                .expect("The mimes in file_format are always valid!");
             if let Some(found) = Self::mime_2_supported_file_format(&mime) {
-                return found
+                return found;
             }
         }
 
-        fn guess_if_html<const HAYSTACK_SIZE: usize>(context: &impl SupportsFileSystemAccess, page: &ResponseData) -> bool {
+        fn guess_if_html<const HAYSTACK_SIZE: usize>(
+            context: &impl SupportsFileSystemAccess,
+            page: &ResponseData,
+        ) -> bool {
             if let Ok(Some(mut reader)) = page.content.cursor(context) {
-                let mut haystack = [0u8;HAYSTACK_SIZE];
+                let mut haystack = [0u8; HAYSTACK_SIZE];
                 match reader.read(&mut haystack) {
-                    Ok(_) => {
-                        html_heuristic(&haystack)
-                    }
-                    Err(_) => {
-                        false
-                    }
+                    Ok(_) => html_heuristic(&haystack),
+                    Err(_) => false,
                 }
             } else {
                 false
@@ -360,23 +357,22 @@ impl InterpretedProcessibleFileFormat {
                     Self::Unknown
                 }
             } else {
-                match reader.take(max(context.configs().system.max_file_size_in_memory, 512)).read_to_end(&mut result) {
+                match reader
+                    .take(max(context.configs().system.max_file_size_in_memory, 512))
+                    .read_to_end(&mut result)
+                {
                     Ok(_) => {
-                        if html_heuristic(&result){
+                        if html_heuristic(&result) {
                             Self::HTML
                         } else {
                             Self::Unknown
                         }
                     }
-                    Err(_) => {
-                        Self::Unknown
-                    }
+                    Err(_) => Self::Unknown,
                 }
             }
         } else {
             Self::Unknown
         }
-
-
     }
 }

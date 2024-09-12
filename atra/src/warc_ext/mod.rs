@@ -12,39 +12,37 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-mod special_writer;
-mod skip_pointer;
 mod errors;
 mod instructions;
 mod read;
+mod skip_pointer;
+mod special_writer;
 mod write;
 
-
-pub use read::read_body;
-pub use write::write_warc;
 pub use errors::*;
-pub use special_writer::SpecialWarcWriter;
 pub use instructions::WarcSkipInstruction;
+pub use read::read_body;
 pub use skip_pointer::*;
-
+pub use special_writer::SpecialWarcWriter;
+pub use write::write_warc;
 
 #[cfg(test)]
 mod test {
-    use camino::Utf8PathBuf;
-    use reqwest::StatusCode;
-    use time::OffsetDateTime;
-    use encoding_rs;
     use crate::crawl::CrawlResult;
     use crate::data::RawVecData;
     use crate::fetching::FetchedRequestData;
-    use crate::response::ResponseData;
-    use crate::format::AtraFileInformation;
     use crate::format::mime::MimeType;
     use crate::format::supported::InterpretedProcessibleFileFormat;
+    use crate::format::AtraFileInformation;
+    use crate::response::ResponseData;
     use crate::toolkit::LanguageInformation;
     use crate::url::UrlWithDepth;
-    use crate::warc_ext::{write_warc};
     use crate::warc_ext::special_writer::MockSpecialWarcWriter;
+    use crate::warc_ext::write_warc;
+    use camino::Utf8PathBuf;
+    use encoding_rs;
+    use reqwest::StatusCode;
+    use time::OffsetDateTime;
 
     #[test]
     fn can_write_html() {
@@ -74,41 +72,27 @@ mod test {
 
         let mut special = MockSpecialWarcWriter::new();
 
-        special.expect_get_skip_pointer().returning(|| {
-            Ok(
-                (
-                    Utf8PathBuf::new(),
-                    0
-                )
-            )
+        special
+            .expect_get_skip_pointer()
+            .returning(|| Ok((Utf8PathBuf::new(), 0)));
+
+        special.expect_write_header().return_once(|value| {
+            let value = value.to_string();
+            println!("Header:\n{value}");
+            Ok(value.len())
         });
 
-        special.expect_write_header().return_once(
-            |value| {
-                let value = value.to_string();
-                println!("Header:\n{value}");
-                Ok(value.len())
-            }
-        );
-
-        special.expect_write_body_complete().return_once(
-            |value| {
-                println!(
-                    "Body:\n{}",
-                    String::from_utf8_lossy(value)
-                );
-                Ok(value.len())
-            }
-        );
+        special.expect_write_body_complete().return_once(|value| {
+            println!("Body:\n{}", String::from_utf8_lossy(value));
+            Ok(value.len())
+        });
 
         special.expect_forward_if_filesize().returning(|_| Ok(None));
-
 
         let instruction = write_warc(&mut special, &result).expect("Should work!");
 
         println!("{instruction:?}")
     }
-
 
     #[test]
     fn can_write_base64() {
@@ -128,42 +112,26 @@ mod test {
             ),
             None,
             Some(encoding_rs::UTF_8),
-            AtraFileInformation::new(
-                InterpretedProcessibleFileFormat::Unknown,
-                None,
-                None,
-            ),
+            AtraFileInformation::new(InterpretedProcessibleFileFormat::Unknown, None, None),
             Some(LanguageInformation::ENG),
         );
 
         let mut special = MockSpecialWarcWriter::new();
 
-        special.expect_get_skip_pointer().returning(|| {
-            Ok(
-                (
-                    Utf8PathBuf::new(),
-                    0
-                )
-            )
+        special
+            .expect_get_skip_pointer()
+            .returning(|| Ok((Utf8PathBuf::new(), 0)));
+
+        special.expect_write_header().return_once(|value| {
+            let value = value.to_string();
+            println!("Header:\n{value}");
+            Ok(value.len())
         });
 
-        special.expect_write_header().return_once(
-            |value| {
-                let value = value.to_string();
-                println!("Header:\n{value}");
-                Ok(value.len())
-            }
-        );
-
-        special.expect_write_body_complete().return_once(
-            |value| {
-                println!(
-                    "Body:\n{}",
-                    String::from_utf8_lossy(value)
-                );
-                Ok(value.len())
-            }
-        );
+        special.expect_write_body_complete().return_once(|value| {
+            println!("Body:\n{}", String::from_utf8_lossy(value));
+            Ok(value.len())
+        });
 
         special.expect_forward_if_filesize().returning(|_| Ok(None));
 

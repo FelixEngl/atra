@@ -12,15 +12,15 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::borrow::{Cow};
-use std::fmt::Debug;
-use std::sync::{Arc};
+use crate::stopword_registry::{ContainsKind, StopWordList};
 use isolang::Language;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use unicode_segmentation::{UnicodeSegmentation};
-use unicode_normalization::{UnicodeNormalization};
-use crate::stopword_registry::{ContainsKind, StopWordList};
+use std::borrow::Cow;
+use std::fmt::Debug;
+use std::sync::Arc;
+use unicode_normalization::UnicodeNormalization;
+use unicode_segmentation::UnicodeSegmentation;
 
 /// A primitive tokenizer.
 #[derive(Debug, Serialize, Deserialize)]
@@ -32,18 +32,17 @@ pub struct Tokenizer {
 }
 
 impl Tokenizer {
-
     pub fn new(
         language: Language,
         normalize: bool,
         stop_words: Option<Arc<StopWordList>>,
-        stemmer: Option<rust_stemmers::Algorithm>
+        stemmer: Option<rust_stemmers::Algorithm>,
     ) -> Self {
         Self {
             language,
             normalize,
             stop_words,
-            stemmer
+            stemmer,
         }
     }
 
@@ -61,37 +60,42 @@ impl Tokenizer {
             let target = if self.normalize {
                 ContainsKind::Normalized
             } else {
-               ContainsKind::Raw
+                ContainsKind::Raw
             };
-            text.filter(|value| !stop_words.contains(target, *value)).collect_vec()
+            text.filter(|value| !stop_words.contains(target, *value))
+                .collect_vec()
         } else {
             text.collect_vec()
         };
 
         if let Some(stemmer) = self.stemmer {
             let stemmer = rust_stemmers::Stemmer::create(stemmer);
-            text.into_iter().map(|value| stemmer.stem(value).to_lowercase()).collect_vec()
+            text.into_iter()
+                .map(|value| stemmer.stem(value).to_lowercase())
+                .collect_vec()
         } else {
-            text.into_iter().map(|value| value.to_lowercase()).collect_vec()
+            text.into_iter()
+                .map(|value| value.to_lowercase())
+                .collect_vec()
         }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use isolang::Language;
     use crate::stopword_registry::{StopWordRegistry, StopWordRepository};
     use crate::tokenizer::Tokenizer;
+    use isolang::Language;
 
     #[test]
-    fn can_exec(){
+    fn can_exec() {
         let mut registry = StopWordRegistry::default();
         registry.register(StopWordRepository::IsoDefault);
         let tokenizer = Tokenizer::new(
             Language::Deu,
             true,
             registry.get_or_load(&Language::from_639_1("de").unwrap()),
-            Some(rust_stemmers::Algorithm::German)
+            Some(rust_stemmers::Algorithm::German),
         );
 
         const TEST_TEXT: &str = "Hallo welt was ist Höher, ÅΩ oder `katze\u{30b}hier";

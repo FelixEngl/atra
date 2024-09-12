@@ -12,29 +12,27 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-
-
-use std::fmt::{Debug};
+use crate::blacklist::BlackListType;
+use crate::io::simple_line::SupportsSimpleLineReader;
+use crate::runtime::UnsafeShutdownGuard;
+use indexmap::IndexSet;
+use itertools::Itertools;
+use regex::RegexSet;
+use std::fmt::Debug;
 use std::fs::{File, OpenOptions};
 use std::hash::{Hash, Hasher};
 use std::io;
 use std::io::{BufReader, BufWriter, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use indexmap::IndexSet;
-use itertools::Itertools;
-use regex::RegexSet;
 use thiserror::Error;
 use tokio::sync::RwLock;
-use crate::blacklist::BlackListType;
-use crate::io::simple_line::SupportsSimpleLineReader;
-use crate::runtime::UnsafeShutdownGuard;
 
 /// Manages a blacklist in a thread safe way.
 #[derive(Debug)]
 pub struct BlacklistManager {
     inner: RwLock<InnerBlacklistManager>,
-    _shutdown_guard: UnsafeShutdownGuard
+    _shutdown_guard: UnsafeShutdownGuard,
 }
 
 /// TODO: need patch structure for multi client crawling
@@ -42,12 +40,10 @@ pub struct BlacklistManager {
 impl BlacklistManager {
     pub fn open<P: AsRef<Path>>(path: P, shutdown_guard: UnsafeShutdownGuard) -> io::Result<Self> {
         let inner = RwLock::new(InnerBlacklistManager::open(path)?);
-        Ok(
-            Self {
-                inner,
-                _shutdown_guard: shutdown_guard
-            }
-        )
+        Ok(Self {
+            inner,
+            _shutdown_guard: shutdown_guard,
+        })
     }
 
     pub async fn current_version(&self) -> u64 {
@@ -58,7 +54,7 @@ impl BlacklistManager {
         self.inner.write().await.add(value)
     }
 
-    pub async fn apply_patch<I: IntoIterator<Item=String>>(&self, patch: I){
+    pub async fn apply_patch<I: IntoIterator<Item = String>>(&self, patch: I) {
         self.inner.write().await.apply_patch(patch)
     }
 
@@ -83,8 +79,6 @@ impl BlacklistManager {
     }
 }
 
-
-
 /// Blacklist error
 #[derive(Debug, Copy, Clone, Error)]
 pub enum IllegalBlacklistValueError {
@@ -93,9 +87,8 @@ pub enum IllegalBlacklistValueError {
     NewLinesNotAllowed,
     /// A blacklist entry can not not be empty.
     #[error("Tried to add an empty string to the queue")]
-    EmptyStringsNotAllowed
+    EmptyStringsNotAllowed,
 }
-
 
 /// Manages a blacklist in a not thread safe way.
 /// The used info for the blacklist entries is a hashset.
@@ -104,13 +97,17 @@ struct InnerBlacklistManager {
     file: BufWriter<File>,
     version_on_hdd: Option<u64>,
     blacklist_entries: IndexSet<BlacklistEntry>,
-    cached_set: Option<RegexSet>
+    cached_set: Option<RegexSet>,
 }
 
 impl InnerBlacklistManager {
     /// Opens the file at [path] and reads a SimpleLine-File
     pub fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {
-        let file = OpenOptions::new().read(true).write(true).create(true).open(path)?;
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(path)?;
         let created = if file.metadata()?.len() > 0 {
             let mut blacklist_entries = IndexSet::new();
             let lines = BufReader::new(&file).to_simple_line_reader();
@@ -123,7 +120,7 @@ impl InnerBlacklistManager {
                 file: BufWriter::new(file),
                 version_on_hdd: None,
                 blacklist_entries,
-                cached_set: None
+                cached_set: None,
             }
         } else {
             let mut file = file;
@@ -131,13 +128,13 @@ impl InnerBlacklistManager {
                 b"# A list of Regex-Expressions and/or URLs to be filtered by this blacklist.\
                 \n# Comments can be written by starting with a #.\
                 \n# To ignore the # at the beginning write \\#.\
-                \n"
+                \n",
             )?;
             Self {
                 file: BufWriter::new(file),
                 version_on_hdd: None,
                 blacklist_entries: IndexSet::new(),
-                cached_set: None
+                cached_set: None,
             }
         };
 
@@ -145,7 +142,7 @@ impl InnerBlacklistManager {
     }
 
     pub fn current_version(&self) -> u64 {
-        return self.blacklist_entries.len() as u64
+        return self.blacklist_entries.len() as u64;
     }
 
     pub fn add(&mut self, value: String) -> Result<bool, IllegalBlacklistValueError> {
@@ -155,7 +152,7 @@ impl InnerBlacklistManager {
             return Err(IllegalBlacklistValueError::EmptyStringsNotAllowed);
         }
         if value.contains("\n") {
-            return Err(IllegalBlacklistValueError::NewLinesNotAllowed)
+            return Err(IllegalBlacklistValueError::NewLinesNotAllowed);
         }
         if self.cached_set.is_some() {
             self.cached_set = None;
@@ -166,20 +163,25 @@ impl InnerBlacklistManager {
         Ok(self.blacklist_entries.insert(BlacklistEntry::new(value)))
     }
 
-    fn flush(&mut self) -> io::Result<()>{
+    fn flush(&mut self) -> io::Result<()> {
         if let Some(size) = self.version_on_hdd {
             if self.blacklist_entries.len() <= size as usize {
-                assert!(self.blacklist_entries.iter().all(|value| value.on_file.load(Ordering::Relaxed)), "Some entries are not on file but should be!");
-                return Ok(())
+                assert!(
+                    self.blacklist_entries
+                        .iter()
+                        .all(|value| value.on_file.load(Ordering::Relaxed)),
+                    "Some entries are not on file but should be!"
+                );
+                return Ok(());
             }
         } else {
-            return Ok(())
+            return Ok(());
         }
         for value in self.blacklist_entries.iter() {
             if !value.on_file.load(Ordering::Relaxed) {
-                self.file.write_all(value.value.as_bytes()).and_then(
-                    |_| self.file.write_all(b"\n")
-                )?;
+                self.file
+                    .write_all(value.value.as_bytes())
+                    .and_then(|_| self.file.write_all(b"\n"))?;
                 value.set_on_file_flag()
             }
         }
@@ -187,18 +189,24 @@ impl InnerBlacklistManager {
         self.file.flush()
     }
 
-    pub fn apply_patch<I: IntoIterator<Item=String>>(&mut self, patch: I) {
+    pub fn apply_patch<I: IntoIterator<Item = String>>(&mut self, patch: I) {
         if self.version_on_hdd.is_none() {
             self.version_on_hdd = Some(self.blacklist_entries.len() as u64)
         }
-        self.blacklist_entries.extend(patch.into_iter().map(|it| BlacklistEntry::new(it)))
+        self.blacklist_entries
+            .extend(patch.into_iter().map(|it| BlacklistEntry::new(it)))
     }
 
     pub fn get_patch(&self, since_version: u64) -> Option<Vec<String>> {
         if self.current_version() <= since_version {
             None
         } else {
-            Some(self.blacklist_entries.iter().dropping(since_version as usize).collect())
+            Some(
+                self.blacklist_entries
+                    .iter()
+                    .dropping(since_version as usize)
+                    .collect(),
+            )
         }
     }
 
@@ -212,7 +220,7 @@ impl InnerBlacklistManager {
     }
 
     pub fn create_current_blacklist<T: BlackListType>(&self) -> Result<T, T::Error> {
-        return T::new(self.current_version(), self.blacklist_entries.iter())
+        return T::new(self.current_version(), self.blacklist_entries.iter());
     }
 
     #[allow(dead_code)]
@@ -231,7 +239,6 @@ impl AsRef<IndexSet<BlacklistEntry>> for InnerBlacklistManager {
     }
 }
 
-
 impl Drop for InnerBlacklistManager {
     fn drop(&mut self) {
         // Try to flush, ignore if not necessary
@@ -248,33 +255,33 @@ pub struct BlacklistEntry {
 
 impl BlacklistEntry {
     fn new(value: String) -> Self {
-        Self{
+        Self {
             value,
-            on_file: AtomicBool::new(false)
+            on_file: AtomicBool::new(false),
         }
     }
 
     fn new_from_file(value: String) -> Self {
         Self {
             value,
-            on_file: AtomicBool::new(true)
+            on_file: AtomicBool::new(true),
         }
     }
 
-    fn set_on_file_flag(&self){
+    fn set_on_file_flag(&self) {
         log::trace!("Set flag for {}", self.value);
         self.on_file.swap(true, Ordering::Relaxed);
     }
 }
 
 impl FromIterator<BlacklistEntry> for Vec<String> {
-    fn from_iter<T: IntoIterator<Item=BlacklistEntry>>(iter: T) -> Self {
+    fn from_iter<T: IntoIterator<Item = BlacklistEntry>>(iter: T) -> Self {
         iter.into_iter().map(|value| value.value).collect()
     }
 }
 
 impl<'a> FromIterator<&'a BlacklistEntry> for Vec<String> {
-    fn from_iter<T: IntoIterator<Item=&'a BlacklistEntry>>(iter: T) -> Self {
+    fn from_iter<T: IntoIterator<Item = &'a BlacklistEntry>>(iter: T) -> Self {
         iter.into_iter().map(|value| value.value.clone()).collect()
     }
 }
@@ -300,21 +307,17 @@ impl Hash for BlacklistEntry {
 impl Eq for BlacklistEntry {}
 impl PartialEq<Self> for BlacklistEntry {
     fn eq(&self, other: &Self) -> bool {
-        return self.value == other.value
+        return self.value == other.value;
     }
 }
 
-
-
-
-
 #[cfg(test)]
 mod test {
-    use scopeguard::defer;
     use super::InnerBlacklistManager;
+    use scopeguard::defer;
 
     #[test]
-    fn can_initialize(){
+    fn can_initialize() {
         defer! {
             let _ = std::fs::remove_file("blacklist1.txt");
         }
@@ -335,7 +338,7 @@ mod test {
     }
 
     #[test]
-    fn can_read_existing(){
+    fn can_read_existing() {
         defer! {
             let _ = std::fs::remove_file("blacklist2.txt");
         }
@@ -366,7 +369,7 @@ mod test {
     }
 
     #[test]
-    fn can_interpret_test_file(){
+    fn can_interpret_test_file() {
         let manager = InnerBlacklistManager::open("testdata/blacklist.txt").unwrap();
         let values = manager.get_string_vec();
         assert_eq!(2, values.len());

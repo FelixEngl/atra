@@ -14,9 +14,9 @@
 
 use std::collections::HashSet;
 use std::fs::File;
+use std::io::prelude::*;
 use std::io::BufReader;
 use std::path::Path;
-use std::io::prelude::*;
 
 /// A simple reader for some seeds. Allows to ignore single seeds by using #
 pub fn read_seeds<P: AsRef<Path>>(path: P) -> Result<HashSet<String>, std::io::Error> {
@@ -27,7 +27,7 @@ pub fn read_seeds<P: AsRef<Path>>(path: P) -> Result<HashSet<String>, std::io::E
     for line in lines.flatten() {
         let line = line.trim();
         if line.starts_with("#") || line.is_empty() {
-            continue
+            continue;
         }
         let line = if line.starts_with("\\#") {
             &line[1..]

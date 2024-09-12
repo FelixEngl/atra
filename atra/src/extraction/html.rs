@@ -12,16 +12,16 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::borrow::Cow;
-use std::collections::HashSet;
-use std::hash::Hash;
-use compact_str::{CompactString, ToCompactString};
-use scraper::Html;
-use serde::{Deserialize, Serialize};
 use crate::contexts::traits::{SupportsConfigs, SupportsGdbrRegistry};
 use crate::gdbr::identifier::GdbrRegistry;
 use crate::toolkit::LanguageInformation;
 use crate::url::UrlWithDepth;
+use compact_str::{CompactString, ToCompactString};
+use scraper::Html;
+use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
+use std::collections::HashSet;
+use std::hash::Hash;
 
 /// Describes the origin of the extracted link
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
@@ -30,7 +30,7 @@ pub enum LinkOrigin {
     Embedded,
     JavaScript,
     JavaScriptEmbedded,
-    OnClick
+    OnClick,
 }
 
 /// Extracts links from an html
@@ -38,8 +38,12 @@ pub fn extract_links<'a, C: SupportsGdbrRegistry + SupportsConfigs>(
     root_url: &'a UrlWithDepth,
     html: &str,
     context: &C,
-    language: Option<&LanguageInformation>
-) -> Option<(Cow<'a, UrlWithDepth>, HashSet<(LinkOrigin, CompactString)>, Vec<Cow<'static, str>>)> {
+    language: Option<&LanguageInformation>,
+) -> Option<(
+    Cow<'a, UrlWithDepth>,
+    HashSet<(LinkOrigin, CompactString)>,
+    Vec<Cow<'static, str>>,
+)> {
     let cfg = context.configs();
 
     let respect_nofollow: bool = cfg.crawl.respect_nofollow;
@@ -73,13 +77,12 @@ pub fn extract_links<'a, C: SupportsGdbrRegistry + SupportsConfigs>(
         .select(&selectors::BASE)
         .into_iter()
         .next()
-        .map(|base| base.attr("href")
-            .into_iter()
-            .next()
-            .map(|it|
-                UrlWithDepth::with_base(&root_url, it)
-            )
-        )
+        .map(|base| {
+            base.attr("href")
+                .into_iter()
+                .next()
+                .map(|it| UrlWithDepth::with_base(&root_url, it))
+        })
         .flatten()
         .transpose();
 
@@ -102,7 +105,7 @@ pub fn extract_links<'a, C: SupportsGdbrRegistry + SupportsConfigs>(
             if let Some(rel) = element.attr("rel") {
                 if rel == "nofollow" {
                     log::trace!("Respecting no-follow");
-                    continue
+                    continue;
                 }
             }
         }
@@ -124,36 +127,33 @@ pub fn extract_links<'a, C: SupportsGdbrRegistry + SupportsConfigs>(
             if let Some(src) = element.attr("src") {
                 result.insert((LinkOrigin::JavaScript, src.to_compact_string()));
             } else {
-                for entry in crate::extraction::js::extract_links(element.text().collect::<String>().as_str()) {
+                for entry in crate::extraction::js::extract_links(
+                    element.text().collect::<String>().as_str(),
+                ) {
                     result.insert((LinkOrigin::JavaScriptEmbedded, entry));
                 }
             }
         }
     }
 
-
     if crawl_onclick_by_heuristic {
         for element in html.select(&selectors::ON_CLICK) {
             let found = selectors::HREF_LOCATION_MATCHER.captures(element.attr("onclick").unwrap());
             if let Some(found) = found {
-                if let Some(found) = found.get(1){
+                if let Some(found) = found.get(1) {
                     result.insert((LinkOrigin::OnClick, found.as_str().to_compact_string()));
                 }
             }
         }
     }
 
-
-
     Some((base, result, html.errors))
 }
 
-
-
 mod selectors {
-    use std::sync::LazyLock as Lazy;
+    use crate::static_selectors;
     use regex::Regex;
-    use crate::{static_selectors};
+    use std::sync::LazyLock as Lazy;
 
     /*
     See https://developer.mozilla.org/en-US/docs/Web/HTML/Attributes
@@ -221,8 +221,8 @@ mod selectors {
     Base can have anything except data: and javascript:
      */
 
-    pub static HREF_LOCATION_MATCHER: Lazy<Regex> = Lazy::new(||Regex::new("location\\.href='([^']*)';").unwrap());
-
+    pub static HREF_LOCATION_MATCHER: Lazy<Regex> =
+        Lazy::new(|| Regex::new("location\\.href='([^']*)';").unwrap());
 
     // Ignore [ping] of area/a
     static_selectors! {

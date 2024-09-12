@@ -12,15 +12,15 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+use crate::next_key_from_map;
+use serde::de::{Error, MapAccess, SeqAccess, Visitor};
+use serde::ser::{SerializeStruct, SerializeTuple};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use smallvec::SmallVec;
 use std::cmp::{max, min, Ordering};
 use std::fmt::{Debug, Display, Formatter};
 use std::iter;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde::de::{Error, MapAccess, SeqAccess, Visitor};
-use serde::ser::{SerializeStruct, SerializeTuple};
-use smallvec::SmallVec;
-use std::ops::{Add, Sub, BitAnd, BitOr, AddAssign, SubAssign, BitOrAssign, BitAndAssign};
-use crate::next_key_from_map;
+use std::ops::{Add, AddAssign, BitAnd, BitAndAssign, BitOr, BitOrAssign, Sub, SubAssign};
 
 /// Describes the depth of an url
 #[derive(Default, Copy, Clone, Eq, Ord, Hash)]
@@ -34,17 +34,17 @@ pub struct Depth {
 }
 
 impl Depth {
-    pub const ZERO: Self = Self::new(0,0,0);
+    pub const ZERO: Self = Self::new(0, 0, 0);
 
     pub const fn new(
         depth_on_website: u64,
         distance_to_seed: u64,
-        total_distance_to_seed: u64
+        total_distance_to_seed: u64,
     ) -> Self {
         Self {
             depth_on_website,
             distance_to_seed,
-            total_distance_to_seed
+            total_distance_to_seed,
         }
     }
 
@@ -58,18 +58,21 @@ impl Depth {
     }
 
     pub fn as_tuple(&self) -> (u64, u64, u64) {
-        (self.depth_on_website, self.distance_to_seed, self.total_distance_to_seed)
+        (
+            self.depth_on_website,
+            self.distance_to_seed,
+            self.total_distance_to_seed,
+        )
     }
 
     pub fn set(&mut self, value: DepthField) {
         match value {
-            DepthField::DepthOnWebsite(value) => {self.depth_on_website = value}
-            DepthField::DistanceToSeed(value) => {self.distance_to_seed = value}
-            DepthField::TotalDistanceToSeed(value) => {self.total_distance_to_seed = value}
+            DepthField::DepthOnWebsite(value) => self.depth_on_website = value,
+            DepthField::DistanceToSeed(value) => self.distance_to_seed = value,
+            DepthField::TotalDistanceToSeed(value) => self.total_distance_to_seed = value,
         }
     }
 }
-
 
 impl PartialEq for Depth {
     fn eq(&self, other: &Self) -> bool {
@@ -82,18 +85,18 @@ impl PartialEq for Depth {
 impl PartialOrd for Depth {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         if PartialEq::eq(self, other) {
-            return Some(Ordering::Equal)
+            return Some(Ordering::Equal);
         }
         if self.distance_to_seed < other.distance_to_seed {
-            return Some(Ordering::Less)
+            return Some(Ordering::Less);
         }
         if self.depth_on_website < other.depth_on_website {
-            return Some(Ordering::Less)
+            return Some(Ordering::Less);
         }
         if self.total_distance_to_seed < other.total_distance_to_seed {
-            return Some(Ordering::Less)
+            return Some(Ordering::Less);
         }
-        return Some(Ordering::Greater)
+        return Some(Ordering::Greater);
     }
 }
 
@@ -112,13 +115,10 @@ impl Display for Depth {
         write!(
             f,
             "DepthDescriptor(dow:{}, d2s:{}, td2s: {})",
-            self.depth_on_website,
-            self.distance_to_seed,
-            self.total_distance_to_seed
+            self.depth_on_website, self.distance_to_seed, self.total_distance_to_seed
         )
     }
 }
-
 
 impl Add for Depth {
     type Output = Depth;
@@ -218,7 +218,6 @@ macro_rules! impl_arith_for {
             }
         }
 
-
         impl Sub<$t> for Depth {
             type Output = Depth;
 
@@ -269,45 +268,40 @@ macro_rules! impl_arith_for {
     };
 }
 
-
 impl_arith_for!((u64, u64, u64));
 impl_arith_for!(DepthField);
 
-
 impl From<(u64, u64, u64)> for Depth {
     fn from(value: (u64, u64, u64)) -> Self {
-        Depth::new(
-            value.0,
-            value.1,
-            value.2
-        )
+        Depth::new(value.0, value.1, value.2)
     }
 }
 
 impl From<Depth> for (u64, u64, u64) {
     fn from(value: Depth) -> Self {
-        (value.depth_on_website, value.distance_to_seed, value.total_distance_to_seed)
+        (
+            value.depth_on_website,
+            value.distance_to_seed,
+            value.total_distance_to_seed,
+        )
     }
 }
 
 impl From<DepthField> for Depth {
     fn from(value: DepthField) -> Self {
         match value {
-            DepthField::DepthOnWebsite(value) => {
-                Depth::new(value, 0, 0)
-            }
-            DepthField::DistanceToSeed(value) => {
-                Depth::new(0, value, 0)
-            }
-            DepthField::TotalDistanceToSeed(value) => {
-                Depth::new(0, 0, value)
-            }
+            DepthField::DepthOnWebsite(value) => Depth::new(value, 0, 0),
+            DepthField::DistanceToSeed(value) => Depth::new(0, value, 0),
+            DepthField::TotalDistanceToSeed(value) => Depth::new(0, 0, value),
         }
     }
 }
 
 impl Serialize for Depth {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
         if serializer.is_human_readable() {
             let mut serializer = serializer.serialize_struct("DepthDescriptor", 3)?;
             serializer.serialize_field("depth_on_website", &self.depth_on_website)?;
@@ -326,7 +320,11 @@ impl Serialize for Depth {
 
 struct DepthDescriptionVisitor;
 
-const FIELDS: [&'static str; 3] = ["depth_on_website", "distance_to_seed", "total_distance_to_seed"];
+const FIELDS: [&'static str; 3] = [
+    "depth_on_website",
+    "distance_to_seed",
+    "total_distance_to_seed",
+];
 
 impl<'de> Visitor<'de> for DepthDescriptionVisitor {
     type Value = Depth;
@@ -335,7 +333,10 @@ impl<'de> Visitor<'de> for DepthDescriptionVisitor {
         formatter.write_str("Something went wrong while deserializing.")
     }
 
-    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error> where A: MapAccess<'de> {
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
         let mut init = Self::Value::ZERO;
 
         for _ in 0..3 {
@@ -345,30 +346,31 @@ impl<'de> Visitor<'de> for DepthDescriptionVisitor {
                 "depth_on_website" => init.depth_on_website = value,
                 "distance_to_seed" => init.distance_to_seed = value,
                 "total_distance_to_seed" => init.total_distance_to_seed = value,
-                illegal => return Err(A::Error::unknown_field(illegal, &FIELDS))
+                illegal => return Err(A::Error::unknown_field(illegal, &FIELDS)),
             }
         }
 
         Ok(init)
     }
 
-    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error> where A: SeqAccess<'de> {
-        let vec_found: SmallVec<[u64; 3]> = iter::from_fn(|| seq.next_element::<u64>().transpose()).collect::<Result<SmallVec<[u64; 3]>, A::Error>>()?;
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let vec_found: SmallVec<[u64; 3]> = iter::from_fn(|| seq.next_element::<u64>().transpose())
+            .collect::<Result<SmallVec<[u64; 3]>, A::Error>>()?;
         if vec_found.len() != 3 {
-            return Err(A::Error::invalid_length(vec_found.len(), &self))
+            return Err(A::Error::invalid_length(vec_found.len(), &self));
         }
-        Ok(
-            Depth::new(
-                vec_found[0],
-                vec_found[1],
-                vec_found[2],
-            )
-        )
+        Ok(Depth::new(vec_found[0], vec_found[1], vec_found[2]))
     }
 }
 
 impl<'de> Deserialize<'de> for Depth {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
         if deserializer.is_human_readable() {
             deserializer.deserialize_struct("DepthDescriptor", &FIELDS, DepthDescriptionVisitor)
         } else {
@@ -487,15 +489,13 @@ macro_rules! forward_ref_binop {
                 $imp::$method(*self, *other)
             }
         }
-    }
+    };
 }
 
 add_impl! { usize u8 u16 u32 u64 u128 isize i8 i16 i32 i64 i128 f32 f64 }
 sub_impl! { usize u8 u16 u32 u64 u128 isize i8 i16 i32 i64 i128 f32 f64 }
 bitand_impl! { usize u8 u16 u32 u64 u128 isize i8 i16 i32 i64 i128 f32 f64 }
 bitor_impl! { usize u8 u16 u32 u64 u128 isize i8 i16 i32 i64 i128 f32 f64 }
-
-
 
 #[cfg(test)]
 mod test {
@@ -511,11 +511,14 @@ mod test {
         assert_eq!(depth_a, depth_c);
         assert!(depth_a >= depth_c);
         assert!(depth_b < depth_c);
-        assert_eq!(depth_expected, depth_a.merge_to_lowes(&depth_b).merge_to_lowes(&depth_c))
+        assert_eq!(
+            depth_expected,
+            depth_a.merge_to_lowes(&depth_b).merge_to_lowes(&depth_c)
+        )
     }
 
     #[test]
-    fn can_serialize_nonhuman(){
+    fn can_serialize_nonhuman() {
         let depth = Depth::ZERO + (2, 3, 5);
         let data = bincode::serialize(&depth).expect("Why?");
         let deser = bincode::deserialize(&data).expect("Why?");
@@ -523,7 +526,7 @@ mod test {
     }
 
     #[test]
-    fn can_serialize_human(){
+    fn can_serialize_human() {
         let depth = Depth::ZERO + (2, 3, 5);
         let data = serde_json::to_string(&depth).expect("Why?");
         let deser = serde_json::from_str(&data).expect("Why?");

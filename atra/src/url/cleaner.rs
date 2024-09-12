@@ -12,19 +12,17 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use sealed::sealed;
-use strum::{VariantArray};
-use url::Url;
 use crate::url::atra_uri::AtraUri;
+use sealed::sealed;
+use strum::VariantArray;
+use url::Url;
 
 #[sealed]
-pub trait AtraUrlCleaner  {
+pub trait AtraUrlCleaner {
     /// Cleans the [AtraUri]
     fn clean(&self, url: &mut AtraUri) {
         match url {
-            AtraUri::Url(value) => {
-                self.clean_url(value)
-            }
+            AtraUri::Url(value) => self.clean_url(value),
         }
     }
 
@@ -57,22 +55,16 @@ pub enum SingleUrlCleaner {
     Path,
     Port,
     Password,
-    Username
+    Username,
 }
 
 #[sealed]
 impl AtraUrlCleaner for SingleUrlCleaner {
     fn clean_url(&self, url: &mut Url) {
         match self {
-            SingleUrlCleaner::Fragment => {
-                url.set_fragment(None)
-            }
-            SingleUrlCleaner::Query => {
-                url.set_query(None)
-            }
-            SingleUrlCleaner::Path => {
-                url.set_path("")
-            }
+            SingleUrlCleaner::Fragment => url.set_fragment(None),
+            SingleUrlCleaner::Query => url.set_query(None),
+            SingleUrlCleaner::Path => url.set_path(""),
             SingleUrlCleaner::Port => {
                 let _ = url.set_port(None);
             }

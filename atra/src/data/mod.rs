@@ -1,6 +1,6 @@
-mod raw;
 mod decoded;
 mod processing;
+mod raw;
 
 pub use processing::process;
 

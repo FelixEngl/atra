@@ -12,10 +12,10 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::str::FromStr;
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
+use strum::{Display, EnumIs};
 use thiserror::Error;
-use strum::{EnumIs, Display};
 
 macro_rules! html_tags {
     ($($name: ident = $value: literal;)+) => {
@@ -221,7 +221,6 @@ html_tags! {
 has_characteristic! {
     HtmlTag::defines_section(HtmlTag::Div | HtmlTag::Span);
 }
-
 
 hmtl_tags_categories!(
     Basic: Html, Head, Title, Body, H1, H2, H3, H4, H5, H6, P, Br, Hr;

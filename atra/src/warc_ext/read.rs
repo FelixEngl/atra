@@ -6,12 +6,18 @@ use ubyte::ByteUnit;
 use crate::warc_ext::skip_pointer::WarcSkipPointer;
 
 /// Reads the body from [reader] for a provided [pointer]
-pub fn read_body<R: Seek + Read>(reader: &mut R, pointer: &WarcSkipPointer, header_octet_count: u32) -> Result<Option<Vec<u8>>, Error> {
+pub fn read_body<R: Seek + Read>(
+    reader: &mut R,
+    pointer: &WarcSkipPointer,
+    header_octet_count: u32,
+) -> Result<Option<Vec<u8>>, Error> {
     let header_octet_count = header_octet_count as u64;
-    reader.seek(SeekFrom::Start(pointer.position() + pointer.warc_header_offset() as u64 + header_octet_count))?;
+    reader.seek(SeekFrom::Start(
+        pointer.position() + pointer.warc_header_offset() as u64 + header_octet_count,
+    ))?;
     let mut to_read = (pointer.body_octet_count() - header_octet_count) as usize;
     if to_read == 0 {
-        return Ok(None)
+        return Ok(None);
     }
 
     let mut data = Vec::new();

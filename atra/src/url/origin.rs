@@ -12,12 +12,12 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+use crate::toolkit::domains::domain_name_raw;
+use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
-use serde::{Deserialize, Serialize};
 use url::Url;
-use crate::toolkit::domains::domain_name_raw;
 
 /// Provides the origin to something
 pub trait AtraOriginProvider {
@@ -32,23 +32,14 @@ impl AtraOriginProvider for Url {
     /// e.g. For URLs the case is irrelevant, hence lower case is used.
     fn atra_origin(&self) -> Option<AtraUrlOrigin> {
         match domain_name_raw(self) {
-            None => {
-                match self.domain() {
-                    None => {
-                        self.host_str().map(|value| value.to_lowercase().into())
-                    }
-                    Some(value) => {
-                        Some(value.to_lowercase().into())
-                    }
-                }
-            }
-            Some(value) => {
-                Some(AtraUrlOrigin::from(value.as_bytes()))
-            }
+            None => match self.domain() {
+                None => self.host_str().map(|value| value.to_lowercase().into()),
+                Some(value) => Some(value.to_lowercase().into()),
+            },
+            Some(value) => Some(AtraUrlOrigin::from(value.as_bytes())),
         }
     }
 }
-
 
 /// The origin of a url. Can be a domain or host in a normalized form.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Hash, Default)]

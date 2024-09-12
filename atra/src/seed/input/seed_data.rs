@@ -12,21 +12,21 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-use std::convert::Infallible;
-use std::str::FromStr;
+use crate::seed::read_seeds;
+use crate::url::queue::UrlQueue;
 use camino::Utf8PathBuf;
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take_while1};
 use nom::character::complete::char;
-use nom::combinator::{map, rest, verify};
-use nom::IResult;
-use nom::multi::{separated_list1};
-use nom::sequence::{delimited, preceded};
-use crate::url::queue::UrlQueue;
 use nom::character::complete::multispace0;
+use nom::combinator::{map, rest, verify};
 use nom::error::ParseError;
+use nom::multi::separated_list1;
+use nom::sequence::{delimited, preceded};
+use nom::IResult;
 use nom::Parser;
-use crate::seed::read_seeds;
+use std::convert::Infallible;
+use std::str::FromStr;
 
 /// Defines what kind of seed is used
 /// CLI Syntax:
@@ -42,25 +42,24 @@ use crate::seed::read_seeds;
 pub enum SeedDefinition {
     Single(String),
     Multi(Vec<String>),
-    File(Utf8PathBuf)
+    File(Utf8PathBuf),
 }
 
 impl SeedDefinition {
     pub async fn fill_queue(&self, queue: &impl UrlQueue) {
         match self {
-            SeedDefinition::File(path) => {
-                queue.enqueue_seeds(read_seeds(path).expect("Was not able to read file"))
-                    .await
-                    .expect("Can not write any kind of seeds to the queue!")
-            }
-            SeedDefinition::Single(entry) => {
-                queue.enqueue_seed(&entry)
-                    .await
-                    .expect("Can not write any kind of seeds to the queue!")
-            }
+            SeedDefinition::File(path) => queue
+                .enqueue_seeds(read_seeds(path).expect("Was not able to read file"))
+                .await
+                .expect("Can not write any kind of seeds to the queue!"),
+            SeedDefinition::Single(entry) => queue
+                .enqueue_seed(&entry)
+                .await
+                .expect("Can not write any kind of seeds to the queue!"),
             SeedDefinition::Multi(entries) => {
                 for entry in entries {
-                    queue.enqueue_seed(&entry)
+                    queue
+                        .enqueue_seed(&entry)
                         .await
                         .expect("Can not write any kind of seeds to the queue!")
                 }
@@ -69,8 +68,7 @@ impl SeedDefinition {
     }
 }
 
-
-fn parse(s: &str) -> IResult<&str, SeedDefinition>{
+fn parse(s: &str) -> IResult<&str, SeedDefinition> {
     /// Something surrounded by whitespaces
     fn ws<'a, O, E: ParseError<&'a str>, F: Parser<&'a str, O, E>>(
         f: F,
@@ -79,21 +77,24 @@ fn parse(s: &str) -> IResult<&str, SeedDefinition>{
     }
 
     fn delimited_str(s: &str) -> IResult<&str, String> {
-        map(ws(delimited(
-            tag("\""),
-            take_while1(|value| value != '"'),
-            tag("\"")
-        )), |s: &str| s.to_string())(s)
+        map(
+            ws(delimited(
+                tag("\""),
+                take_while1(|value| value != '"'),
+                tag("\""),
+            )),
+            |s: &str| s.to_string(),
+        )(s)
     }
 
     fn multi_list(s: &str) -> IResult<&str, SeedDefinition> {
-        map(separated_list1(ws(char(',')), delimited_str), |values|
+        map(separated_list1(ws(char(',')), delimited_str), |values| {
             if values.len() == 1 {
                 SeedDefinition::Single(values.into_iter().next().unwrap())
             } else {
                 SeedDefinition::Multi(values)
             }
-        )(s)
+        })(s)
     }
 
     fn file_or_single(s: &str) -> IResult<&str, SeedDefinition> {
@@ -105,31 +106,28 @@ fn parse(s: &str) -> IResult<&str, SeedDefinition>{
                 } else {
                     SeedDefinition::Single(value.to_string())
                 }
-            }
+            },
         )(s)
     }
 
     alt((
         preceded(
             ws(tag("file:")),
-            map(alt((
-                delimited_str,
-                map(rest, |s: &str| s.to_string())
-            )), |value| SeedDefinition::File(Utf8PathBuf::from(value)))
+            map(
+                alt((delimited_str, map(rest, |s: &str| s.to_string()))),
+                |value| SeedDefinition::File(Utf8PathBuf::from(value)),
+            ),
         ),
         preceded(
             ws(tag("single:")),
-            map(alt((
-                delimited_str,
-                map(rest, |s: &str| s.to_string())
-            )), |value| SeedDefinition::Single(value.to_string()))
+            map(
+                alt((delimited_str, map(rest, |s: &str| s.to_string()))),
+                |value| SeedDefinition::Single(value.to_string()),
+            ),
         ),
-        preceded(
-            ws(tag("multi:")),
-            multi_list
-        ),
+        preceded(ws(tag("multi:")), multi_list),
         multi_list,
-        file_or_single
+        file_or_single,
     ))(s)
 }
 
@@ -143,13 +141,16 @@ impl FromStr for SeedDefinition {
 
 #[cfg(test)]
 mod test {
-    use camino::Utf8PathBuf;
     use crate::seed::SeedDefinition;
+    use camino::Utf8PathBuf;
 
     #[test]
-    pub fn test(){
+    pub fn test() {
         assert_eq!(
-            Ok(SeedDefinition::Multi(vec!["hello world".to_string(), "whats up".to_string()])),
+            Ok(SeedDefinition::Multi(vec![
+                "hello world".to_string(),
+                "whats up".to_string()
+            ])),
             "multi:\"hello world\", \"whats up\"".parse()
         );
         assert_eq!(
@@ -161,12 +162,17 @@ mod test {
             "single:whazzabeee.de".parse()
         );
         assert_eq!(
-            Ok(SeedDefinition::File(Utf8PathBuf::from("./testdata/blacklist.txt"))),
+            Ok(SeedDefinition::File(Utf8PathBuf::from(
+                "./testdata/blacklist.txt"
+            ))),
             "file:./testdata/blacklist.txt".parse()
         );
 
         assert_eq!(
-            Ok(SeedDefinition::Multi(vec!["hello world".to_string(), "whats up".to_string()])),
+            Ok(SeedDefinition::Multi(vec![
+                "hello world".to_string(),
+                "whats up".to_string()
+            ])),
             "\"hello world\", \"whats up\"".parse()
         );
         assert_eq!(
@@ -178,9 +184,10 @@ mod test {
             "whazzabeee.de".parse()
         );
         assert_eq!(
-            Ok(SeedDefinition::File(Utf8PathBuf::from("./testdata/blacklist.txt"))),
+            Ok(SeedDefinition::File(Utf8PathBuf::from(
+                "./testdata/blacklist.txt"
+            ))),
             "./testdata/blacklist.txt".parse()
         );
-
     }
 }

@@ -14,19 +14,36 @@
 
 mod intervals;
 pub(super) mod result;
-pub(super) mod slim;
 mod sitemaps;
+pub(super) mod slim;
 
 #[cfg(test)]
 pub use result::test::*;
 
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::fmt::Display;
-use std::fs::File;
-use std::io;
-use std::io::Write;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU8, Ordering};
+use crate::blacklist::lists::BlackList;
+use crate::client::{Client, ClientBuilder};
+use crate::config::crawl::RedirectPolicy;
+use crate::config::{BudgetSetting, CrawlConfig};
+use crate::contexts::traits::{
+    SupportsBlackList, SupportsConfigs, SupportsCrawlResults, SupportsFileSystemAccess,
+    SupportsGdbrRegistry, SupportsLinkSeeding, SupportsLinkState, SupportsRobotsManager,
+    SupportsSlimCrawlResults,
+};
+use crate::crawl::crawler::intervals::InvervalManager;
+use crate::crawl::crawler::result::CrawlResult;
+use crate::crawl::crawler::sitemaps::retrieve_and_parse;
+use crate::data::{process, RawData, RawVecData};
+use crate::format::supported::InterpretedProcessibleFileFormat;
+use crate::format::AtraFileInformation;
+use crate::io::fs::AtraFS;
+use crate::link_state::LinkStateType;
+use crate::fetching::ResponseData;
+use crate::robots::{GeneralRobotsInformation, RobotsInformation};
+use crate::runtime::ShutdownReceiver;
+use crate::seed::BasicSeed;
+use crate::toolkit::detect_language;
+use crate::toolkit::domains::domain_name;
+use crate::url::{AtraOriginProvider, AtraUrlOrigin, UrlWithDepth};
 use http_cache_reqwest::{CACacheManager, Cache, CacheMode, HttpCache, HttpCacheOptions};
 use itertools::Itertools;
 use log::LevelFilter;
@@ -36,29 +53,15 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::redirect::Attempt;
 use sitemap::structs::Location;
 use smallvec::SmallVec;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::fmt::Display;
+use std::fs::File;
+use std::io;
+use std::io::Write;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Arc;
 use strum::EnumString;
 use time::{Duration, OffsetDateTime};
-use crate::response::ResponseData;
-use crate::client::{Client, ClientBuilder};
-use crate::blacklist::lists::BlackList;
-use crate::config::crawl::RedirectPolicy;
-use crate::config::{BudgetSetting, CrawlConfig};
-use crate::seed::{BasicSeed};
-use crate::contexts::traits::{SupportsBlackList, SupportsConfigs, SupportsCrawlResults, SupportsFileSystemAccess, SupportsGdbrRegistry, SupportsLinkSeeding, SupportsLinkState, SupportsRobotsManager, SupportsSlimCrawlResults};
-use crate::crawl::crawler::intervals::InvervalManager;
-use crate::crawl::crawler::result::CrawlResult;
-use crate::crawl::crawler::sitemaps::retrieve_and_parse;
-use crate::data::{process, RawData, RawVecData};
-use crate::link_state::{LinkStateType};
-use crate::robots::{GeneralRobotsInformation, RobotsInformation};
-use crate::runtime::ShutdownReceiver;
-use crate::format::AtraFileInformation;
-use crate::format::supported::InterpretedProcessibleFileFormat;
-use crate::io::fs::AtraFS;
-use crate::toolkit::detect_language;
-use crate::toolkit::domains::domain_name;
-use crate::url::{UrlWithDepth, AtraUrlOrigin, AtraOriginProvider};
-
 
 /// A builder for a crawl task, can be used as template
 #[derive(Debug, Clone)]
@@ -76,7 +79,6 @@ pub struct WebsiteCrawlerBuilder<'a> {
     /// The urls to the sitemaps
     sitemaps: Option<HashMap<AtraUrlOrigin, Vec<String>>>,
 }
-
 
 #[allow(dead_code)]
 impl<'a> WebsiteCrawlerBuilder<'a> {
@@ -106,7 +108,11 @@ impl<'a> WebsiteCrawlerBuilder<'a> {
         self
     }
 
-    pub fn add_additional_header(mut self, header_name: HeaderName, header_value: HeaderValue) -> Self {
+    pub fn add_additional_header(
+        mut self,
+        header_name: HeaderName,
+        header_value: HeaderValue,
+    ) -> Self {
         if let Some(ref mut headers) = self.additional_headers {
             headers.insert(header_name, header_value);
         } else {
@@ -146,7 +152,11 @@ impl<'a> WebsiteCrawlerBuilder<'a> {
         self
     }
 
-    pub fn add_sitemaps<I: IntoIterator<Item=String>>(mut self, url_with_depth: &UrlWithDepth, values: Vec<String>) -> Self {
+    pub fn add_sitemaps<I: IntoIterator<Item = String>>(
+        mut self,
+        url_with_depth: &UrlWithDepth,
+        values: Vec<String>,
+    ) -> Self {
         if let Some(ref mut sitemaps) = self.sitemaps {
             if let Some(hosts) = url_with_depth.atra_origin() {
                 if let Some(found) = sitemaps.get_mut(&hosts) {
@@ -193,11 +203,15 @@ impl<'a> WebsiteCrawlerBuilder<'a> {
 
                 let custom_policy = {
                     move |attempt: Attempt| {
-                        let attempt_url =
-                            domain_name(attempt.url()).unwrap_or_default();
+                        let attempt_url = domain_name(attempt.url()).unwrap_or_default();
 
                         if tld && attempt_url == host_domain_name
-                            || subdomains && attempt.url().host_str().unwrap_or_default().ends_with(host_s.as_ref())
+                            || subdomains
+                                && attempt
+                                    .url()
+                                    .host_str()
+                                    .unwrap_or_default()
+                                    .ends_with(host_s.as_ref())
                             || to_mode.url().same_host_url(&attempt.url())
                         {
                             default_policy.redirect(attempt)
@@ -205,7 +219,7 @@ impl<'a> WebsiteCrawlerBuilder<'a> {
                             attempt.error("too many redirects")
                         } else if attempt.status().is_redirection()
                             && (0..initial_redirect_limit)
-                            .contains(&initial_redirect.load(Ordering::Relaxed))
+                                .contains(&initial_redirect.load(Ordering::Relaxed))
                         {
                             initial_redirect.fetch_add(1, Ordering::Relaxed);
                             default_policy.redirect(attempt)
@@ -236,8 +250,8 @@ impl<'a> WebsiteCrawlerBuilder<'a> {
         }
 
         let mut headers_for_client = HeaderMap::with_capacity(
-            self.configuration.headers.as_ref().map_or(0, |it| it.len()) +
-                self.additional_headers.as_ref().map_or(0, |it| it.len())
+            self.configuration.headers.as_ref().map_or(0, |it| it.len())
+                + self.additional_headers.as_ref().map_or(0, |it| it.len()),
         );
 
         if let Some(ref headers) = self.additional_headers {
@@ -254,7 +268,12 @@ impl<'a> WebsiteCrawlerBuilder<'a> {
         let url = seed.url();
 
         client = client.redirect(self.setup_redirect_policy(url));
-        if let Some(timeout) = self.configuration.budget.get_budget_for(&seed.origin()).get_request_timeout() {
+        if let Some(timeout) = self
+            .configuration
+            .budget
+            .get_budget_for(&seed.origin())
+            .get_request_timeout()
+        {
             log::trace!("Timeout Set: {}", timeout);
             client = client.timeout(timeout.unsigned_abs());
         }
@@ -298,24 +317,31 @@ impl<'a> WebsiteCrawlerBuilder<'a> {
     pub async fn build<T: BasicSeed>(self, seed: T) -> WebsiteCrawler<T> {
         let build_crawl_task_at = OffsetDateTime::now_utc();
 
-        let user_agent = self.user_agent.clone().unwrap_or_else(|| self.configuration.user_agent.get_user_agent().to_string());
-        let client_builder = self.configure_http_client_builder(
-            &seed,
-            &user_agent,
-        );
+        let user_agent = self
+            .user_agent
+            .clone()
+            .unwrap_or_else(|| self.configuration.user_agent.get_user_agent().to_string());
+        let client_builder = self.configure_http_client_builder(&seed, &user_agent);
 
         let client = client_builder.build();
 
-        let crawl_id = self.crawl_id.unwrap_or_else(||
-        {
+        let crawl_id = self.crawl_id.unwrap_or_else(|| {
             let mut result: String = "crawl".to_string();
             result.push('-');
-            result.push_str(&data_encoding::BASE32_NOPAD.encode(&build_crawl_task_at.unix_timestamp_nanos().to_be_bytes()));
+            result.push_str(
+                &data_encoding::BASE32_NOPAD
+                    .encode(&build_crawl_task_at.unix_timestamp_nanos().to_be_bytes()),
+            );
             result.push('-');
-            result.push_str(&rand::thread_rng().sample_iter(&Alphanumeric).take(15).map(char::from).collect::<String>());
+            result.push_str(
+                &rand::thread_rng()
+                    .sample_iter(&Alphanumeric)
+                    .take(15)
+                    .map(char::from)
+                    .collect::<String>(),
+            );
             result
-        }
-        );
+        });
 
         WebsiteCrawler::new(
             seed,
@@ -328,14 +354,14 @@ impl<'a> WebsiteCrawlerBuilder<'a> {
     }
 }
 
-
 /// A crawler for a single website. Starts from the provided `seed` and
 #[derive(Debug)]
 pub struct WebsiteCrawler<S> {
     /// The seed of the crawl task
     seed: S,
     /// When was the crawl task built?
-    #[allow(dead_code)] was_build_at: OffsetDateTime,
+    #[allow(dead_code)]
+    was_build_at: OffsetDateTime,
     /// User agent
     user_agent: String,
     /// The request client. Stored for re-use between runs.
@@ -345,12 +371,13 @@ pub struct WebsiteCrawler<S> {
     links_visited: HashSet<UrlWithDepth>,
 
     /// Set the crawl ID to track. This allows explicit targeting for shutdown, pause, and etc.
-    #[allow(dead_code)] pub crawl_id: String,
+    #[allow(dead_code)]
+    pub crawl_id: String,
 
     /// External sitemaps set by the builder
-    #[allow(dead_code)] external_sitemaps: Option<HashMap<AtraUrlOrigin, Vec<String>>>,
+    #[allow(dead_code)]
+    external_sitemaps: Option<HashMap<AtraUrlOrigin, Vec<String>>>,
 }
-
 
 impl<S: BasicSeed> WebsiteCrawler<S> {
     /// Creates a new instance of a WebsiteCrawler
@@ -374,14 +401,12 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
     }
 }
 
-
 impl<'a> WebsiteCrawler<WebsiteCrawlerBuilder<'a>> {
     #[cfg(test)]
     pub fn builder(crawl_config: &'a CrawlConfig) -> WebsiteCrawlerBuilder<'a> {
         WebsiteCrawlerBuilder::new(crawl_config)
     }
 }
-
 
 impl<S: BasicSeed> WebsiteCrawler<S> {
     async fn update_linkstate<C, E>(
@@ -395,9 +420,7 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
         E: From<<C as SupportsLinkState>::Error>,
     {
         match context.update_link_state(target, link_state_type).await {
-            Ok(_) => {
-                true
-            }
+            Ok(_) => true,
             Err(error) => {
                 handler.push(error.into());
                 false
@@ -433,33 +456,29 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
         shutdown: Shutdown,
     ) -> Result<Option<Vec<E>>, Vec<E>>
     where
-        Cont:
-        SupportsGdbrRegistry
-        + SupportsConfigs
-        + SupportsRobotsManager
-        + SupportsBlackList
-        + SupportsLinkState
-        + SupportsSlimCrawlResults
-        + SupportsFileSystemAccess
-        + SupportsCrawlResults
-        + SupportsLinkSeeding,
+        Cont: SupportsGdbrRegistry
+            + SupportsConfigs
+            + SupportsRobotsManager
+            + SupportsBlackList
+            + SupportsLinkState
+            + SupportsSlimCrawlResults
+            + SupportsFileSystemAccess
+            + SupportsCrawlResults
+            + SupportsLinkSeeding,
         Shutdown: ShutdownReceiver,
-        E:
-        From<<Cont as SupportsSlimCrawlResults>::Error>
-        + From<<Cont as SupportsLinkSeeding>::Error>
-        + From<<Cont as SupportsCrawlResults>::Error>
-        + From<<Cont as SupportsLinkState>::Error>
-        + From<crate::client::Error>
-        + From<io::Error>
-        + Display,
+        E: From<<Cont as SupportsSlimCrawlResults>::Error>
+            + From<<Cont as SupportsLinkSeeding>::Error>
+            + From<<Cont as SupportsCrawlResults>::Error>
+            + From<<Cont as SupportsLinkState>::Error>
+            + From<crate::client::ClientError>
+            + From<io::Error>
+            + Display,
     {
         let configuration = context.configs().crawl();
-
 
         if shutdown.is_shutdown() {
             return Ok(None);
         }
-
 
         log::debug!("Start Crawling of {}", self.seed.url());
 
@@ -468,10 +487,15 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
                 context.get_robots_instance().await,
                 self.user_agent.clone(),
                 configuration.max_robots_age.clone(),
-            ).bind_to_domain(&self.client, self.seed.url()).await
+            )
+            .bind_to_domain(&self.client, self.seed.url())
+            .await,
         );
 
-        let budget = configuration.budget.get_budget_for(&self.seed.origin()).clone();
+        let budget = configuration
+            .budget
+            .get_budget_for(&self.seed.origin())
+            .clone();
 
         let blacklist = context.get_blacklist().await;
 
@@ -497,36 +521,36 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
 
         // todo: do not ignore sitemaps?
 
-        let mut interval_manager = InvervalManager::new(
-            &self.client,
-            configuration,
-            configured_robots.clone(),
-        );
+        let mut interval_manager =
+            InvervalManager::new(&self.client, configuration, configured_robots.clone());
 
         if !context.configs().crawl.ignore_sitemap {
-            for value in retrieve_and_parse(&self.client, &self.seed.url(), configured_robots.as_ref(), &mut interval_manager, None).await.urls {
+            for value in retrieve_and_parse(
+                &self.client,
+                &self.seed.url(),
+                configured_robots.as_ref(),
+                &mut interval_manager,
+                None,
+            )
+            .await
+            .urls
+            {
                 match value.loc {
                     Location::None => {}
-                    Location::Url(url) => {
-                        match UrlWithDepth::with_base(
-                            self.seed.url(),
-                            url,
-                        ) {
-                            Ok(url) => {
-                                queue.push_back(url);
-                            }
-                            Err(err) => {
-                                log::debug!("Failed to parse url from sitemap: {err}");
-                            }
+                    Location::Url(url) => match UrlWithDepth::with_base(self.seed.url(), url) {
+                        Ok(url) => {
+                            queue.push_back(url);
                         }
-                    }
+                        Err(err) => {
+                            log::debug!("Failed to parse url from sitemap: {err}");
+                        }
+                    },
                     Location::ParseErr(err) => {
                         log::info!("Had error parsing sitemap: {err}");
                     }
                 }
             }
         }
-
 
         while let Some(target) = queue.pop_front() {
             if shutdown.is_shutdown() {
@@ -538,26 +562,56 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
                 continue;
             }
 
-            if !Self::update_linkstate(&mut handler, context, &target, LinkStateType::ReservedForCrawl).await {
-                log::error!("Failed setting of linkstate of {target}, continue without further processing.");
+            if !Self::update_linkstate(
+                &mut handler,
+                context,
+                &target,
+                LinkStateType::ReservedForCrawl,
+            )
+            .await
+            {
+                log::error!(
+                    "Failed setting of linkstate of {target}, continue without further processing."
+                );
                 continue;
             }
-
 
             match context.retrieve_slim_crawled_website(&target).await {
                 Ok(value) => {
                     if let Some(already_crawled) = value {
-                        if let Some(recrawl) = configuration.budget.get_budget_for(&self.seed.origin()).get_recrawl_interval() {
-                            if OffsetDateTime::now_utc() - already_crawled.meta.created_at >= recrawl {
+                        if let Some(recrawl) = configuration
+                            .budget
+                            .get_budget_for(&self.seed.origin())
+                            .get_recrawl_interval()
+                        {
+                            if OffsetDateTime::now_utc() - already_crawled.meta.created_at
+                                >= recrawl
+                            {
                                 log::debug!("The url was already crawled.");
-                                if !Self::update_linkstate(&mut handler, context, &target, LinkStateType::ProcessedAndStored).await {
-                                    log::info!("Failed set correct linkstate of {target}, ignoring.");
+                                if !Self::update_linkstate(
+                                    &mut handler,
+                                    context,
+                                    &target,
+                                    LinkStateType::ProcessedAndStored,
+                                )
+                                .await
+                                {
+                                    log::info!(
+                                        "Failed set correct linkstate of {target}, ignoring."
+                                    );
                                 }
                                 continue;
                             }
                         } else {
                             log::debug!("The url was already crawled.");
-                            if !Self::update_linkstate(&mut handler, context, &target, LinkStateType::ProcessedAndStored).await {
+                            if !Self::update_linkstate(
+                                &mut handler,
+                                context,
+                                &target,
+                                LinkStateType::ProcessedAndStored,
+                            )
+                            .await
+                            {
                                 log::info!("Failed set correct linkstate of {target}, ignoring.");
                             }
                             continue;
@@ -565,13 +619,15 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
                     }
                 }
                 Err(err) => {
-                    log::warn!("Failed to get the head information for {target}, try to continue. ${err}")
+                    log::warn!(
+                        "Failed to get the head information for {target}, try to continue. ${err}"
+                    )
                 }
             }
 
-
             if shutdown.is_shutdown() {
-                return Self::pack_shutdown(handler, context, &target, LinkStateType::Discovered).await;
+                return Self::pack_shutdown(handler, context, &target, LinkStateType::Discovered)
+                    .await;
             }
             if log::max_level() == LevelFilter::Trace {
                 log::trace!("Interval Start: {}", OffsetDateTime::now_utc());
@@ -583,7 +639,14 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
             let url_str = target.as_str().into_owned();
             match crate::fetching::fetch_request(context, &self.client, &url_str).await {
                 Ok(page) => {
-                    if !Self::update_linkstate(&mut handler, context, &target, LinkStateType::Discovered).await {
+                    if !Self::update_linkstate(
+                        &mut handler,
+                        context,
+                        &target,
+                        LinkStateType::Discovered,
+                    )
+                    .await
+                    {
                         log::info!("Failed to set link state of {target}.");
                     }
 
@@ -592,70 +655,93 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
 
                     let file_information = AtraFileInformation::determine(context, &response_data);
 
-                    let (language, analyzed, links) = match process(context, &response_data, &file_information).await {
-                        Ok(decoded) => {
-                            let lang = detect_language(
-                                context,
-                                &response_data,
-                                &file_information,
-                                &decoded,
-                            ).ok().flatten();
+                    let (language, analyzed, links) =
+                        match process(context, &response_data, &file_information).await {
+                            Ok(decoded) => {
+                                let lang = detect_language(
+                                    context,
+                                    &response_data,
+                                    &file_information,
+                                    &decoded,
+                                )
+                                .ok()
+                                .flatten();
 
-                            let result = context
-                                .configs()
-                                .crawl()
-                                .link_extractors
-                                .extract(context, &response_data, &file_information, &decoded, lang.as_ref())
-                                .await;
+                                let result = context
+                                    .configs()
+                                    .crawl()
+                                    .link_extractors
+                                    .extract(
+                                        context,
+                                        &response_data,
+                                        &file_information,
+                                        &decoded,
+                                        lang.as_ref(),
+                                    )
+                                    .await;
 
-                            (lang, decoded, result)
-                        }
-                        Err(err) => {
-                            log::error!("Failed to extract links for {} with {err}", &response_data.url);
-                            continue;
-                        }
-                    };
+                                (lang, decoded, result)
+                            }
+                            Err(err) => {
+                                log::error!(
+                                    "Failed to extract links for {} with {err}",
+                                    &response_data.url
+                                );
+                                continue;
+                            }
+                        };
                     log::trace!("Finished analysis: {}", target);
 
                     if context.configs().crawl.store_only_html_in_warc {
                         if file_information.format != InterpretedProcessibleFileFormat::HTML {
                             response_data.content = match response_data.content {
                                 RawVecData::InMemory { data } => {
-                                    let path = context.fs().create_unique_path_for_dat_file(&url_str);
+                                    let path =
+                                        context.fs().create_unique_path_for_dat_file(&url_str);
                                     match File::options().create_new(true).write(true).open(&path) {
-                                        Ok(mut out) => {
-                                            match out.write_all(&data) {
-                                                Ok(_) => {
-                                                    RawData::from_external(path)
-                                                }
-                                                Err(err) => {
-                                                    log::error!("Failed to store {} as file {} with {err}. Keep in memory.", url_str, path);
-                                                    RawVecData::InMemory { data }
-                                                }
+                                        Ok(mut out) => match out.write_all(&data) {
+                                            Ok(_) => RawData::from_external(path),
+                                            Err(err) => {
+                                                log::error!("Failed to store {} as file {} with {err}. Keep in memory.", url_str, path);
+                                                RawVecData::InMemory { data }
                                             }
-                                        }
+                                        },
                                         Err(err) => {
                                             log::error!("Failed to store {} as file {} with {err}. Keep in memory.", url_str, path);
                                             RawVecData::InMemory { data }
                                         }
                                     }
                                 }
-                                keep => keep
+                                keep => keep,
                             }
                         }
                     }
 
                     if shutdown.is_shutdown() {
-                        return Self::pack_shutdown(handler, context, &target, LinkStateType::Discovered).await;
+                        return Self::pack_shutdown(
+                            handler,
+                            context,
+                            &target,
+                            LinkStateType::Discovered,
+                        )
+                        .await;
                     }
-                    log::debug!("Number of links in {}: {}", response_data.url, links.links.len());
+                    log::debug!(
+                        "Number of links in {}: {}",
+                        response_data.url,
+                        links.links.len()
+                    );
                     let links = links.to_optional_links();
                     log::trace!("Converted links");
                     if let Some(links) = &links {
                         log::trace!("Handle extracted links");
                         match context.handle_links(&target, links).await {
                             Ok(value) => {
-                                log::debug!("{}: on_seed links: {}", response_data.url, value.len());
+                                log::debug!(
+                                    "{}: on_seed links: {}",
+                                    response_data.url,
+                                    value.len()
+                                );
                                 for in_seed in value {
                                     if checker.check_if_allowed(self, &in_seed).await {
                                         log::trace!("Queue: {}", target);
@@ -668,7 +754,13 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
                             Err(err) => {
                                 log::error!("Failed to handle links with {err}. Stopping crawl.");
                                 handler.push(err.into());
-                                return Self::pack_shutdown(handler, context, &target, LinkStateType::Discovered).await;
+                                return Self::pack_shutdown(
+                                    handler,
+                                    context,
+                                    &target,
+                                    LinkStateType::Discovered,
+                                )
+                                .await;
                             }
                         }
                     } else {
@@ -678,7 +770,13 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
                     let recognized_encoding = analyzed.encoding();
                     drop(analyzed);
                     if shutdown.is_shutdown() {
-                        return Self::pack_shutdown(handler, context, &target, LinkStateType::Discovered).await;
+                        return Self::pack_shutdown(
+                            handler,
+                            context,
+                            &target,
+                            LinkStateType::Discovered,
+                        )
+                        .await;
                     }
 
                     log::trace!("CrawlResult {}", response_data.url);
@@ -695,21 +793,41 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
                         Err(err) => {
                             log::error!("Failed to store data for {target}. Stopping crawl. {err}");
                             handler.push(err.into());
-                            return Self::pack_shutdown(handler, context, &target, LinkStateType::Discovered).await;
+                            return Self::pack_shutdown(
+                                handler,
+                                context,
+                                &target,
+                                LinkStateType::Discovered,
+                            )
+                            .await;
                         }
                         _ => {
                             log::debug!("Stored: {}", result.meta.url);
                         }
                     }
 
-                    if !Self::update_linkstate(&mut handler, context, &target, LinkStateType::ProcessedAndStored).await {
+                    if !Self::update_linkstate(
+                        &mut handler,
+                        context,
+                        &target,
+                        LinkStateType::ProcessedAndStored,
+                    )
+                    .await
+                    {
                         log::error!("Failed setting of linkstate of {target}.");
                     }
                 }
                 Err(err) => {
                     log::warn!("Failed to fetch {} with error {}", target, err);
 
-                    if !Self::update_linkstate(&mut handler, context, &target, LinkStateType::InternalError).await {
+                    if !Self::update_linkstate(
+                        &mut handler,
+                        context,
+                        &target,
+                        LinkStateType::InternalError,
+                    )
+                    .await
+                    {
                         log::error!("Failed recovery of linkstate of {target}.");
                     }
                 }
@@ -719,9 +837,7 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
     }
 }
 
-
 // Helper structs
-
 
 /// Internal helper for representing cause for not allowed
 #[derive(Debug, EnumString, strum::Display)]
@@ -731,7 +847,6 @@ enum NotAllowedReasoning {
     RobotSaysNo,
     IsNotInBudget,
 }
-
 
 struct UrlChecker<'a, R: RobotsInformation, B: BlackList> {
     budget: &'a BudgetSetting,
@@ -746,10 +861,17 @@ impl<'a, R: RobotsInformation, B: BlackList> UrlChecker<'a, R, B> {
     /// - is not over crawl budget
     /// - is not blacklisted
     /// - is not forbidden in robot.txt file (if parameter is defined)
-    async fn check_if_allowed<T: BasicSeed>(&self, task: &WebsiteCrawler<T>, url: &UrlWithDepth) -> bool {
+    async fn check_if_allowed<T: BasicSeed>(
+        &self,
+        task: &WebsiteCrawler<T>,
+        url: &UrlWithDepth,
+    ) -> bool {
         let result = !task.links_visited.contains(url)
             && !self.blacklist.has_match_for(&url.as_str())
-            && self.configured_robots.check_if_allowed(&task.client, url).await
+            && self
+                .configured_robots
+                .check_if_allowed(&task.client, url)
+                .await
             && self.budget.is_in_budget(url);
 
         match log::max_level() {
@@ -762,7 +884,11 @@ impl<'a, R: RobotsInformation, B: BlackList> UrlChecker<'a, R, B> {
                     if self.blacklist.has_match_for(&url.as_str()) {
                         reasons.push(NotAllowedReasoning::BlacklistHasMatch);
                     }
-                    if !self.configured_robots.check_if_allowed(&task.client, &url).await {
+                    if !self
+                        .configured_robots
+                        .check_if_allowed(&task.client, &url)
+                        .await
+                    {
                         reasons.push(NotAllowedReasoning::RobotSaysNo);
                     }
                     if !self.budget.is_in_budget(url) {
@@ -771,11 +897,7 @@ impl<'a, R: RobotsInformation, B: BlackList> UrlChecker<'a, R, B> {
                     reasons.iter().map(|value| value.to_string()).join(", ")
                 };
 
-                log::trace!(
-                    "Drop-Reasons: {}; Reasons: {}",
-                    url,
-                    reason
-                );
+                log::trace!("Drop-Reasons: {}; Reasons: {}", url, reason);
             }
             _ => {}
         }
@@ -784,36 +906,35 @@ impl<'a, R: RobotsInformation, B: BlackList> UrlChecker<'a, R, B> {
     }
 }
 
-
 #[cfg(test)]
 mod test {
-    use std::fmt::Debug;
-    use std::sync::Arc;
+    use crate::blacklist::lists::RegexBlackList;
+    use crate::config::crawl::UserAgent;
+    use crate::config::{BudgetSetting, Configs, CrawlConfig};
+    use crate::contexts::local::LocalContext;
+    use crate::contexts::traits::{SupportsConfigs, SupportsPolling, SupportsUrlQueue};
+    use crate::contexts::worker::WorkerContext;
+    use crate::crawl::crawler::{WebsiteCrawler, WebsiteCrawlerBuilder};
+    use crate::crawl::CrawlResult;
+    use crate::queue::polling::{AbortCause, UrlQueuePollResult};
+    use crate::robots::{InMemoryRobotsManager, RobotsManager};
+    use crate::runtime::{RuntimeContext, ShutdownPhantom};
+    use crate::seed::UnguardedSeed;
+    use crate::test_impls::InMemoryContext;
+    use crate::url::queue::UrlQueue;
+    use crate::url::UrlWithDepth;
     use itertools::Itertools;
     use log::LevelFilter;
     use log4rs::append::file::FileAppender;
-    use log4rs::encode::pattern::PatternEncoder;
     use log4rs::config::{Appender, Config, Logger, Root};
+    use log4rs::encode::pattern::PatternEncoder;
     use reqwest::header::HeaderMap;
     use reqwest::StatusCode;
-    use serde::{Deserialize, Serialize};
     use serde::de::DeserializeOwned;
+    use serde::{Deserialize, Serialize};
+    use std::fmt::Debug;
+    use std::sync::Arc;
     use time::Duration;
-    use crate::blacklist::lists::RegexBlackList;
-    use crate::config::{BudgetSetting, Configs, CrawlConfig};
-    use crate::config::crawl::UserAgent;
-    use crate::contexts::traits::{SupportsConfigs, SupportsPolling, SupportsUrlQueue};
-    use crate::seed::UnguardedSeed;
-    use crate::crawl::crawler::{WebsiteCrawler, WebsiteCrawlerBuilder};
-    use crate::robots::{InMemoryRobotsManager, RobotsManager};
-    use crate::url::UrlWithDepth;
-    use crate::url::queue::UrlQueue;
-    use crate::test_impls::InMemoryContext;
-    use crate::contexts::local::LocalContext;
-    use crate::contexts::worker::WorkerContext;
-    use crate::crawl::CrawlResult;
-    use crate::queue::polling::{AbortCause, UrlQueuePollResult};
-    use crate::runtime::{RuntimeContext, ShutdownPhantom};
 
     fn init() {
         // let stdout = ConsoleAppender::builder().build();
@@ -835,22 +956,33 @@ mod test {
 
     #[tokio::test]
     async fn can_use_default_client() {
-        let seed = "https://choosealicense.com/".parse::<UrlWithDepth>().unwrap().try_into().unwrap();
-        let crawl_task: WebsiteCrawler<UnguardedSeed> = WebsiteCrawler::builder(&CrawlConfig::default())
-            .build(seed)
-            .await;
+        let seed = "https://choosealicense.com/"
+            .parse::<UrlWithDepth>()
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let crawl_task: WebsiteCrawler<UnguardedSeed> =
+            WebsiteCrawler::builder(&CrawlConfig::default())
+                .build(seed)
+                .await;
         let in_memory = InMemoryRobotsManager::new();
         println!("{:?}", crawl_task.client);
-        let retrieved = in_memory.get_or_retrieve(
-            &crawl_task.client,
-            &crawl_task.user_agent,
-            &"https://choosealicense.com/".parse::<UrlWithDepth>().unwrap(),
-            None,
-        ).await;
+        let retrieved = in_memory
+            .get_or_retrieve(
+                &crawl_task.client,
+                &crawl_task.user_agent,
+                &"https://choosealicense.com/"
+                    .parse::<UrlWithDepth>()
+                    .unwrap(),
+                None,
+            )
+            .await;
         println!("{:?}", retrieved)
     }
 
-    fn check_serialisation_value<T: Serialize + DeserializeOwned + Debug + PartialEq + Eq>(value: &T) {
+    fn check_serialisation_value<T: Serialize + DeserializeOwned + Debug + PartialEq + Eq>(
+        value: &T,
+    ) {
         let serialized = bincode::serialize(value).unwrap();
         match bincode::deserialize::<T>(&serialized) {
             Ok(is_ok) => {
@@ -884,8 +1016,12 @@ mod test {
         check_serialisation_value(&data.meta.created_at);
         check_serialisation_value(&data.meta.recognized_encoding);
         check_serialisation_value(&data.meta.links);
-        check_serialisation_value(&HeaderMapSerialize { value: data.meta.headers.clone() });
-        check_serialisation_value(&StatusCodeSerialize { value: data.meta.status_code.clone() });
+        check_serialisation_value(&HeaderMapSerialize {
+            value: data.meta.headers.clone(),
+        });
+        check_serialisation_value(&StatusCodeSerialize {
+            value: data.meta.status_code.clone(),
+        });
     }
 
     #[tokio::test]
@@ -901,27 +1037,29 @@ mod test {
 
         log::info!("START");
 
-
-        let mut crawl = WebsiteCrawler::builder(&config).build(
-            UnguardedSeed::new(
-                "https://choosealicense.com/".parse::<UrlWithDepth>().unwrap(),
-                "choosealicense.com".into(),
-            ).unwrap()
-        ).await;
-
-        let context = InMemoryContext::new(
-            Configs::new(
-                Default::default(),
-                Default::default(),
-                config,
-                Default::default(),
+        let mut crawl = WebsiteCrawler::builder(&config)
+            .build(
+                UnguardedSeed::new(
+                    "https://choosealicense.com/"
+                        .parse::<UrlWithDepth>()
+                        .unwrap(),
+                    "choosealicense.com".into(),
+                )
+                .unwrap(),
             )
-        );
+            .await;
 
-        crawl.crawl(
-            &context,
-            ShutdownPhantom,
-        ).await.expect("Expected a positive result!");
+        let context = InMemoryContext::new(Configs::new(
+            Default::default(),
+            Default::default(),
+            config,
+            Default::default(),
+        ));
+
+        crawl
+            .crawl(&context, ShutdownPhantom)
+            .await
+            .expect("Expected a positive result!");
 
         // for ref crawled in crawled {
         //     let found = context.get_crawled_website(crawled).await.expect("The website should be working!");
@@ -952,12 +1090,17 @@ mod test {
             request_timeout: None,
         };
 
-        let mut crawl = WebsiteCrawler::builder(&config).build(
-            UnguardedSeed::new(
-                "https://choosealicense.com/".parse::<UrlWithDepth>().unwrap(),
-                "choosealicense.com".into(),
-            ).unwrap()
-        ).await;
+        let mut crawl = WebsiteCrawler::builder(&config)
+            .build(
+                UnguardedSeed::new(
+                    "https://choosealicense.com/"
+                        .parse::<UrlWithDepth>()
+                        .unwrap(),
+                    "choosealicense.com".into(),
+                )
+                .unwrap(),
+            )
+            .await;
 
         let context = InMemoryContext::with_blacklist(
             Configs::new(
@@ -966,13 +1109,16 @@ mod test {
                 config,
                 Default::default(),
             ),
-            ".*github.*".parse::<RegexBlackList>().expect("Should be able to parse a url.").into(),
+            ".*github.*"
+                .parse::<RegexBlackList>()
+                .expect("Should be able to parse a url.")
+                .into(),
         );
 
-        crawl.crawl(
-            &context,
-            ShutdownPhantom,
-        ).await.expect("Expected a positive result!");
+        crawl
+            .crawl(&context, ShutdownPhantom)
+            .await
+            .expect("Expected a positive result!");
     }
 
     #[tokio::test]
@@ -988,27 +1134,31 @@ mod test {
         config.user_agent = UserAgent::Custom("TestCrawl/Atra/v0.1.0".to_string());
 
         log::info!("START");
-        let context: LocalContext = LocalContext::new(Configs::new(
-            Default::default(),
-            Default::default(),
-            config,
-            Default::default(),
-        ), RuntimeContext::unbound()).await.unwrap();
+        let context: LocalContext = LocalContext::new(
+            Configs::new(
+                Default::default(),
+                Default::default(),
+                config,
+                Default::default(),
+            ),
+            RuntimeContext::unbound(),
+        )
+        .await
+        .unwrap();
         let config = context.configs().crawl.clone();
 
-        context.url_queue().enqueue_seed("https://choosealicense.com/").await.unwrap();
+        context
+            .url_queue()
+            .enqueue_seed("https://choosealicense.com/")
+            .await
+            .unwrap();
         let context = WorkerContext::create(0, Arc::new(context)).await.unwrap();
 
         while !context.url_queue().is_empty().await {
             log::trace!("TEST: NEXT");
-            let guard_with_seed = context.poll_next_free_url(
-                ShutdownPhantom,
-                None,
-            ).await;
+            let guard_with_seed = context.poll_next_free_url(ShutdownPhantom, None).await;
             let guard_with_seed = match guard_with_seed {
-                UrlQueuePollResult::Ok(guard_with_seed) => {
-                    guard_with_seed
-                }
+                UrlQueuePollResult::Ok(guard_with_seed) => guard_with_seed,
                 UrlQueuePollResult::Abort(AbortCause::QueueIsEmpty) => {
                     log::error!("Abort: Queue was empty.");
                     break;
@@ -1023,7 +1173,9 @@ mod test {
                 }
             };
             log::trace!("Build Task");
-            let mut crawl_task: WebsiteCrawler<_> = WebsiteCrawlerBuilder::new(&config).build(guard_with_seed.get_guarded_seed()).await;
+            let mut crawl_task: WebsiteCrawler<_> = WebsiteCrawlerBuilder::new(&config)
+                .build(guard_with_seed.get_guarded_seed())
+                .await;
             log::trace!("Crawl Task");
             crawl_task.crawl(&context, ShutdownPhantom).await.unwrap();
             log::trace!("Continue");
