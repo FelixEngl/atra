@@ -76,6 +76,8 @@ impl LocalContext {
         if !output_path.exists() {
             std::fs::create_dir_all(output_path)?;
         }
+
+        log::info!("Init file system.");
         let file_provider = Arc::new(FileSystemAccess::new(
             configs.session.service.clone(),
             configs.session.collection.clone(),
@@ -84,29 +86,37 @@ impl LocalContext {
             configs.paths.dir_big_files(),
         )?);
 
+        log::info!("Init internal database.");
         let db = Arc::new(open_db(configs.paths().dir_database())?);
+
+        log::info!("Init link states database.");
         let link_states = LinkStateDB::new(db.clone())?;
+        log::info!("Init crawled information database.");
         let crawled_data = CrawlDB::new(db.clone(), &configs)?;
+        log::info!("Init robots manager.");
         let robots =
             OffMemoryRobotsManager::new(db.clone(), configs.system().robots_cache_size)?.into();
+        log::info!("Init web graph writer.");
         let web_graph_manager = QueuingWebGraphManager::new(
             configs.system().web_graph_cache_size,
             configs.paths().file_web_graph(),
             &runtime_context,
         )?;
-
+        log::info!("Init stopword registry.");
         let stop_word_registry = configs
             .crawl
             .stopword_registry
             .as_ref()
             .map(StopWordRegistry::initialize)
             .transpose()?;
-
+        log::info!("Init url queue.");
         let url_queue = UrlQueueWrapper::open(configs.paths().file_queue())?;
+        log::info!("Init blacklist manager.");
         let blacklist = BlacklistManager::open(
             configs.paths().file_blacklist(),
             runtime_context.shutdown_guard().clone(),
         )?;
+
 
         let gdbr_filer_registry = if let Some(ref cfg) = configs.crawl.gbdr {
             let helper = InitHelper {
@@ -114,8 +124,10 @@ impl LocalContext {
                 root: Some(&configs.paths.root_path()),
                 stop_word_registry: stop_word_registry.as_ref(),
             };
+            log::info!("Init gdbr identifier.");
             GdbrIdentifierRegistry::new_from_config(&helper)?
         } else {
+            log::info!("No gdbr identifier initialized.");
             None
         };
 

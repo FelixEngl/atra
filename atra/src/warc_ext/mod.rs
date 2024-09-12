@@ -21,6 +21,8 @@ mod write;
 
 pub use errors::*;
 pub use instructions::WarcSkipInstruction;
+#[cfg(test)]
+pub use skip_pointer::*;
 pub use read::read_body;
 // pub use skip_pointer::*;
 pub use special_writer::SpecialWarcWriter;

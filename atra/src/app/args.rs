@@ -16,7 +16,7 @@ use std::fs::File;
 use std::io::{BufWriter};
 use std::num::NonZeroUsize;
 use std::str::FromStr;
-
+use camino::Utf8PathBuf;
 use clap::{Parser, Subcommand};
 use time::Duration;
 
@@ -171,10 +171,10 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
                 log_to_file,
             } => {
                 let mut configs = match configs_folder {
-                    None => Configs::discover_or_default(),
+                    None => Configs::discover(),
                     Some(path) => Configs::load_from(path),
                 }
-                .unwrap_or_default();
+                    .expect("No config found!");
 
                 println!("Session Info: {} - {} - {}", configs.session.service, configs.session.collection, configs.session.crawl_job_id);
 
@@ -208,9 +208,7 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
                 println!("{}\n\n{}\n", ATRA_WELCOME, ATRA_LOGO);
                 println!("Start creating the default config.");
                 let cfg = Configs::default();
-                let root = cfg.paths.root_path();
-                std::fs::create_dir_all(root).unwrap();
-                let path = root.join("config.json");
+                let path = Utf8PathBuf::from_str("config.json").unwrap();
                 if path.exists() {
                     println!("The default config already exists in {path}.\nDelete is before regenerating.")
                 } else {

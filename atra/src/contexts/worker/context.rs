@@ -265,7 +265,7 @@ where
 
 impl<T> SupportsCrawlResults for WorkerContext<T>
 where
-    T: AsyncContext + SupportsSlimCrawlResults,
+    T: AsyncContext + SupportsSlimCrawlResults + SupportsConfigs,
 {
     type Error = CrawlWriteError<T::Error>;
 
@@ -285,6 +285,13 @@ where
             }
             RawVecData::ExternalFile { file } => {
                 log::debug!("Store external");
+                if self.configs().crawl.store_big_file_hints_in_warc {
+                    self.worker_warc_writer.execute_on_writer(
+                        |value| {
+                            write_warc(value, result)
+                        }
+                    ).await?;
+                }
                 StoredDataHint::External(file.clone())
             }
         };

@@ -166,6 +166,7 @@ where
     IDF: IdfAlgorithm + Clone + Debug,
     SOLVER: SupportsParametersCreation,
 {
+    log::info!("Train SVM for {}", language.to_name());
     if !training.train_data.exists() {
         return Err(SvmCreationError::IO(std::io::Error::new(
             ErrorKind::NotFound,

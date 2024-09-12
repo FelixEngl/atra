@@ -213,6 +213,7 @@ where
     SOLVER: SupportsParametersCreation,
     Model<SOLVER>: TryFrom<Model<GenericSolver>>,
 {
+    /// Initialize the GdbrIdentifierRegistry from a config for a given context
     pub fn new_from_config<
         C: GdbrIdentifierCreationContext<TF, IDF> + SupportsStopwordsRegistry,
     >(
@@ -270,6 +271,7 @@ where
                 None
             };
 
+            log::info!("Finished creating gdbr identifiers.");
             Ok(Some(Self {
                 default,
                 by_language,

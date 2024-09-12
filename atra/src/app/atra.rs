@@ -18,7 +18,7 @@ use crate::config::Configs;
 use crate::contexts::local::LocalContext;
 use crate::contexts::traits::{SupportsLinkState, SupportsMetaInfo, SupportsUrlQueue};
 use crate::contexts::worker::WorkerContext;
-use crate::crawl::crawl;
+use crate::crawl::{crawl, ExitState};
 use crate::runtime::{
     graceful_shutdown, AtraRuntime, GracefulShutdown, GracefulShutdownBarrier, OptionalAtraHandle,
     RuntimeContext, ShutdownReceiver, ShutdownSignalSender,
@@ -245,14 +245,16 @@ impl Atra {
                             )
                             .await
                             {
-                                Ok(stop) => {
-                                    log::info!("Exit {i} with {stop}.")
+                                Ok(s) => {
+                                    log::info!("Exit {i} with {s}.");
+                                    break
                                 }
                                 Err(_) => {
-                                    log::error!("Encountered some errors.")
+                                    log::error!("Encountered some errors.");
                                 }
                             }
                         }
+
                         b.trigger_cancellation();
                         i
                     });

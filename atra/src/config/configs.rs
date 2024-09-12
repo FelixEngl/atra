@@ -96,6 +96,17 @@ impl Configs {
             }
         }
     }
+
+    pub fn discover() -> Result<Self, config::ConfigError> {
+        Config::builder()
+            .add_source(config::File::with_name("atra"))
+            .add_source(config::File::with_name("atra_data/atra"))
+            .add_source(config::File::with_name("config"))
+            .add_source(config::File::with_name("atra_data/config"))
+            .add_source(config::Environment::with_prefix("ATRA").separator("."))
+            .build()?
+            .try_deserialize()
+    }
 }
 
 #[cfg(test)]

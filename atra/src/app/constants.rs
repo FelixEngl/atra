@@ -52,6 +52,7 @@ pub fn create_example_config() -> crate::config::configs::Configs {
             crawl_onclick_by_heuristic: true,
             apply_gdbr_filter_if_possible: false,
             store_only_html_in_warc: true,
+            store_big_file_hints_in_warc: true,
             max_file_size: Some(NonZeroU64::new(1.gigabytes().as_u64()).unwrap()),
             max_robots_age: Some(Duration::seconds(60 * 24)),
             ignore_sitemap: false,

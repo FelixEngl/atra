@@ -55,6 +55,8 @@ pub struct CrawlConfig {
     pub apply_gdbr_filter_if_possible: bool,
     /// Only store html-files in the warc
     pub store_only_html_in_warc: bool,
+    /// Store the big file hints also in the warc
+    pub store_big_file_hints_in_warc: bool,
 
     /// The maximum size to download. (in byte)
     pub max_file_size: Option<NonZeroU64>,
@@ -126,6 +128,7 @@ impl Default for CrawlConfig {
             crawl_javascript: true,
             crawl_onclick_by_heuristic: false,
             store_only_html_in_warc: true,
+            store_big_file_hints_in_warc: false,
             apply_gdbr_filter_if_possible: true,
             headers: None,
             delay: None,

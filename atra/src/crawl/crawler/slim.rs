@@ -81,8 +81,8 @@ mod test {
     use crate::crawl::crawler::result::test::create_test_data;
     use crate::crawl::crawler::slim::{SlimCrawlResult, StoredDataHint};
     use crate::url::UrlWithDepth;
-    use crate::warc_ext::{WarcSkipInstruction, WarcSkipPointer, WarcSkipPointerWithPath};
     use camino::Utf8PathBuf;
+    use crate::warc_ext::{WarcSkipInstruction, WarcSkipPointer, WarcSkipPointerWithPath};
 
     #[test]
     fn serde_test() {
