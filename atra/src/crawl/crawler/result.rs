@@ -14,8 +14,8 @@
 
 use crate::data::RawVecData;
 use crate::extraction::ExtractedLink;
-use crate::format::AtraFileInformation;
 use crate::fetching::ResponseData;
+use crate::format::AtraFileInformation;
 use crate::toolkit::header_map_extensions::optional_header_map;
 use crate::toolkit::serde_ext::status_code;
 use crate::toolkit::LanguageInformation;
@@ -127,10 +127,10 @@ pub mod test {
     use crate::extraction::extractor_method::ExtractorMethod;
     use crate::extraction::marker::ExtractorMethodHint;
     use crate::extraction::ExtractedLink;
+    use crate::fetching::ResponseData;
     use crate::format::supported::InterpretedProcessibleFileFormat;
     use crate::format::AtraFileInformation;
     use crate::toolkit::LanguageInformation;
-    use crate::fetching::ResponseData;
     use crate::url::UrlWithDepth;
     use reqwest::header::HeaderMap;
     use reqwest::StatusCode;

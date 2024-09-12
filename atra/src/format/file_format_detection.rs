@@ -13,8 +13,8 @@
 // limitations under the License.
 
 use crate::contexts::traits::SupportsFileSystemAccess;
-use crate::format::mime::MimeType;
 use crate::fetching::ResponseData;
+use crate::format::mime::MimeType;
 use file_format::FileFormat;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};

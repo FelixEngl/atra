@@ -14,10 +14,10 @@
 
 use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
 use crate::data::{Decoded, RawData, RawVecData};
+use crate::fetching::ResponseData;
 use crate::format::supported::InterpretedProcessibleFileFormat;
 use crate::format::AtraFileInformation;
 use crate::io::fs::AtraFS;
-use crate::fetching::ResponseData;
 use crate::static_selectors;
 use camino::Utf8PathBuf;
 use chardetng::EncodingDetector;
@@ -325,11 +325,11 @@ mod test {
     use crate::decoding::decode;
     use crate::fetching::{FetchedRequestData, ResponseData};
     use crate::format::AtraFileInformation;
+    use crate::test_impls::InMemoryContext;
     use encoding_rs::Encoding;
     use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
     use reqwest::StatusCode;
     use std::borrow::Cow;
-    use crate::test_impls::InMemoryContext;
 
     macro_rules! test_for {
         (@old $name: ident: $sample: ident($encoding: expr)) => {

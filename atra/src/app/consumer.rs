@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use thiserror::Error;
 use crate::client::ClientError;
 use crate::contexts::local::LinkHandlingError;
 use crate::contexts::worker::CrawlWriteError;
@@ -21,6 +20,7 @@ use crate::database::DatabaseError;
 use crate::link_state::{LinkStateDBError, LinkStateError};
 use crate::queue::QueueError;
 use crate::web_graph::LinkNetError;
+use thiserror::Error;
 
 pub struct GlobalErrorConsumer;
 
@@ -32,21 +32,28 @@ impl GlobalErrorConsumer {
 
 #[derive(Debug, Error)]
 pub enum GlobalError {
-    #[error(transparent)] SlimCrawlError(#[from] DatabaseError),
-    #[error(transparent)] LinkHandling(#[from] LinkHandlingError),
-    #[error(transparent)] LinkState(#[from] LinkStateError),
-    #[error(transparent)] LinkStateDatabase(#[from] LinkStateDBError),
-    #[error(transparent)] CrawlWriteError(#[from] CrawlWriteError<DatabaseError>),
-    #[error(transparent)] QueueError(#[from] QueueError),
-    #[error(transparent)] ClientError(#[from] ClientError),
-    #[error(transparent)] IOError(#[from] std::io::Error),
+    #[error(transparent)]
+    SlimCrawlError(#[from] DatabaseError),
+    #[error(transparent)]
+    LinkHandling(#[from] LinkHandlingError),
+    #[error(transparent)]
+    LinkState(#[from] LinkStateError),
+    #[error(transparent)]
+    LinkStateDatabase(#[from] LinkStateDBError),
+    #[error(transparent)]
+    CrawlWriteError(#[from] CrawlWriteError<DatabaseError>),
+    #[error(transparent)]
+    QueueError(#[from] QueueError),
+    #[error(transparent)]
+    ClientError(#[from] ClientError),
+    #[error(transparent)]
+    IOError(#[from] std::io::Error),
 }
 
 impl ErrorConsumer<GlobalError> for GlobalErrorConsumer {
     type Error = GlobalError;
 
     fn consume_crawl_error(&self, err: GlobalError) -> Result<(), Self::Error> {
-
         /// true = return OK
         fn handle_db_error(e: &DatabaseError) -> bool {
             match e {
@@ -121,12 +128,8 @@ impl ErrorConsumer<GlobalError> for GlobalErrorConsumer {
         /// true = return OK
         fn handle_link_state_db_error(e: &LinkStateDBError) -> bool {
             match e {
-                LinkStateDBError::Database(db) => {
-                    handle_db_error(db)
-                }
-                LinkStateDBError::LinkStateError(state) => {
-                    handle_linkstate(state)
-                }
+                LinkStateDBError::Database(db) => handle_db_error(db),
+                LinkStateDBError::LinkStateError(state) => handle_linkstate(state),
             }
         }
 
@@ -146,39 +149,31 @@ impl ErrorConsumer<GlobalError> for GlobalErrorConsumer {
                 }
             }
         }
-        
+
         let result = match &err {
             GlobalError::SlimCrawlError(e) => handle_db_error(e),
-            GlobalError::LinkHandling(e) => {
-                match e {
-                    LinkHandlingError::LinkState(e) => handle_link_state_db_error(e),
-                    LinkHandlingError::UrlQueue(e) => handle_url_queue_error(e),
-                    LinkHandlingError::LinkNetError(e) => {
-                        log::error!("The webgraph had a non recoverable falure: {e}");
-                        false
-                    }
+            GlobalError::LinkHandling(e) => match e {
+                LinkHandlingError::LinkState(e) => handle_link_state_db_error(e),
+                LinkHandlingError::UrlQueue(e) => handle_url_queue_error(e),
+                LinkHandlingError::LinkNetError(e) => {
+                    log::error!("The webgraph had a non recoverable falure: {e}");
+                    false
                 }
-            }
+            },
             GlobalError::LinkState(e) => handle_linkstate(e),
             GlobalError::LinkStateDatabase(e) => handle_link_state_db_error(e),
-            GlobalError::CrawlWriteError(e) => {
-                match e {
-                    CrawlWriteError::Database(e) => {
-                        handle_db_error(e)
-                    }
-                    CrawlWriteError::WarcReaderError(e) => {
-                        log::error!("Failed to read from a warc file: {e}");
-                        true
-                    }
-                    CrawlWriteError::WarcWriterError(e) => {
-                        log::error!("Failed to write to a warc file: {e}");
-                        false
-                    }
-                    CrawlWriteError::SlimError(e) => {
-                        handle_db_error(e)
-                    }
+            GlobalError::CrawlWriteError(e) => match e {
+                CrawlWriteError::Database(e) => handle_db_error(e),
+                CrawlWriteError::WarcReaderError(e) => {
+                    log::error!("Failed to read from a warc file: {e}");
+                    true
                 }
-            }
+                CrawlWriteError::WarcWriterError(e) => {
+                    log::error!("Failed to write to a warc file: {e}");
+                    false
+                }
+                CrawlWriteError::SlimError(e) => handle_db_error(e),
+            },
             GlobalError::QueueError(e) => handle_url_queue_error(e),
             GlobalError::ClientError(e) => {
                 log::debug!("Client error: {e}");

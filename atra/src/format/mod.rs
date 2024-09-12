@@ -19,10 +19,10 @@ pub(crate) mod mime_serialize;
 pub mod supported;
 
 use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
+use crate::fetching::ResponseData;
 use crate::format::file_format_detection::{infer_file_formats, DetectedFileFormat};
 use crate::format::mime::{determine_mime_information, MimeType};
 use crate::format::supported::InterpretedProcessibleFileFormat;
-use crate::fetching::ResponseData;
 use serde::{Deserialize, Serialize};
 use warc::media_type::MediaType;
 

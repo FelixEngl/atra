@@ -12,23 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use log::info;
 use crate::app::args::{consume_args, ConsumedArgs};
 use crate::config::Configs;
 use crate::runtime::graceful_shutdown;
 use crate::seed::SeedDefinition;
+use log::info;
 
-mod logging;
-mod constants;
 mod args;
-pub mod consumer;
 mod atra;
+mod constants;
+pub mod consumer;
+mod logging;
 
-
-pub use args::AtraArgs;
 use crate::app::atra::{ApplicationMode, Atra};
 use crate::app::constants::{ATRA_LOGO, ATRA_WELCOME};
-
+pub use args::AtraArgs;
 
 pub fn exec_args(args: AtraArgs) {
     match consume_args(args) {
@@ -63,13 +61,13 @@ fn execute(application_mode: ApplicationMode, seed_definition: SeedDefinition, c
 
 #[cfg(test)]
 mod test {
+    use crate::app::args::RunMode;
+    use crate::app::atra::ApplicationMode;
+    use crate::app::{execute, AtraArgs};
     use crate::config::crawl::UserAgent;
     use crate::config::{BudgetSetting, Configs, CrawlConfig};
     use crate::seed::SeedDefinition;
     use time::Duration;
-    use crate::app::args::RunMode;
-    use crate::app::{AtraArgs, execute};
-    use crate::app::atra::ApplicationMode;
 
     #[test]
     pub fn can_generate_example_config() {

@@ -31,9 +31,9 @@ use xml::EventReader;
 
 use crate::contexts::traits::SupportsConfigs;
 use crate::data::Decoded;
+use crate::fetching::ResponseData;
 use crate::format::supported::InterpretedProcessibleFileFormat;
 use crate::format::AtraFileInformation;
-use crate::fetching::ResponseData;
 use crate::toolkit::isolang_ext::ToIsoLang;
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone)]

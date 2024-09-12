@@ -17,6 +17,8 @@ use crate::config::Configs;
 use crate::contexts::local::LinkHandlingError;
 use crate::contexts::traits::*;
 use crate::contexts::{BaseContext, Context};
+use crate::crawl::{CrawlResult, SlimCrawlResult, StoredDataHint};
+use crate::data::RawVecData;
 use crate::database::DatabaseError;
 use crate::extraction::ExtractedLink;
 use crate::gdbr::identifier::GdbrIdentifierRegistry;
@@ -24,9 +26,11 @@ use crate::io::fs::FileSystemAccess;
 use crate::link_state::{LinkState, LinkStateDBError, LinkStateType};
 use crate::queue::QueueError;
 use crate::robots::{InMemoryRobotsManager, ShareableRobotsManager};
-use crate::url::{AtraOriginProvider, AtraUri};
+use crate::seed::BasicSeed;
+use crate::url::guard::InMemoryUrlGuardian;
 use crate::url::queue::{EnqueueCalled, UrlQueue, UrlQueueElement, UrlQueueElementWeak};
 use crate::url::UrlWithDepth;
+use crate::url::{AtraOriginProvider, AtraUri};
 use crate::web_graph::{LinkNetError, WebGraphEntry, WebGraphManager};
 use itertools::Itertools;
 use liblinear::solver::L2R_L2LOSS_SVR;
@@ -39,10 +43,6 @@ use text_processing::tf_idf::{Idf, Tf};
 use time::OffsetDateTime;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::Mutex;
-use crate::crawl::{CrawlResult, SlimCrawlResult, StoredDataHint};
-use crate::data::RawVecData;
-use crate::seed::BasicSeed;
-use crate::url::guard::InMemoryUrlGuardian;
 
 #[derive(Debug)]
 pub struct InMemoryContext {

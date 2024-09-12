@@ -15,8 +15,8 @@
 use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
 use crate::data::{Decoded, RawVecData};
 use crate::decoding::{decode, DecodingError};
-use crate::format::AtraFileInformation;
 use crate::fetching::ResponseData;
+use crate::format::AtraFileInformation;
 use camino::Utf8PathBuf;
 
 /// Decode the data

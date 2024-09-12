@@ -21,9 +21,9 @@ use clap::{Parser, Subcommand};
 use time::Duration;
 
 use crate::app::atra::ApplicationMode;
-use crate::app::constants::{ATRA_LOGO, ATRA_WELCOME, create_example_config};
-use crate::config::{BudgetSetting, Configs};
+use crate::app::constants::{create_example_config, ATRA_LOGO, ATRA_WELCOME};
 use crate::config::crawl::UserAgent;
+use crate::config::{BudgetSetting, Configs};
 use crate::seed::SeedDefinition;
 
 #[derive(Parser, Debug, Default)]
@@ -90,7 +90,7 @@ pub enum RunMode {
         seeds: SeedDefinition,
     },
     // CLUSTER,
-    WELCOME
+    WELCOME,
 }
 
 #[derive(Debug)]
@@ -204,14 +204,12 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
             let cfg = create_example_config();
             let root = cfg.paths.root_path();
             match File::open(root.join("example_config.json")) {
-                Ok(file) => {
-                    match serde_json::to_writer(BufWriter::new(file), &cfg) {
-                        Ok(_) => {}
-                        Err(err) => {
-                            println!("Failed to create the example file: {err}")
-                        }
+                Ok(file) => match serde_json::to_writer(BufWriter::new(file), &cfg) {
+                    Ok(_) => {}
+                    Err(err) => {
+                        println!("Failed to create the example file: {err}")
                     }
-                }
+                },
                 Err(err) => {
                     println!("Failed to create the example file: {err}")
                 }

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::format::mime_serialize::for_vec;
 use crate::fetching::ResponseData;
+use crate::format::mime_serialize::for_vec;
 use crate::static_selectors;
 use chardetng::EncodingDetector;
 use core::str;

@@ -31,10 +31,10 @@ mod test {
     use crate::crawl::CrawlResult;
     use crate::data::RawVecData;
     use crate::fetching::FetchedRequestData;
+    use crate::fetching::ResponseData;
     use crate::format::mime::MimeType;
     use crate::format::supported::InterpretedProcessibleFileFormat;
     use crate::format::AtraFileInformation;
-    use crate::fetching::ResponseData;
     use crate::toolkit::LanguageInformation;
     use crate::url::UrlWithDepth;
     use crate::warc_ext::special_writer::MockSpecialWarcWriter;

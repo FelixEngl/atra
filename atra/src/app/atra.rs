@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::app::consumer::GlobalErrorConsumer;
+use crate::app::logging::configure_logging;
 use crate::config::Configs;
 use crate::contexts::local::LocalContext;
 use crate::contexts::traits::{SupportsLinkState, SupportsMetaInfo, SupportsUrlQueue};
@@ -27,8 +29,6 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use time::OffsetDateTime;
 use tokio::task::JoinSet;
-use crate::app::logging::configure_logging;
-use crate::app::consumer::GlobalErrorConsumer;
 
 /// The application
 pub struct Atra {
@@ -193,10 +193,10 @@ impl Atra {
                     WorkerContext::create(0, context.clone()).await?,
                     self.shutdown.weak_handle(),
                     Arc::new(barrier),
-                    GlobalErrorConsumer::new()
+                    GlobalErrorConsumer::new(),
                 )
-                    .await
-                    .expect("Failed the crawl.");
+                .await
+                .expect("Failed the crawl.");
                 let time_needed = OffsetDateTime::now_utc() - start;
                 log::info!(
                     "Needed {} for discovering {} websites",
@@ -237,7 +237,14 @@ impl Atra {
                     set.spawn(async move {
                         let context = context;
                         while context.can_poll().await {
-                            match crawl(context.clone(), s.clone(), b.clone(), GlobalErrorConsumer::new()).await {
+                            match crawl(
+                                context.clone(),
+                                s.clone(),
+                                b.clone(),
+                                GlobalErrorConsumer::new(),
+                            )
+                            .await
+                            {
                                 Ok(stop) => {
                                     log::info!("Exit {i} with {stop}.")
                                 }
@@ -283,9 +290,8 @@ pub enum ApplicationMode {
 
 #[cfg(test)]
 mod test {
-    use std::fs::{File, read_dir};
-    use std::io::Read;
-    use std::path::{Path, PathBuf};
+    use super::{ApplicationMode, Atra};
+    use crate::app::constants::ATRA_LOGO;
     use crate::config::crawl::UserAgent;
     use crate::config::{BudgetSetting, Configs, CrawlConfig};
     use crate::runtime::OptionalAtraHandle;
@@ -295,22 +301,34 @@ mod test {
     use log4rs::config::{Appender, Logger, Root};
     use log4rs::encode::pattern::PatternEncoder;
     use log4rs::Config;
+    use std::fs::{read_dir, File};
+    use std::io::Read;
+    use std::path::{Path, PathBuf};
     use time::Duration;
-    use super::{ApplicationMode, Atra};
-    use crate::app::constants::ATRA_LOGO;
 
     fn recurse(path: impl AsRef<Path>) -> Vec<PathBuf> {
-        let Ok(entries) = read_dir(path) else { return vec![] };
-        entries.flatten().flat_map(|entry| {
-            let Ok(meta) = entry.metadata() else { return vec![] };
-            if meta.is_dir() { return recurse(entry.path()); }
-            if meta.is_file() { return vec![entry.path()]; }
-            vec![]
-        }).collect()
+        let Ok(entries) = read_dir(path) else {
+            return vec![];
+        };
+        entries
+            .flatten()
+            .flat_map(|entry| {
+                let Ok(meta) = entry.metadata() else {
+                    return vec![];
+                };
+                if meta.is_dir() {
+                    return recurse(entry.path());
+                }
+                if meta.is_file() {
+                    return vec![entry.path()];
+                }
+                vec![]
+            })
+            .collect()
     }
 
     #[test]
-    fn check(){
+    fn check() {
         let mut s = String::new();
         for path in recurse("C:\\git\\atra\\atra\\src") {
             File::open(&path).unwrap().read_to_string(&mut s).unwrap();
@@ -373,8 +391,8 @@ mod test {
             ]),
             configs,
         )
-            .await
-            .expect("no errors");
+        .await
+        .expect("no errors");
 
         drop(app);
         barrier.wait().await;

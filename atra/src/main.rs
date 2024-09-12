@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::app::{exec_args, AtraArgs};
 use clap::Parser;
-use crate::app::{AtraArgs, exec_args};
 
+mod app;
 mod blacklist;
 mod client;
 mod config;
@@ -42,10 +43,7 @@ mod toolkit;
 mod url;
 mod warc_ext;
 mod web_graph;
-mod app;
-
 
 fn main() {
     exec_args(AtraArgs::parse())
 }
-

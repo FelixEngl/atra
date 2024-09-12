@@ -16,8 +16,8 @@ use super::ExtractedLink;
 use crate::contexts::traits::{SupportsConfigs, SupportsGdbrRegistry};
 use crate::data::Decoded;
 use crate::extraction::extractor_method::ExtractorMethod;
-use crate::format::AtraFileInformation;
 use crate::fetching::ResponseData;
+use crate::format::AtraFileInformation;
 use crate::toolkit::LanguageInformation;
 use camino::Utf8PathBuf;
 use enum_iterator::all;
@@ -202,9 +202,8 @@ impl ExtractorCommand {
     pub fn new_default_apply(extractor_method: ExtractorMethod) -> Self {
         match &extractor_method {
             ExtractorMethod::BinaryHeuristic => Self::new(extractor_method, ApplyWhen::Fallback),
-            _ => Self::new(extractor_method, Default::default())
+            _ => Self::new(extractor_method, Default::default()),
         }
-
     }
 
     pub fn can_apply(&self, page: &ProcessedData<'_>) -> bool {
@@ -253,14 +252,14 @@ impl Ord for ExtractorCommand {
 #[cfg(test)]
 mod test {
     use crate::config::CrawlConfig;
-    use crate::data::RawData;
     use crate::data::process;
+    use crate::data::RawData;
     use crate::extraction::extractor::Extractor;
     use crate::fetching::FetchedRequestData;
-    use crate::format::AtraFileInformation;
-    use crate::toolkit::LanguageInformation;
     use crate::fetching::ResponseData;
+    use crate::format::AtraFileInformation;
     use crate::test_impls::InMemoryContext;
+    use crate::toolkit::LanguageInformation;
     use crate::url::UrlWithDepth;
 
     #[tokio::test]
