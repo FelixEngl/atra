@@ -38,7 +38,7 @@ pub enum OpenDBError {
 macro_rules! declare_column_families {
     ($($self:ident.$db:ident => $name: ident($imported_name: ident))+) => {
         $(
-            const $imported_name: &'static str = $crate::rocksdb_ext::$imported_name;
+            const $imported_name: &'static str = $crate::toolkit::rocksdb_ext::$imported_name;
             fn $name(&$self) -> std::sync::Arc<rocksdb::BoundColumnFamily> {
                 unsafe{$self.$db.cf_handle(Self::$imported_name).unwrap_unchecked()}
             }
@@ -52,7 +52,7 @@ macro_rules! db_health_check {
         $(
             if $db.cf_handle($handle_name).is_none() {
                 if cfg!(test) {
-                    $db.create_cf($handle_name, &$crate::rocksdb_ext::$init()).expect(
+                    $db.create_cf($handle_name, &$crate::toolkit::rocksdb_ext::$init()).expect(
                         format!("Handle {} was not found: '{}'", $handle_name, $message).as_str()
                     );
                 } else {

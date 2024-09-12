@@ -26,10 +26,10 @@ use crate::contexts::traits::*;
 use crate::crawl::db::{CrawlDB};
 use crate::seed::BasicSeed;
 use crate::crawl::{SlimCrawlResult};
-use crate::database_error::DatabaseError;
+use crate::database::DatabaseError;
 use crate::extraction::ExtractedLink;
 use crate::robots::{OffMemoryRobotsManager, ShareableRobotsManager};
-use crate::rocksdb_ext::{open_db};
+use crate::database::{open_db};
 use crate::io::fs::FileSystemAccess;
 use crate::web_graph::{WebGraphEntry, QueuingWebGraphManager, WebGraphManager};
 use crate::queue::RawAgingQueueFile;
@@ -64,17 +64,15 @@ pub struct LocalContext {
     ct_discovered_websites: AtomicUsize,
     stop_word_registry: Option<StopWordRegistry>,
     gdbr_filer_registry: Option<GdbrIdentifierRegistry<Tf, Idf, L2R_L2LOSS_SVR>>,
-    _graceful_shutdown_guard: UnsafeShutdownGuard
+    _graceful_shutdown_guard: UnsafeShutdownGuard,
 }
 
 impl LocalContext {
-
     /// Creates the state for Atra.
     pub async fn new(
         configs: Configs,
-        runtime_context: RuntimeContext
+        runtime_context: RuntimeContext,
     ) -> anyhow::Result<Self> {
-
         let output_path = configs.paths().root_path();
         if !output_path.exists() {
             std::fs::create_dir_all(output_path)?;
@@ -84,7 +82,7 @@ impl LocalContext {
             configs.session.collection.clone(),
             configs.session.crawl_job_id,
             configs.paths.root_path().to_path_buf(),
-            configs.paths.dir_big_files()
+            configs.paths.dir_big_files(),
         )?);
 
         let db = Arc::new(open_db(configs.paths().dir_database())?);
@@ -94,9 +92,8 @@ impl LocalContext {
         let web_graph_manager = QueuingWebGraphManager::new(
             configs.system().web_graph_cache_size,
             configs.paths().file_web_graph(),
-            &runtime_context
+            &runtime_context,
         )?;
-
 
 
         let stop_word_registry = configs.crawl.stopword_registry.as_ref().map(StopWordRegistry::initialize).transpose()?;
@@ -104,14 +101,14 @@ impl LocalContext {
         let url_queue = UrlQueueWrapper::open(configs.paths().file_queue())?;
         let blacklist = BlacklistManager::open(
             configs.paths().file_blacklist(),
-            runtime_context.shutdown_guard().clone()
+            runtime_context.shutdown_guard().clone(),
         )?;
 
         let gdbr_filer_registry = if let Some(ref cfg) = configs.crawl.gbdr {
             let helper = InitHelper {
                 gdbr_config: Some(cfg),
                 root: Some(&configs.paths.root_path()),
-                stop_word_registry: stop_word_registry.as_ref()
+                stop_word_registry: stop_word_registry.as_ref(),
             };
             GdbrIdentifierRegistry::new_from_config(&helper)?
         } else {
@@ -135,7 +132,7 @@ impl LocalContext {
                 links_net_manager: Arc::new(web_graph_manager),
                 stop_word_registry,
                 gdbr_filer_registry,
-                _graceful_shutdown_guard: runtime_context.shutdown_guard().clone()
+                _graceful_shutdown_guard: runtime_context.shutdown_guard().clone(),
             }
         )
     }
@@ -169,11 +166,11 @@ impl SupportsLinkSeeding for LocalContext {
         let mut for_insert = Vec::with_capacity(links.len() / 2);
         for link in links {
             match link {
-                ExtractedLink::OnSeed{url,..} => {
+                ExtractedLink::OnSeed { url, .. } => {
                     self.links_net_manager.add(WebGraphEntry::create_link(from, url)).await?;
                     for_insert.push(url.clone());
                 }
-                ExtractedLink::Outgoing{url,..} => {
+                ExtractedLink::Outgoing { url, .. } => {
                     self.links_net_manager.add(WebGraphEntry::create_link(from, url)).await?;
                     if self.get_link_state(url).await?.is_none() {
                         self.update_link_state(url, LinkStateType::Discovered).await?;
@@ -184,7 +181,7 @@ impl SupportsLinkSeeding for LocalContext {
                         }
                     }
                 }
-                ExtractedLink::Data{ .. } => {
+                ExtractedLink::Data { .. } => {
                     // todo data-urls: How to handle?
                     log::warn!("data-urls are at the moment unsupported.")
                 }
@@ -199,7 +196,6 @@ impl SupportsLinkSeeding for LocalContext {
 }
 
 impl SupportsLinkState for LocalContext {
-
     type Error = LinkStateDBError;
 
     fn crawled_websites(&self) -> Result<u64, LinkStateDBError> {
@@ -209,7 +205,7 @@ impl SupportsLinkState for LocalContext {
     /// Sets the state of the link
     async fn update_link_state(&self, url: &UrlWithDepth, state: LinkStateType) -> Result<(), LinkStateDBError> {
         match self.link_states.update_state(url, state) {
-            Err(LinkStateDBError::Database(DatabaseError::RecoverableFailure{..})) => {
+            Err(LinkStateDBError::Database(DatabaseError::RecoverableFailure { .. })) => {
                 self.link_states.update_state(url, state)
             }
             escalate => escalate
@@ -217,15 +213,14 @@ impl SupportsLinkState for LocalContext {
     }
 
 
-
     /// Sets the state of the link with a payload
     async fn update_link_state_with_payload(&self, url: &UrlWithDepth, state: LinkStateType, payload: Vec<u8>) -> Result<(), LinkStateDBError> {
         let linkstate = state.into_update(
             url,
-            Some(payload)
+            Some(payload),
         );
         match self.link_states.upsert_state(url, &linkstate) {
-            Err(LinkStateDBError::Database(DatabaseError::RecoverableFailure{..})) => {
+            Err(LinkStateDBError::Database(DatabaseError::RecoverableFailure { .. })) => {
                 self.link_states.upsert_state(url, &linkstate)
             }
             escalate => escalate
@@ -235,7 +230,7 @@ impl SupportsLinkState for LocalContext {
     /// Gets the state of the current url
     async fn get_link_state(&self, url: &UrlWithDepth) -> Result<Option<LinkState>, LinkStateDBError> {
         match self.link_states.get_state(url) {
-            Err(LinkStateDBError::Database(DatabaseError::RecoverableFailure{..})) => {
+            Err(LinkStateDBError::Database(DatabaseError::RecoverableFailure { .. })) => {
                 self.link_states.get_state(url)
             }
             escalate => escalate
@@ -246,14 +241,14 @@ impl SupportsLinkState for LocalContext {
         let lock = self.last_scan_over_link_states.read().await;
         if let Some(value) = lock.as_ref() {
             if OffsetDateTime::now_utc() - value.1 <= max_age {
-                return value.0
+                return value.0;
             }
         }
         drop(lock);
         let mut lock = self.last_scan_over_link_states.write().await;
         if let Some(value) = lock.as_ref() {
             if OffsetDateTime::now_utc() - value.1 <= max_age {
-                return value.0
+                return value.0;
             }
         }
         let found = self.link_states.scan_for_any_link_state(LinkStateType::Discovered..=LinkStateType::Crawled).await;
@@ -337,14 +332,14 @@ impl SupportsSlimCrawlResults for LocalContext {
 
     async fn retrieve_slim_crawled_website(&self, url: &UrlWithDepth) -> Result<Option<SlimCrawlResult>, DatabaseError> {
         match self.crawled_data.get(url) {
-            Err(DatabaseError::RecoverableFailure{..}) => self.crawled_data.get(url),
+            Err(DatabaseError::RecoverableFailure { .. }) => self.crawled_data.get(url),
             pipe => pipe
         }
     }
 
     async fn store_slim_crawled_website(&self, slim: SlimCrawlResult) -> Result<(), DatabaseError> {
         match self.crawled_data.add(&slim) {
-            Err(DatabaseError::RecoverableFailure{..}) => self.crawled_data.add(&slim),
+            Err(DatabaseError::RecoverableFailure { .. }) => self.crawled_data.add(&slim),
             pipe => pipe
         }
     }

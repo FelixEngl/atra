@@ -1,6 +1,6 @@
 use thiserror::Error;
 use crate::crawl::ErrorConsumer;
-use crate::database_error::DatabaseError;
+use crate::database::DatabaseError;
 use crate::warc_ext::{ReaderError, WriterError};
 
 #[derive(Debug, Error)]

@@ -35,20 +35,19 @@ mod test {
     use time::OffsetDateTime;
     use encoding_rs;
     use crate::crawl::CrawlResult;
-    use crate::crawl::result::CrawlResult;
     use crate::data::RawVecData;
     use crate::fetching::FetchedRequestData;
     use crate::response::ResponseData;
     use crate::format::AtraFileInformation;
     use crate::format::mime::MimeType;
     use crate::format::supported::InterpretedProcessibleFileFormat;
-    use crate::language_detection::LanguageInformation;
+    use crate::toolkit::LanguageInformation;
     use crate::url::UrlWithDepth;
     use crate::warc_ext::{write_warc};
     use crate::warc_ext::special_writer::MockSpecialWarcWriter;
 
     #[test]
-    fn can_write_html(){
+    fn can_write_html() {
         const HTML_DATA: &str = "<html><body>Hello World!</body></html>";
         let result = CrawlResult::new(
             OffsetDateTime::now_utc(),
@@ -59,7 +58,7 @@ mod test {
                     StatusCode::OK,
                     None,
                     None,
-                    false
+                    false,
                 ),
                 UrlWithDepth::from_seed("https://www.google.de/0").unwrap(),
             ),
@@ -68,9 +67,9 @@ mod test {
             AtraFileInformation::new(
                 InterpretedProcessibleFileFormat::HTML,
                 Some(MimeType::new_single(mime::TEXT_HTML_UTF_8)),
-                None
+                None,
             ),
-            Some(LanguageInformation::ENG)
+            Some(LanguageInformation::ENG),
         );
 
         let mut special = MockSpecialWarcWriter::new();
@@ -111,11 +110,8 @@ mod test {
     }
 
 
-
-
-
     #[test]
-    fn can_write_base64(){
+    fn can_write_base64() {
         const HTML_DATA: &str = "<html><body>Hello World! WARBLGARBL</body></html>";
         let result = CrawlResult::new(
             OffsetDateTime::now_utc(),
@@ -126,7 +122,7 @@ mod test {
                     StatusCode::OK,
                     None,
                     None,
-                    false
+                    false,
                 ),
                 UrlWithDepth::from_seed("https://www.google.de/0").unwrap(),
             ),
@@ -135,9 +131,9 @@ mod test {
             AtraFileInformation::new(
                 InterpretedProcessibleFileFormat::Unknown,
                 None,
-                None
+                None,
             ),
-            Some(LanguageInformation::ENG)
+            Some(LanguageInformation::ENG),
         );
 
         let mut special = MockSpecialWarcWriter::new();

@@ -21,7 +21,7 @@ use log::LevelFilter;
 use crate::config::Configs;
 
 /// Configure the logging
-pub fn configure_logging(configs: &Configs){
+pub fn configure_logging(configs: &Configs) {
     // todo: improve by adding custom logging
     // see: https://docs.rs/log4rs/latest/log4rs/
     // https://docs.rs/log4rs/latest/log4rs/encode/pattern/index.html
@@ -35,7 +35,7 @@ pub fn configure_logging(configs: &Configs){
             .build(configs.paths.root_path().join("out.log"))
             .unwrap();
         config.appender(Appender::builder().build("out", Box::new(file_logger)))
-    } else{
+    } else {
         let console_logger = ConsoleAppender::builder()
             .encoder(Box::new(PatternEncoder::new("{l}@Thread{I} - {d} - {m}{n}")))
             .build();

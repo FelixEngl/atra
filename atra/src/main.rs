@@ -26,10 +26,8 @@ mod client;
 mod application;
 mod logging;
 mod web_graph;
-mod rocksdb_ext;
 mod response;
 mod link_state;
-mod database_error;
 mod url;
 mod toolkit;
 mod sync;
@@ -53,6 +51,7 @@ mod test_impls;
 mod data;
 mod warc_ext;
 mod seed;
+mod database;
 
 // Bare metal platforms usually have very small amounts of RAM
 // (in the order of hundreds of KB)

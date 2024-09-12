@@ -12,23 +12,9 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-pub mod utf8;
-pub mod selectors;
-pub mod domains;
-pub mod digest;
-pub mod isolang_ext;
-pub mod header_map_extensions;
-mod language_detection;
-pub mod serde_ext;
+mod rocksdb_ext;
 
-pub use language_detection::*;
+mod database_error;
 
-
-/// Compare two optionals by a function.
-pub fn comp_opt<T, F: FnOnce(T, T) -> bool>(a: Option<T>, b: Option<T>, f: F) -> bool {
-    match (a, b) {
-        (Some(a), Some(b)) => f(a, b),
-        (None, None) => true,
-        _ => false
-    }
-}
+pub use database_error::*;
+pub use rocksdb_ext::*;

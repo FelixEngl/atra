@@ -62,7 +62,7 @@ impl ResponseData {
         url: UrlWithDepth,
         headers: Option<HeaderMap>,
         status_code: StatusCode,
-        chrome_page: Option<chromiumoxide::Page>
+        chrome_page: Option<chromiumoxide::Page>,
     ) -> Self {
         Self {
             content,
@@ -70,7 +70,7 @@ impl ResponseData {
             headers,
             status_code,
             final_redirect_destination,
-            chrome_page
+            chrome_page,
         }
     }
 
@@ -94,7 +94,7 @@ impl ResponseData {
 
     /// Returns the parsed url
     pub fn get_url_parsed(&self) -> &AtraUri {
-        return &self.url.url()
+        return &self.url.url();
     }
 
     /// Returns the url used after resolving all redirects

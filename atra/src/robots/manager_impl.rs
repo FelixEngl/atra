@@ -23,8 +23,8 @@ use tokio::task::yield_now;
 use crate::client::Client;
 use crate::robots::{CachedRobots, RobotsError, RobotsManager};
 use crate::{db_health_check, declare_column_families};
-use crate::database_error::DBActionType::{Delete, Read, Write};
-use crate::database_error::RawDatabaseError;
+use crate::database::DBActionType::{Delete, Read, Write};
+use crate::database::RawDatabaseError;
 use crate::url::{AtraOriginProvider, AtraUrlOrigin};
 use crate::url::UrlWithDepth;
 
@@ -32,7 +32,7 @@ use crate::url::UrlWithDepth;
 #[derive(Debug, Clone)]
 pub enum ShareableRobotsManager {
     InMemory(Arc<InMemoryRobotsManager>),
-    OffMemory(Arc<OffMemoryRobotsManager>)
+    OffMemory(Arc<OffMemoryRobotsManager>),
 }
 
 impl RobotsManager for ShareableRobotsManager {
@@ -75,7 +75,7 @@ impl From<InMemoryRobotsManager> for ShareableRobotsManager {
 /// Ideal for smaller crawls
 #[derive(Debug, Default)]
 pub struct InMemoryRobotsManager {
-    cache: tokio::sync::RwLock<HashMap<AtraUrlOrigin, Arc<CachedRobots>>>
+    cache: tokio::sync::RwLock<HashMap<AtraUrlOrigin, Arc<CachedRobots>>>,
 }
 
 impl InMemoryRobotsManager {
@@ -111,7 +111,7 @@ impl RobotsManager for InMemoryRobotsManager {
 
     async fn get_or_retrieve(&self, client: &Client, agent: &str, url: &UrlWithDepth, max_age: Option<&Duration>) -> Result<Arc<CachedRobots>, RobotsError> {
         if let Some(found) = self.get(agent, url, max_age).await? {
-            return Ok(found)
+            return Ok(found);
         }
         // Later used but cheaper than downloading and then recognizing invalidity for manager.
         let origin = url.atra_origin().ok_or(RobotsError::NoDomainForUrl)?;
@@ -124,19 +124,19 @@ impl RobotsManager for InMemoryRobotsManager {
             if status_code.is_client_error() || status_code.is_server_error() {
                 CachedRobots::NoRobots {
                     retrieved_at,
-                    status_code
+                    status_code,
                 }
             } else {
                 let robot = Robot::new(agent, result.as_ref()).map_err(RobotsError::InvalidRobotsTxt)?;
                 CachedRobots::HasRobots {
                     robot,
-                    retrieved_at
+                    retrieved_at,
                 }
             }
         } else {
             CachedRobots::NoRobots {
                 retrieved_at,
-                status_code
+                status_code,
             }
         };
 
@@ -160,16 +160,14 @@ impl RobotsManager for InMemoryRobotsManager {
 }
 
 
-
 /// A manager for robots.txt, threadsafe, with some caching
 #[derive(Debug)]
 pub struct OffMemoryRobotsManager {
     db: Arc<DB>,
-    cache: moka::future::Cache<AtraUrlOrigin, Arc<CachedRobots>>
+    cache: moka::future::Cache<AtraUrlOrigin, Arc<CachedRobots>>,
 }
 
 impl OffMemoryRobotsManager {
-
     declare_column_families! {
         self.db => cf_handle(ROBOTS_TXT_DB_CF)
     }
@@ -186,7 +184,7 @@ impl OffMemoryRobotsManager {
         Ok(
             Self {
                 db,
-                cache: moka::future::Cache::new(cache_size.get() as u64)
+                cache: moka::future::Cache::new(cache_size.get() as u64),
             }
         )
     }
@@ -194,7 +192,7 @@ impl OffMemoryRobotsManager {
     async fn _set_cache(&self, key: AtraUrlOrigin, retrieved: CachedRobots) -> Arc<CachedRobots> {
         if let Some(associated) = self.cache.get(&key).await {
             if retrieved.retrieved_at() < associated.retrieved_at() {
-                return associated
+                return associated;
             }
         };
         let new = Arc::new(retrieved);
@@ -206,17 +204,17 @@ impl OffMemoryRobotsManager {
         &self,
         key: &AtraUrlOrigin,
         now: OffsetDateTime,
-        max_age: Option<&Duration>
+        max_age: Option<&Duration>,
     ) -> Option<Arc<CachedRobots>> {
         if let Some(found) = self.cache.get(&key).await {
             log::trace!("Robots-Cache-Hit: {:?}", key);
             if let Some(max_age) = max_age {
                 if (now - found.retrieved_at()).le(max_age) {
                     let found = found.clone();
-                    return Some(found)
+                    return Some(found);
                 }
             } else {
-                return Some(found)
+                return Some(found);
             }
         }
         None
@@ -227,7 +225,7 @@ impl OffMemoryRobotsManager {
         agent: &str,
         key: &AtraUrlOrigin,
         now: OffsetDateTime,
-        max_age: Option<&Duration>
+        max_age: Option<&Duration>,
     ) -> Result<Option<CachedRobots>, RobotsError> {
         let cf = self.cf_handle();
         self._get_db0(
@@ -235,7 +233,7 @@ impl OffMemoryRobotsManager {
             key,
             now,
             max_age,
-            &cf
+            &cf,
         )
     }
 
@@ -246,10 +244,10 @@ impl OffMemoryRobotsManager {
         key: &AtraUrlOrigin,
         url: &UrlWithDepth,
         now: OffsetDateTime,
-        max_age: Option<&Duration>
+        max_age: Option<&Duration>,
     ) -> Result<CachedRobots, RobotsError> {
-        if let Some(found) =  self._get_db0(agent, key, now, max_age, &self.cf_handle())? {
-            return Ok(found)
+        if let Some(found) = self._get_db0(agent, key, now, max_age, &self.cf_handle())? {
+            return Ok(found);
         }
 
         let result = client.get(&get_robots_url(&url.as_str())?).send().await?;
@@ -259,32 +257,32 @@ impl OffMemoryRobotsManager {
         if status_code.is_client_error() || status_code.is_server_error() {
             return Ok(CachedRobots::NoRobots {
                 retrieved_at,
-                status_code
-            })
+                status_code,
+            });
         }
 
         let result = result.bytes().await;
 
         let result = match result {
-            Ok(result) => {result}
+            Ok(result) => { result }
             _ => {
                 return Ok(CachedRobots::NoRobots {
                     retrieved_at,
-                    status_code
+                    status_code,
                 })
             }
         };
 
-        let bytes = BytesWithAge{
+        let bytes = BytesWithAge {
             bytes: result.as_ref(),
-            retrieved_at
+            retrieved_at,
         };
         let value = bincode::serialize(&bytes)?;
         self.db.put_cf(&self.cf_handle(), key.as_bytes(), &value).enrich_with_entry(
             Self::ROBOTS_TXT_DB_CF,
             Write,
             key.as_bytes(),
-            &value
+            &value,
         )?;
         drop(value);
         yield_now().await;
@@ -292,7 +290,7 @@ impl OffMemoryRobotsManager {
         let robot = Robot::new(agent, result.as_ref()).map_err(RobotsError::InvalidRobotsTxt)?;
         return Ok(CachedRobots::HasRobots {
             robot,
-            retrieved_at
+            retrieved_at,
         });
     }
 
@@ -302,12 +300,12 @@ impl OffMemoryRobotsManager {
         key: &AtraUrlOrigin,
         now: OffsetDateTime,
         max_age: Option<&Duration>,
-        cf: &'a Arc<BoundColumnFamily<'a>>
+        cf: &'a Arc<BoundColumnFamily<'a>>,
     ) -> Result<Option<CachedRobots>, RobotsError> {
         let result = self.db.get_pinned_cf(cf, key.as_bytes()).enrich_without_entry(
             Self::ROBOTS_TXT_DB_CF,
             Read,
-            key.as_bytes()
+            key.as_bytes(),
         )?;
         if let Some(result) = result {
             let found: BytesWithAge = bincode::deserialize(&result)?;
@@ -316,21 +314,21 @@ impl OffMemoryRobotsManager {
                     let robot = Robot::new(agent, found.bytes).map_err(RobotsError::InvalidRobotsTxt)?;
                     return Ok(Some(CachedRobots::HasRobots {
                         robot,
-                        retrieved_at: found.retrieved_at
+                        retrieved_at: found.retrieved_at,
                     }));
                 } else {
                     drop(result);
                     self.db.delete_cf(cf, key.as_bytes()).enrich_without_entry(
                         Self::ROBOTS_TXT_DB_CF,
                         Delete,
-                        key.as_bytes()
+                        key.as_bytes(),
                     )?;
                 }
             } else {
                 let robot = Robot::new(agent, found.bytes).map_err(RobotsError::InvalidRobotsTxt)?;
                 return Ok(Some(CachedRobots::HasRobots {
                     robot,
-                    retrieved_at: found.retrieved_at
+                    retrieved_at: found.retrieved_at,
                 }));
             }
         }
@@ -350,7 +348,7 @@ impl RobotsManager for OffMemoryRobotsManager {
         let key = url.url().atra_origin().ok_or(RobotsError::NoDomainForUrl)?;
         let found = self._get_cached(&key, now.clone(), max_age.clone()).await;
         if found.is_some() {
-            return Ok(found)
+            return Ok(found);
         }
         let found = self._get_db(agent, &key, now, max_age.clone()).await?;
         if let Some(found) = found {
@@ -380,7 +378,7 @@ impl RobotsManager for OffMemoryRobotsManager {
 #[derive(Debug, Serialize, Deserialize)]
 struct BytesWithAge<'a> {
     bytes: &'a [u8],
-    retrieved_at: OffsetDateTime
+    retrieved_at: OffsetDateTime,
 }
 
 #[cfg(test)]
@@ -390,10 +388,10 @@ mod test {
     use rocksdb::Options;
     use scopeguard::defer;
     use crate::client::ClientBuilder;
-    use crate::system::DEFAULT_CACHE_SIZE_ROBOTS;
+    use crate::config::system::DEFAULT_CACHE_SIZE_ROBOTS;
     use crate::robots::{RobotsManager, OffMemoryRobotsManager};
     use crate::url::UrlWithDepth;
-    use crate::rocksdb_ext::{destroy_db, open_db};
+    use crate::database::{destroy_db, open_db};
 
     #[tokio::test]
     async fn can_manage_a_robots_txt() {
@@ -409,7 +407,7 @@ mod test {
 
         let manager = OffMemoryRobotsManager::new(
             db,
-            DEFAULT_CACHE_SIZE_ROBOTS
+            DEFAULT_CACHE_SIZE_ROBOTS,
         ).expect("create the manager");
 
         const USER_AGENT: &'static str = "test_crawl";
@@ -432,7 +430,6 @@ mod test {
         let robots = manager.get_or_retrieve(&client, USER_AGENT, &target_url, None).await.unwrap();
         println!("with_cache: {:?}", Instant::now() - now);
         println!("{:?}", robots);
-
     }
 
     #[tokio::test]
@@ -463,6 +460,5 @@ mod test {
         let robots = manager.get_or_retrieve(&client, USER_AGENT, &target_url, None).await.unwrap();
         println!("with_cache: {:?}", Instant::now() - now);
         println!("{:?}", robots);
-
     }
 }

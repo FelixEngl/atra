@@ -35,19 +35,19 @@ use crate::runtime::{RuntimeContext, AtraHandleOption};
 pub enum WebGraphEntry {
     Seed {
         origin: AtraUrlOrigin,
-        seed: AtraUri
+        seed: AtraUri,
     },
     Link {
         from: AtraUri,
-        to: AtraUri
-    }
+        to: AtraUri,
+    },
 }
 
 impl WebGraphEntry {
     pub fn create_link(from: &UrlWithDepth, to: &UrlWithDepth) -> Self {
         Self::Link {
             from: from.url.clone(),
-            to: to.url.clone()
+            to: to.url.clone(),
         }
     }
 
@@ -110,7 +110,6 @@ impl EntryLineConsumer for Vec<String> {
 }
 
 
-
 #[derive(Debug, Error)]
 pub enum LinkNetError {
     #[error(transparent)]
@@ -129,12 +128,12 @@ pub trait WebGraphManager {
 }
 
 /// The default size for a links cache. Usually 10k links are cached.
-pub const DEFAULT_CACHE_SIZE_WEB_GRAPH: NonZeroUsize = unsafe{NonZeroUsize::new_unchecked(20_000)};
+pub const DEFAULT_CACHE_SIZE_WEB_GRAPH: NonZeroUsize = unsafe { NonZeroUsize::new_unchecked(20_000) };
 
 /// A link net manager with a backing file.
 #[derive(Debug)]
 pub struct QueuingWebGraphManager {
-    queue_in: Sender<WebGraphEntry>
+    queue_in: Sender<WebGraphEntry>,
 }
 
 impl QueuingWebGraphManager {
@@ -144,7 +143,6 @@ impl QueuingWebGraphManager {
         path: impl AsRef<Path>,
         shutdown_and_handle: &RuntimeContext,
     ) -> Result<Self, LinkNetError> {
-
         let p = path.as_ref();
         if let Some(parent) = p.parent() {
             std::fs::create_dir_all(parent)?;
@@ -160,7 +158,7 @@ impl QueuingWebGraphManager {
         let meta = file.metadata()?;
 
         if !meta.is_file() {
-            return Err(LinkNetError::IOError(io::Error::from(ErrorKind::Unsupported)))
+            return Err(LinkNetError::IOError(io::Error::from(ErrorKind::Unsupported)));
         }
 
 
@@ -180,7 +178,7 @@ impl QueuingWebGraphManager {
                 }
             }
             if !graph_prefix || !domain_prefix || !domain_label_prefix || !rnfs_prefix {
-                return Err(LinkNetError::InvalidFile(path.as_ref().as_os_str().to_os_string()))
+                return Err(LinkNetError::InvalidFile(path.as_ref().as_os_str().to_os_string()));
             }
         } else {
             writeln!(&mut file, "@prefix : <http://atra.de/graph#> .").unwrap();
@@ -241,21 +239,19 @@ impl QueuingWebGraphManager {
 
         Ok(Self { queue_in })
     }
-
 }
 
 impl WebGraphManager for QueuingWebGraphManager {
-
     fn is_healthy(&self) -> bool {
         !self.queue_in.is_closed()
     }
 
     async fn add(&self, link_net_entry: WebGraphEntry) -> Result<(), LinkNetError> {
         match self.queue_in.send(link_net_entry).await {
-            Ok(_) => {return Ok(())}
+            Ok(_) => { return Ok(()) }
             Err(SendError(value)) => {
                 log::error!("Failed to write {:?} to the external file", value);
-                return Err(LinkNetError::SendError(value))
+                return Err(LinkNetError::SendError(value));
             }
         }
     }
@@ -278,7 +274,7 @@ mod test {
     use crate::url::AtraUri;
 
     #[tokio::test]
-    async fn can_write_propery(){
+    async fn can_write_propery() {
         scopeguard::defer! {
             let _ = std::fs::remove_file(Path::new("./atra_data/example.ttl"));
         }
@@ -302,8 +298,8 @@ mod test {
             "./atra_data/example.ttl",
             &RuntimeContext::new(
                 UnsafeShutdownGuard::Guarded(b.into_inner().1),
-                OptionalAtraHandle::None
-            )
+                OptionalAtraHandle::None,
+            ),
         ).unwrap());
         let barrier = Arc::new(Barrier::new(20));
         let mut handles = JoinSet::new();
@@ -312,7 +308,7 @@ mod test {
             let w = writer.clone();
             let entry = WebGraphEntry::Link {
                 from: (format!("http://www.test.de/{i}").parse::<AtraUri>().unwrap()),
-                to: (format!("http://www.test.de/{}", i+1).parse::<AtraUri>().unwrap()),
+                to: (format!("http://www.test.de/{}", i + 1).parse::<AtraUri>().unwrap()),
             };
             handles.spawn(
                 async move {

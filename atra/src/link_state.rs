@@ -26,10 +26,10 @@ use num_enum::FromPrimitive;
 use strum::{Display, EnumIs};
 use strum::AsRefStr;
 use tokio::task::yield_now;
+use crate::database::{DatabaseError, DBActionType, RawDatabaseError};
+use crate::database::DBActionType::{Merge, Read, Write};
 use crate::{db_health_check, declare_column_families};
-use crate::database_error::{DatabaseError, DBActionType, RawDatabaseError};
-use crate::database_error::DBActionType::{Merge, Read, Write};
-use crate::rocksdb_ext::LINK_STATE_DB_CF;
+use crate::database::LINK_STATE_DB_CF;
 use crate::url::UrlWithDepth;
 
 /// The state of a link
@@ -39,7 +39,7 @@ pub struct LinkState {
     pub last_significant_typ: LinkStateType,
     pub timestamp: OffsetDateTime,
     pub depth: Depth,
-    pub payload: Option<Vec<u8>>
+    pub payload: Option<Vec<u8>>,
 }
 
 impl LinkState {
@@ -48,14 +48,14 @@ impl LinkState {
         last_significant_typ: LinkStateType,
         timestamp: OffsetDateTime,
         depth: Depth,
-        payload: Option<Vec<u8>>
+        payload: Option<Vec<u8>>,
     ) -> Self {
         Self {
             typ,
             last_significant_typ,
             timestamp,
             depth,
-            payload
+            payload,
         }
     }
 
@@ -64,14 +64,14 @@ impl LinkState {
         last_significant_typ: LinkStateType,
         timestamp: OffsetDateTime,
         depth: Depth,
-        payload: Vec<u8>
+        payload: Vec<u8>,
     ) -> Self {
         Self {
             typ,
             last_significant_typ,
             timestamp,
             depth,
-            payload: Some(payload)
+            payload: Some(payload),
         }
     }
 
@@ -86,7 +86,7 @@ impl LinkState {
             last_significant_typ,
             timestamp,
             depth,
-            payload: None
+            payload: None,
         }
     }
 
@@ -105,7 +105,23 @@ impl LinkState {
 }
 
 /// Describes the current state of an url.
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, IntoPrimitive, Eq, PartialEq, Ord, PartialOrd, FromPrimitive, Display, AsRefStr, Hash, EnumIs)]
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    Clone,
+    Copy,
+    IntoPrimitive,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    FromPrimitive,
+    Display,
+    AsRefStr,
+    Hash,
+    EnumIs
+)]
 #[repr(u8)]
 pub enum LinkStateType {
     /// An url was discovered
@@ -122,7 +138,7 @@ pub enum LinkStateType {
     Unset = u8::MAX - 1,
     /// An unknown type
     #[num_enum(catch_all)]
-    Unknown(u8)
+    Unknown(u8),
 }
 
 impl LinkStateType {
@@ -140,10 +156,9 @@ impl LinkStateType {
             Self::Unset,
             OffsetDateTime::now_utc(),
             url.depth().clone(),
-            payload
+            payload,
         )
     }
-
 }
 
 /// The errors when creating or writing a linkstate
@@ -158,9 +173,8 @@ pub enum LinkStateError {
     #[error("The marker {0} is unknown!")]
     IllegalMarker(u8),
     #[error(transparent)]
-    TimestampNotReconstructable(#[from] error::ComponentRange)
+    TimestampNotReconstructable(#[from] error::ComponentRange),
 }
-
 
 
 impl LinkState {
@@ -176,9 +190,9 @@ impl LinkState {
     }
 
     fn write_depth_descriptor(target: &mut [u8], depth: &Depth) {
-        (&mut target[Self::OFFSET_DEPTH..Self::OFFSET_DEPTH +8]).copy_from_slice(&depth.depth_on_website.to_be_bytes());
-        (&mut target[Self::OFFSET_DEPTH +8..Self::OFFSET_DEPTH +16]).copy_from_slice(&depth.distance_to_seed.to_be_bytes());
-        (&mut target[Self::OFFSET_DEPTH +16..Self::OFFSET_PAYLOAD]).copy_from_slice(&depth.total_distance_to_seed.to_be_bytes());
+        (&mut target[Self::OFFSET_DEPTH..Self::OFFSET_DEPTH + 8]).copy_from_slice(&depth.depth_on_website.to_be_bytes());
+        (&mut target[Self::OFFSET_DEPTH + 8..Self::OFFSET_DEPTH + 16]).copy_from_slice(&depth.distance_to_seed.to_be_bytes());
+        (&mut target[Self::OFFSET_DEPTH + 16..Self::OFFSET_PAYLOAD]).copy_from_slice(&depth.total_distance_to_seed.to_be_bytes());
     }
 
     pub fn as_db_entry(&self) -> SmallVec<[u8; Self::IDEAL_SIZE]> {
@@ -215,18 +229,18 @@ impl LinkState {
 
     pub fn read_timestamp(buffer: &[u8]) -> Result<OffsetDateTime, LinkStateError> {
         if buffer.len() < Self::OFFSET_DEPTH {
-            return Err(LinkStateError::BufferTooSmall(Self::OFFSET_DEPTH, buffer.len()))
+            return Err(LinkStateError::BufferTooSmall(Self::OFFSET_DEPTH, buffer.len()));
         }
         Ok(OffsetDateTime::from_unix_timestamp_nanos(i128::from_be_bytes(buffer[Self::OFFSET_TIME..Self::OFFSET_DEPTH].try_into()?))?)
     }
 
     pub fn read_depth_desc(buffer: &[u8]) -> Result<Depth, LinkStateError> {
         if buffer.len() < Self::OFFSET_PAYLOAD {
-            return Err(LinkStateError::BufferTooSmall(Self::OFFSET_PAYLOAD, buffer.len()))
+            return Err(LinkStateError::BufferTooSmall(Self::OFFSET_PAYLOAD, buffer.len()));
         }
-        let depth_on_website = u64::from_be_bytes((&buffer[Self::OFFSET_DEPTH..Self::OFFSET_DEPTH +8]).try_into()?);
-        let distance_to_seed = u64::from_be_bytes((&buffer[Self::OFFSET_DEPTH +8..Self::OFFSET_DEPTH +16]).try_into()?);
-        let total_distance_to_seed = u64::from_be_bytes((&buffer[Self::OFFSET_DEPTH +16..Self::OFFSET_PAYLOAD]).try_into()?);
+        let depth_on_website = u64::from_be_bytes((&buffer[Self::OFFSET_DEPTH..Self::OFFSET_DEPTH + 8]).try_into()?);
+        let distance_to_seed = u64::from_be_bytes((&buffer[Self::OFFSET_DEPTH + 8..Self::OFFSET_DEPTH + 16]).try_into()?);
+        let total_distance_to_seed = u64::from_be_bytes((&buffer[Self::OFFSET_DEPTH + 16..Self::OFFSET_PAYLOAD]).try_into()?);
         Ok(Depth::new(depth_on_website, distance_to_seed, total_distance_to_seed))
     }
 
@@ -251,7 +265,7 @@ impl LinkState {
                 depth,
                 timestamp,
                 typ,
-                last_significant_typ
+                last_significant_typ,
             }
         )
     }
@@ -304,7 +318,6 @@ pub struct LinkStateDB {
 
 
 impl LinkStateDB {
-
     declare_column_families! {
         self.db => cf_handle(LINK_STATE_DB_CF)
     }
@@ -326,7 +339,7 @@ impl LinkStateDB {
             Self::LINK_STATE_DB_CF,
             Write,
             url,
-            &url_state
+            &url_state,
         )?)
     }
 
@@ -349,12 +362,12 @@ impl LinkStateDB {
             self.db.merge_cf(
                 cf,
                 url,
-                &url_state
+                &url_state,
             ).enrich_with_entry(
                 Self::LINK_STATE_DB_CF,
                 Merge,
                 url,
-                &url_state
+                &url_state,
             )?
         )
     }
@@ -384,7 +397,7 @@ impl LinkStateDB {
                 match LinkState::read_type(value) {
                     Ok(ref found) => {
                         if states.contains(found) {
-                            return true
+                            return true;
                         }
                     }
                     Err(_) => {}
@@ -393,14 +406,15 @@ impl LinkStateDB {
             iter.next();
             pos += 1;
         }
-        return false
+        return false;
     }
 
     // Returns a weak ref that is faster for R/W-Actions.
-    #[cfg(test)] pub fn weak(&self) -> WeakLinkStateDB {
+    #[cfg(test)]
+    pub fn weak(&self) -> WeakLinkStateDB {
         WeakLinkStateDB {
             state_db: self,
-            cf: self.cf_handle()
+            cf: self.cf_handle(),
         }
     }
 }
@@ -446,9 +460,9 @@ impl LinkStateManager for LinkStateDB {
 
 /// A weak ref to a db for faster working
 #[derive(Clone)]
-pub struct WeakLinkStateDB<'a>{
+pub struct WeakLinkStateDB<'a> {
     state_db: &'a LinkStateDB,
-    cf: Arc<BoundColumnFamily<'a>>
+    cf: Arc<BoundColumnFamily<'a>>,
 }
 
 impl<'a> LinkStateManager for WeakLinkStateDB<'a> {
@@ -479,9 +493,8 @@ mod test {
     use std::sync::Arc;
     use scopeguard::defer;
     use time::OffsetDateTime;
-    use crate::depth::Depth;
-    use crate::rocksdb_ext::{destroy_db, open_db};
-    use crate::url::UrlWithDepth;
+    use crate::database::{destroy_db, open_db};
+    use crate::url::{Depth, UrlWithDepth};
     use super::{LinkStateManager, LinkState, LinkStateDB, LinkStateType};
 
     #[test]
@@ -491,7 +504,7 @@ mod test {
             LinkStateType::Crawled,
             OffsetDateTime::now_utc().replace_nanosecond(0).unwrap(),
             Depth::ZERO + (1, 2, 3),
-            vec![1,2,3,4,5]
+            vec![1, 2, 3, 4, 5],
         );
 
         let x = new.as_db_entry();
@@ -502,23 +515,23 @@ mod test {
     }
 
     #[test]
-    fn can_initialize(){
+    fn can_initialize() {
         defer! {let  _ = destroy_db("test.db1");}
 
 
         let db = Arc::new(open_db("test.db1").unwrap());
-        let db = LinkStateDB::new(db, ).unwrap();
+        let db = LinkStateDB::new(db).unwrap();
 
         db.set_state(
             &UrlWithDepth::from_seed("https://google.de").unwrap(),
-            &LinkState::without_payload(LinkStateType::Discovered, LinkStateType::Discovered, OffsetDateTime::now_utc(), Depth::ZERO)
+            &LinkState::without_payload(LinkStateType::Discovered, LinkStateType::Discovered, OffsetDateTime::now_utc(), Depth::ZERO),
         ).unwrap();
 
         db.set_state(
             &UrlWithDepth::from_seed("https://amazon.de").unwrap(),
-            &LinkState::without_payload(LinkStateType::Crawled, LinkStateType::Discovered, OffsetDateTime::now_utc(), Depth::ZERO)
+            &LinkState::without_payload(LinkStateType::Crawled, LinkStateType::Discovered, OffsetDateTime::now_utc(), Depth::ZERO),
         ).unwrap();
-        
+
         db.upsert_state(
             &UrlWithDepth::from_seed("https://google.de").unwrap(),
             &LinkState::without_payload(LinkStateType::InternalError, LinkStateType::Discovered, OffsetDateTime::now_utc(), Depth::ZERO),
@@ -529,23 +542,23 @@ mod test {
     }
 
     #[test]
-    fn can_initialize_weak(){
+    fn can_initialize_weak() {
         defer! {let  _ = destroy_db("test.db2");}
 
         let db = Arc::new(open_db("test.db2").unwrap());
-        let db = LinkStateDB::new(db, ).unwrap();
+        let db = LinkStateDB::new(db).unwrap();
 
         {
             let db = db.weak();
 
             db.set_state(
                 &UrlWithDepth::from_seed("https://amazon.de").unwrap(),
-                &LinkState::without_payload(LinkStateType::Discovered, LinkStateType::Discovered, OffsetDateTime::now_utc(), Depth::ZERO)
+                &LinkState::without_payload(LinkStateType::Discovered, LinkStateType::Discovered, OffsetDateTime::now_utc(), Depth::ZERO),
             ).unwrap();
 
             db.set_state(
                 &UrlWithDepth::from_seed("https://google.de").unwrap(),
-                &LinkState::without_payload(LinkStateType::Crawled, LinkStateType::Discovered, OffsetDateTime::now_utc(), Depth::ZERO)
+                &LinkState::without_payload(LinkStateType::Crawled, LinkStateType::Discovered, OffsetDateTime::now_utc(), Depth::ZERO),
             ).unwrap();
         }
 
@@ -554,29 +567,29 @@ mod test {
     }
 
     #[test]
-    fn can_upset_properly(){
+    fn can_upset_properly() {
         defer! {let  _ = destroy_db("test.db3");}
 
         let db = Arc::new(open_db("test.db3").unwrap());
 
-        let db = LinkStateDB::new(db, ).unwrap();
+        let db = LinkStateDB::new(db).unwrap();
 
         {
             let db = db.weak();
 
             db.update_state(
                 &UrlWithDepth::from_seed("https://amazon.de").unwrap(),
-                LinkStateType::Discovered
+                LinkStateType::Discovered,
             ).unwrap();
 
             db.update_state(
                 &UrlWithDepth::from_seed("https://google.de").unwrap(),
-                LinkStateType::Discovered
+                LinkStateType::Discovered,
             ).unwrap();
 
             db.update_state(
                 &UrlWithDepth::from_seed("https://google.de").unwrap(),
-                LinkStateType::Crawled
+                LinkStateType::Crawled,
             ).unwrap();
 
             println!("Amazon: {:?}", db.get_state(&UrlWithDepth::from_seed("https://amazon.de").unwrap()));
