@@ -230,7 +230,7 @@ impl Atra {
                 let worker_count = worker.unwrap_or(num_cpus());
                 let barrier = Arc::new(WorkerBarrier::new(worker_count));
                 for i in 0..worker_count.get() {
-                    log::debug!("Spawn Worker: {i}");
+                    log::info!("Spawn Worker: {i}");
                     let b = barrier.clone();
                     let s = self.shutdown.clone();
                     let context = WorkerContext::create(i, context.clone()).await?;

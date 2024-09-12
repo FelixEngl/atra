@@ -89,6 +89,7 @@ mod test {
                 timeout: None,
                 agent: UserAgent::Custom("TestCrawl/Atra/v0.1.0".to_string()),
                 log_to_file: true,
+                delay: None
             }),
             generate_example_config: false,
         };

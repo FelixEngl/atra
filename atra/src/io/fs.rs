@@ -19,9 +19,11 @@ use crate::stores::warc::WarcFilePathProvider;
 use camino::{Utf8Path, Utf8PathBuf};
 use data_encoding::BASE64URL_NOPAD;
 use std::fmt::Debug;
+use std::hash::{Hash, Hasher};
 use std::io;
 use std::io::ErrorKind;
 use tokio::sync::Mutex;
+use twox_hash::xxh3::HasherExt;
 
 pub trait AtraFS {
     /// Creates a unique path to a fresh data file.
@@ -68,7 +70,7 @@ impl FileSystemAccess {
         }
 
         let path_provider_big_file = UniquePathProvider::new(big_file_folder).with_template(
-            file_name_template!(arg!@"url64" _ timestamp64 _ serial ".dat").unwrap(),
+            file_name_template!(arg!@"url" _ timestamp64 _ serial ".dat").unwrap(),
         );
 
         Ok(Self {
@@ -84,7 +86,9 @@ impl AtraFS for FileSystemAccess {
     /// Creates a unique path to a fresh data file.
     fn create_unique_path_for_dat_file(&self, url: &str) -> Utf8PathBuf {
         let mut args = FileNameTemplateArgs::with_capacity(1);
-        args.insert("url64", BASE64URL_NOPAD.encode(url.as_bytes()));
+        let mut hasher = twox_hash::xxh3::Hash128::default();
+        url.hash(&mut hasher);
+        args.insert("url", hasher.finish_ext().to_string());
         return self.big_file.provide_path_with_args(&args).unwrap();
     }
 

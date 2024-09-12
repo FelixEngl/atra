@@ -80,12 +80,21 @@ impl Configs {
     }
 
     pub fn discover_or_default() -> Result<Self, config::ConfigError> {
-        Config::builder()
+        match Config::builder()
             .add_source(config::File::with_name("./atra"))
+            .add_source(config::File::with_name("./atra_data/atra"))
             .add_source(config::File::with_name("./config"))
+            .add_source(config::File::with_name("./atra_data/config"))
             .add_source(config::Environment::with_prefix("ATRA").separator("."))
-            .build()?
-            .try_deserialize()
+            .build()
+        {
+            Ok(value) => {
+                value.try_deserialize()
+            }
+            Err(_) => {
+                Ok(Default::default())
+            }
+        }
     }
 }
 

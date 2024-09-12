@@ -24,6 +24,7 @@ use enum_iterator::all;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::HashSet;
+use std::fmt::{Display, Formatter};
 use strum::{Display, EnumString};
 /*
     To register a new extractor, create a extractor_decode_action_declaration
@@ -64,17 +65,17 @@ impl Extractor {
                         .await
                     {
                         Ok(value) => {
-                            log::debug!("Extracted {value} links with {extractor:?}.");
+                            log::debug!("Extracted {value} links with {extractor}.");
                         }
                         Err(err) => {
-                            log::error!("Failed the extractor with {:?}", err);
+                            log::warn!("Failed {extractor} for {} {} with: {}", response.0.url.url, response.1, err);
                         }
                     }
                 } else {
-                    log::debug!("Can not apply extractor because it was already used!")
+                    log::debug!("Can not apply {extractor} because it was already used!")
                 }
             } else {
-                log::debug!("{extractor:?} is not compatible with the data!")
+                log::debug!("{extractor} is not compatible with {} {}!", response.0.url.url, response.1)
             }
         }
     }
@@ -189,6 +190,12 @@ pub enum ApplyWhen {
 pub struct ExtractorCommand {
     extractor_method: ExtractorMethod,
     apply_when: ApplyWhen,
+}
+
+impl Display for ExtractorCommand {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} ({})", self.extractor_method, self.apply_when)
+    }
 }
 
 impl ExtractorCommand {

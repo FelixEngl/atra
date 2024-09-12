@@ -175,7 +175,7 @@ impl FromStr for UrlWithDepth {
 
 impl Display for UrlWithDepth {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({}, \"{}\")", self.depth, self.url)
+        write!(f, "(\"{}\", {})", self.url, self.depth)
     }
 }
 

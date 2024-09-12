@@ -25,14 +25,12 @@ pub enum CachedRobots {
         retrieved_at: OffsetDateTime,
     },
     NoRobots {
-        #[allow(dead_code)]
         status_code: StatusCode,
         retrieved_at: OffsetDateTime,
     },
 }
 
 impl CachedRobots {
-    #[allow(dead_code)]
     pub fn map<R, F>(&self, on_has_robot: F) -> Option<R>
     where
         F: FnOnce(&Robot) -> R,

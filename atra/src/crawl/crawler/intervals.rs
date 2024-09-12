@@ -66,8 +66,8 @@ impl<'a, R: RobotsInformation> InvervalManager<'a, R> {
                     log::trace!("Wait default {default}");
                     default.unsigned_abs()
                 } else {
-                    log::warn!("Fallback to 100ms");
-                    std::time::Duration::from_millis(100)
+                    log::warn!("Fallback delay 1000ms for {}", url);
+                    std::time::Duration::from_millis(1000)
                 };
                 self.registered_intervals
                     .insert(origin.clone(), tokio::time::interval(target_duration));

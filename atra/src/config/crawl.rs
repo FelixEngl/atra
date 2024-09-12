@@ -23,6 +23,7 @@ use reqwest::header::HeaderMap;
 use serde;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::num::NonZeroU64;
 use strum::Display;
 use strum::EnumString;
@@ -338,7 +339,7 @@ impl TryFrom<BudgetSettingsDef> for BudgetSetting {
 }
 
 /// The budget for the crawled website
-#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Display)]
 #[serde(try_from = "BudgetSettingsDef", into = "BudgetSettingsDef")]
 pub enum BudgetSetting {
     /// Only crawls the seed domains

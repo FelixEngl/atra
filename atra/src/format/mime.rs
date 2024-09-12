@@ -17,6 +17,7 @@ use crate::format::mime_serialize::for_vec;
 use crate::static_selectors;
 use chardetng::EncodingDetector;
 use core::str;
+use std::fmt::{Display, Formatter};
 use encoding_rs::Encoding;
 use itertools::Itertools;
 use mime::{Mime, MimeIter, Name, Params};
@@ -30,6 +31,12 @@ pub use mime::*;
 pub struct MimeType {
     #[serde(with = "for_vec")]
     types: Vec<Mime>,
+}
+
+impl Display for MimeType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Mime(\"{}\")", self.types.iter().map(|value| value.to_string()).join("\", \""))
+    }
 }
 
 macro_rules! create_fn {

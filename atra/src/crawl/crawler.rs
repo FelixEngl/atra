@@ -39,7 +39,7 @@ use crate::format::supported::InterpretedProcessibleFileFormat;
 use crate::format::AtraFileInformation;
 use crate::io::fs::AtraFS;
 use crate::link_state::LinkStateType;
-use crate::robots::{GeneralRobotsInformation, RobotsInformation};
+use crate::robots::{CachedRobots, GeneralRobotsInformation, RobotsError, RobotsInformation};
 use crate::runtime::ShutdownReceiver;
 use crate::seed::BasicSeed;
 use crate::toolkit::detect_language;
@@ -57,6 +57,7 @@ use smallvec::SmallVec;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Display;
 use std::fs::File;
+use std::future::Future;
 use std::io;
 use std::io::Write;
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -480,8 +481,6 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
             return Ok(());
         }
 
-        log::debug!("Start Crawling of {}", self.seed.url());
-
         let configured_robots = Arc::new(
             GeneralRobotsInformation::new(
                 context.get_robots_instance().await,
@@ -496,6 +495,8 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
             .budget
             .get_budget_for(&self.seed.origin())
             .clone();
+
+        log::info!("Seed: {}, {}", self.seed.url(), budget);
 
         let blacklist = context.get_blacklist().await;
 
@@ -637,6 +638,7 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
             if log::max_level() == LevelFilter::Trace {
                 log::trace!("Interval End: {}", OffsetDateTime::now_utc());
             }
+            log::info!("Crawl: {}", target);
             let url_str = target.as_str().into_owned();
             match crate::fetching::fetch_request(context, &self.client, &url_str).await {
                 Ok(page) => {

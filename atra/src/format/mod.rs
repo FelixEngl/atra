@@ -18,6 +18,7 @@ pub mod mime_ext;
 pub(crate) mod mime_serialize;
 pub mod supported;
 
+use std::fmt::{Display, Formatter};
 use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
 use crate::fetching::ResponseData;
 use crate::format::file_format_detection::{infer_file_formats, DetectedFileFormat};
@@ -90,5 +91,16 @@ impl AtraFileInformation {
         }
 
         MediaType::from_mime(self.format.fallback_mime_type_for_warc())
+    }
+}
+
+
+impl Display for AtraFileInformation {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "FileFormat({}, {}, {})",
+               self.format,
+               self.mime.as_ref().map(ToString::to_string).unwrap_or_default(),
+               self.detected.as_ref().map(|value| value.most_probable_file_format().to_string()).unwrap_or_default()
+        )
     }
 }

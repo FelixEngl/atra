@@ -28,6 +28,7 @@ use enum_iterator::Sequence;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read};
+use strum::Display;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -66,7 +67,7 @@ pub enum LinkExtractionSubError {
     Xlink(#[from] link_scraper::formats::xml::xlink::XLinkFormatError),
 }
 
-#[derive(Sequence, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Copy, Clone)]
+#[derive(Sequence, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, Copy, Clone, Display)]
 pub enum ExtractorMethod {
     #[serde(alias = "HTML_v1")]
     HtmlV1,
@@ -112,7 +113,7 @@ impl ExtractorMethod {
     where
         C: SupportsConfigs + SupportsGdbrRegistry,
     {
-        if self.is_compatible(page) {
+        if !self.is_compatible(page) {
             return Err(NotCompatible);
         }
         match self {

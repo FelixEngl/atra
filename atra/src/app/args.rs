@@ -60,6 +60,9 @@ pub enum RunMode {
         /// Timeout in seconds, if not set never time out.
         #[arg(short, long)]
         timeout: Option<f64>,
+        /// The delay in milliseconds.
+        #[arg(short = 'w',long)]
+        delay: Option<u64>,
         /// The log level of Atra
         #[arg(long, default_value_t = log::LevelFilter::Info)]
         log_level: log::LevelFilter,
@@ -90,7 +93,8 @@ pub enum RunMode {
         seeds: SeedDefinition,
     },
     // CLUSTER,
-    WELCOME,
+    /// Initializes Atra for Multi by creating the default config file.
+    INIT,
 }
 
 #[derive(Debug)]
@@ -112,18 +116,19 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
                 timeout,
                 log_level,
                 log_to_file,
+                delay
             } => {
                 let mut configs =
                     Configs::discover_or_default().expect("Expected some kind of config!");
 
                 configs.paths.root = configs.paths.root_path().join(format!(
                     "single_{}_{}",
-                    data_encoding::BASE32.encode(
+                    data_encoding::BASE64URL.encode(
                         &time::OffsetDateTime::now_utc()
                             .unix_timestamp_nanos()
                             .to_be_bytes()
                     ),
-                    data_encoding::BASE32.encode(&rand::random::<u64>().to_be_bytes()),
+                    data_encoding::BASE64URL.encode(&rand::random::<u64>().to_be_bytes()),
                 ));
 
                 configs.crawl.user_agent = agent;
@@ -148,6 +153,9 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
                     }
                 };
 
+
+                configs.crawl.delay = delay.map(|value| std::time::Duration::from_millis(value).try_into().ok()).flatten();
+
                 configs.system.log_level = log_level;
 
                 configs.system.log_to_file = log_to_file;
@@ -166,7 +174,9 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
                     None => Configs::discover_or_default(),
                     Some(path) => Configs::load_from(path),
                 }
-                .expect("Expected some kind of config!");
+                .unwrap_or_default();
+
+                println!("Session Info: {} - {} - {}", configs.session.service, configs.session.collection, configs.session.crawl_job_id);
 
                 configs.paths.root = configs.paths.root_path().join(format!(
                     "multi_{}_{}",
@@ -194,8 +204,30 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
                     configs,
                 )
             }
-            RunMode::WELCOME => {
+            RunMode::INIT => {
                 println!("{}\n\n{}\n", ATRA_WELCOME, ATRA_LOGO);
+                println!("Start creating the default config.");
+                let cfg = Configs::default();
+                let root = cfg.paths.root_path();
+                std::fs::create_dir_all(root).unwrap();
+                let path = root.join("config.json");
+                if path.exists() {
+                    println!("The default config already exists in {path}.\nDelete is before regenerating.")
+                } else {
+                    match File::options().create(true).write(true).open(&path) {
+                        Ok(file) => match serde_json::to_writer_pretty(BufWriter::new(file), &cfg) {
+                            Ok(_) => {}
+                            Err(err) => {
+                                println!("Failed to create the example file: {err}")
+                            }
+                        },
+                        Err(err) => {
+                            println!("Failed to create the example file: {err}")
+                        }
+                    }
+                    println!("Created the default config at {}.", path);
+                }
+
                 ConsumedArgs::Nothing
             }
         }
