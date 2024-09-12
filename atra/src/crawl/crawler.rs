@@ -1,16 +1,16 @@
-//Copyright 2024 Felix Engl
+// Copyright 2024 Felix Engl
 //
-//Licensed under the Apache License, Version 2.0 (the "License");
-//you may not use this file except in compliance with the License.
-//You may obtain a copy of the License at
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-//    http://www.apache.org/licenses/LICENSE-2.0
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-//Unless required by applicable law or agreed to in writing, software
-//distributed under the License is distributed on an "AS IS" BASIS,
-//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//See the License for the specific language governing permissions and
-//limitations under the License.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 mod intervals;
 pub(super) mod result;
@@ -935,6 +935,8 @@ mod test {
     use std::fmt::Debug;
     use std::sync::Arc;
     use time::Duration;
+    use crate::toolkit::header_map_extensions::optional_header_map;
+    use crate::toolkit::serde_ext::status_code;
 
     fn init() {
         // let stdout = ConsoleAppender::builder().build();
@@ -1057,7 +1059,7 @@ mod test {
         ));
 
         crawl
-            .crawl(&context, ShutdownPhantom)
+            .crawl::<_, _, anyhow::Error>(&context, ShutdownPhantom)
             .await
             .expect("Expected a positive result!");
 
@@ -1116,7 +1118,7 @@ mod test {
         );
 
         crawl
-            .crawl(&context, ShutdownPhantom)
+            .crawl::<_, _, anyhow::Error>(&context, ShutdownPhantom)
             .await
             .expect("Expected a positive result!");
     }
@@ -1177,7 +1179,7 @@ mod test {
                 .build(guard_with_seed.get_guarded_seed())
                 .await;
             log::trace!("Crawl Task");
-            crawl_task.crawl(&context, ShutdownPhantom).await.unwrap();
+            crawl_task.crawl::<_, _, anyhow::Error>(&context, ShutdownPhantom).await.unwrap();
             log::trace!("Continue");
         }
     }

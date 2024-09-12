@@ -1,36 +1,30 @@
-//Copyright 2024 Felix Engl
+// Copyright 2024 Felix Engl
 //
-//Licensed under the Apache License, Version 2.0 (the "License");
-//you may not use this file except in compliance with the License.
-//You may obtain a copy of the License at
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-//    http://www.apache.org/licenses/LICENSE-2.0
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-//Unless required by applicable law or agreed to in writing, software
-//distributed under the License is distributed on an "AS IS" BASIS,
-//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//See the License for the specific language governing permissions and
-//limitations under the License.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use crate::blacklist::PolyBlackList;
 use crate::config::Configs;
 use crate::contexts::local::LinkHandlingError;
 use crate::contexts::traits::*;
-use crate::contexts::Context;
-use crate::crawl::result::CrawlResult;
-use crate::crawl::seed::Seed;
-use crate::crawl::slim::{SlimCrawlResult, StoredDataHint};
-use crate::database_error::DatabaseError;
+use crate::contexts::{BaseContext, Context};
+use crate::database::DatabaseError;
 use crate::extraction::ExtractedLink;
 use crate::gdbr::identifier::GdbrIdentifierRegistry;
 use crate::io::fs::FileSystemAccess;
 use crate::link_state::{LinkState, LinkStateDBError, LinkStateType};
-use crate::origin::managers::InMemoryUrlGuardian;
-use crate::origin::AtraOriginProvider;
 use crate::queue::QueueError;
-use crate::raw::RawVecData;
 use crate::robots::{InMemoryRobotsManager, ShareableRobotsManager};
-use crate::url::atra_uri::AtraUri;
+use crate::url::{AtraOriginProvider, AtraUri};
 use crate::url::queue::{EnqueueCalled, UrlQueue, UrlQueueElement, UrlQueueElementWeak};
 use crate::url::UrlWithDepth;
 use crate::web_graph::{LinkNetError, WebGraphEntry, WebGraphManager};
@@ -45,6 +39,10 @@ use text_processing::tf_idf::{Idf, Tf};
 use time::OffsetDateTime;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::Mutex;
+use crate::crawl::{CrawlResult, SlimCrawlResult, StoredDataHint};
+use crate::data::RawVecData;
+use crate::seed::BasicSeed;
+use crate::url::guard::InMemoryUrlGuardian;
 
 #[derive(Debug)]
 pub struct InMemoryContext {
@@ -111,14 +109,22 @@ impl Default for InMemoryContext {
     }
 }
 
+impl BaseContext for InMemoryContext {}
+
 impl AsyncContext for InMemoryContext {}
+
+impl SupportsWorkerId for InMemoryContext {
+    fn worker_id(&self) -> usize {
+        0
+    }
+}
 
 impl Context for InMemoryContext {}
 
 impl SupportsLinkSeeding for InMemoryContext {
     type Error = LinkHandlingError;
 
-    async fn register_seed<S: Seed>(&self, seed: &S) -> Result<(), LinkHandlingError> {
+    async fn register_seed<S: BasicSeed>(&self, seed: &S) -> Result<(), LinkHandlingError> {
         self.link_net_manager
             .add(WebGraphEntry::create_seed(seed))
             .await?;
@@ -284,7 +290,7 @@ impl SupportsUrlQueue for InMemoryContext {
 }
 
 impl SupportsFileSystemAccess for InMemoryContext {
-    type FileSystem = ();
+    type FileSystem = FileSystemAccess;
 
     fn fs(&self) -> &FileSystemAccess {
         panic!("Not supported by in memory actions!")

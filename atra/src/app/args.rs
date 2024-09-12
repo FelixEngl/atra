@@ -1,31 +1,29 @@
-//Copyright 2024 Felix Engl
+// Copyright 2024. Felix Engl
 //
-//Licensed under the Apache License, Version 2.0 (the "License");
-//you may not use this file except in compliance with the License.
-//You may obtain a copy of the License at
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-//    http://www.apache.org/licenses/LICENSE-2.0
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-//Unless required by applicable law or agreed to in writing, software
-//distributed under the License is distributed on an "AS IS" BASIS,
-//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//See the License for the specific language governing permissions and
-//limitations under the License.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
-use std::collections::HashMap;
-use std::num::{NonZeroU64, NonZeroUsize};
+use std::fs::File;
+use std::io::{BufWriter, Write};
+use std::num::NonZeroUsize;
 use std::str::FromStr;
 
-use case_insensitive_string::CaseInsensitiveString;
 use clap::{Parser, Subcommand};
-use reqwest::header::{HeaderMap, HeaderValue};
 use time::Duration;
-use ubyte::ToByteUnit;
 
-use crate::application::ApplicationMode;
-use crate::config::crawl::{CookieSettings, RedirectPolicy, UserAgent};
+use crate::app::atra::ApplicationMode;
+use crate::app::constants::{ATRA_LOGO, ATRA_WELCOME, create_example_config};
 use crate::config::{BudgetSetting, Configs};
-use crate::extraction::extractor::Extractor;
+use crate::config::crawl::UserAgent;
 use crate::seed::SeedDefinition;
 
 #[derive(Parser, Debug, Default)]
@@ -92,6 +90,7 @@ pub enum RunMode {
         seeds: SeedDefinition,
     },
     // CLUSTER,
+    WELCOME
 }
 
 #[derive(Debug)]
@@ -195,113 +194,28 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
                     configs,
                 )
             }
+            RunMode::WELCOME => {
+                println!("{}\n\n{}\n", ATRA_WELCOME, ATRA_LOGO);
+                ConsumedArgs::Nothing
+            }
         }
     } else {
         if args.generate_example_config {
-            let mut cfg = Configs::default();
-
-            cfg.session.crawl_job_id = 0;
-            cfg.session.service = "MyServiceName".to_string();
-            cfg.session.collection = "MyCollection".to_string();
-
-            cfg.system.web_graph_cache_size = NonZeroUsize::new(20_000).unwrap();
-            cfg.system.max_file_size_in_memory = 100.megabytes().as_u64();
-            cfg.system.robots_cache_size = NonZeroUsize::new(50).unwrap();
-
-            cfg.crawl.user_agent = UserAgent::Custom("Atra/TestCrawl/<your email>".to_string());
-            cfg.crawl.respect_robots_txt = true;
-            cfg.crawl.respect_nofollow = true;
-            cfg.crawl.crawl_embedded_data = true;
-            cfg.crawl.crawl_javascript = true;
-            cfg.crawl.crawl_onclick_by_heuristic = true;
-            cfg.crawl.max_file_size = NonZeroU64::new(1.gigabytes().as_u64());
-            cfg.crawl.max_robots_age = Some(Duration::days(7));
-            cfg.crawl.ignore_sitemap = false;
-            cfg.crawl.subdomains = true;
-            cfg.crawl.cache = true;
-            cfg.crawl.use_cookies = true;
-
-            let mut cookies = CookieSettings::default();
-            cookies.default = Some("Cookie String".to_string());
-            let mut cookie_hash = HashMap::new();
-            cookie_hash.insert(
-                CaseInsensitiveString::new(b"example.com"),
-                "Cookie String".to_string(),
-            );
-            cookie_hash.insert(
-                CaseInsensitiveString::new(b"example.de"),
-                "Cookie String".to_string(),
-            );
-            cookies.per_host = Some(cookie_hash);
-            cfg.crawl.cookies = Some(cookies);
-
-            let mut header_map = HeaderMap::new();
-            header_map.insert(
-                reqwest::header::CONTENT_LENGTH,
-                HeaderValue::from_static("10_000"),
-            );
-            header_map.insert(
-                reqwest::header::CONTENT_TYPE,
-                HeaderValue::from_static("html/text"),
-            );
-            cfg.crawl.headers = Some(header_map);
-
-            cfg.crawl.proxies = Some(vec![
-                "www.example.com:2020".to_string(),
-                "www.example.com:2021".to_string(),
-            ]);
-            cfg.crawl.tld = true;
-
-            cfg.crawl.delay = Some(Duration::milliseconds(100));
-            cfg.crawl.budget.default = BudgetSetting::Normal {
-                depth: 3,
-                depth_on_website: 5,
-                recrawl_interval: Some(Duration::days(7)),
-                request_timeout: Some(Duration::seconds(10)),
-            };
-
-            let mut hash = HashMap::new();
-            hash.insert(
-                CaseInsensitiveString::new(b"example.com"),
-                BudgetSetting::Normal {
-                    depth: 3,
-                    depth_on_website: 5,
-                    recrawl_interval: Some(Duration::days(7)),
-                    request_timeout: Some(Duration::seconds(10)),
-                },
-            );
-
-            hash.insert(
-                CaseInsensitiveString::new(b"example.de"),
-                BudgetSetting::Absolute {
-                    depth: 3,
-                    recrawl_interval: Some(Duration::days(7)),
-                    request_timeout: Some(Duration::seconds(10)),
-                },
-            );
-
-            hash.insert(
-                CaseInsensitiveString::new(b"example.org"),
-                BudgetSetting::SeedOnly {
-                    depth_on_website: 5,
-                    recrawl_interval: Some(Duration::days(7)),
-                    request_timeout: Some(Duration::seconds(10)),
-                },
-            );
-
-            cfg.crawl.budget.per_host = Some(hash);
-
-            cfg.crawl.max_queue_age = 18;
-
-            cfg.crawl.redirect_limit = 20;
-
-            cfg.crawl.redirect_policy = RedirectPolicy::Strict;
-
-            cfg.crawl.accept_invalid_certs = true;
-            cfg.crawl.link_extractors = Extractor::default();
-
-            cfg.crawl.decode_big_files_up_to = Some(200.megabytes().as_u64());
-
+            let cfg = create_example_config();
+            let root = cfg.paths.root_path();
+            match File::open(root.join("example_config.json")) {
+                Ok(file) => {
+                    match serde_json::to_writer(BufWriter::new(file), &cfg) {
+                        Ok(_) => {}
+                        Err(err) => {
+                            println!("Failed to create the example file: {err}")
+                        }
+                    }
+                }
+                Err(err) => {
+                    println!("Failed to create the example file: {err}")
+                }
+            }
             ConsumedArgs::Nothing
         } else {
             ConsumedArgs::Nothing

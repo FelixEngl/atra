@@ -22,11 +22,11 @@ Atra is a novel web crawling solution, implemented in Rust, designed with
 the primary goal of scraping websites as comprehensively
 as possible, while ensuring ease of use and accessibility.
 
-## Tenets
+## Philosophy
 
-Atra follows some simple but powerful tenets: 
+Atra follows a simple philosophy: 
 - If you can't embed it, you don't need it.
-- Services are short-lived, but a monolith is for eternity.
+- Services are short-lived, but monoliths are for eternity.
 - One config to rule them all.
 
 ## Your first crawl
@@ -204,10 +204,10 @@ The kind is decided by the presence of the fields. As described in the following
 
 
 ### Redirection Policy
-| Name   | Value     | Explanation                                                                   |
-|--------|-----------|-------------------------------------------------------------------------------|
-| Loose  | "Spoof"   | A loose policy that allows all request up to the redirect limit.              |
-| Strict | "Default" | A strict policy only allowing request that match the domain set for crawling. |
+| Name   | Value    | Explanation                                                                   |
+|--------|----------|-------------------------------------------------------------------------------|
+| Loose  | "Loose"  | A loose policy that allows all request up to the redirect limit.              |
+| Strict | "Strict" | A strict policy only allowing request that match the domain set for crawling. |
 
 ### Link Extractor Settings
 The extractor settings are a list of commands.

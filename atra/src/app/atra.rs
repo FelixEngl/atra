@@ -1,23 +1,22 @@
-//Copyright 2024 Felix Engl
+// Copyright 2024. Felix Engl
 //
-//Licensed under the Apache License, Version 2.0 (the "License");
-//you may not use this file except in compliance with the License.
-//You may obtain a copy of the License at
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-//    http://www.apache.org/licenses/LICENSE-2.0
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-//Unless required by applicable law or agreed to in writing, software
-//distributed under the License is distributed on an "AS IS" BASIS,
-//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//See the License for the specific language governing permissions and
-//limitations under the License.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use crate::config::Configs;
 use crate::contexts::local::LocalContext;
 use crate::contexts::traits::{SupportsLinkState, SupportsMetaInfo, SupportsUrlQueue};
 use crate::contexts::worker::WorkerContext;
 use crate::crawl::crawl;
-use crate::logging::configure_logging;
 use crate::runtime::{
     graceful_shutdown, AtraRuntime, GracefulShutdown, GracefulShutdownBarrier, OptionalAtraHandle,
     RuntimeContext, ShutdownReceiver, ShutdownSignalSender,
@@ -28,7 +27,8 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use time::OffsetDateTime;
 use tokio::task::JoinSet;
-use crate::consumer::GlobalErrorConsumer;
+use crate::app::logging::configure_logging;
+use crate::app::consumer::GlobalErrorConsumer;
 
 /// The application
 pub struct Atra {
@@ -195,8 +195,8 @@ impl Atra {
                     Arc::new(barrier),
                     GlobalErrorConsumer::new()
                 )
-                .await
-                .expect("Failed the crawl.");
+                    .await
+                    .expect("Failed the crawl.");
                 let time_needed = OffsetDateTime::now_utc() - start;
                 log::info!(
                     "Needed {} for discovering {} websites",
@@ -283,7 +283,9 @@ pub enum ApplicationMode {
 
 #[cfg(test)]
 mod test {
-    use crate::application::{ApplicationMode, Atra};
+    use std::fs::{File, read_dir};
+    use std::io::Read;
+    use std::path::{Path, PathBuf};
     use crate::config::crawl::UserAgent;
     use crate::config::{BudgetSetting, Configs, CrawlConfig};
     use crate::runtime::OptionalAtraHandle;
@@ -294,6 +296,32 @@ mod test {
     use log4rs::encode::pattern::PatternEncoder;
     use log4rs::Config;
     use time::Duration;
+    use super::{ApplicationMode, Atra};
+    use crate::app::constants::ATRA_LOGO;
+
+    fn recurse(path: impl AsRef<Path>) -> Vec<PathBuf> {
+        let Ok(entries) = read_dir(path) else { return vec![] };
+        entries.flatten().flat_map(|entry| {
+            let Ok(meta) = entry.metadata() else { return vec![] };
+            if meta.is_dir() { return recurse(entry.path()); }
+            if meta.is_file() { return vec![entry.path()]; }
+            vec![]
+        }).collect()
+    }
+
+    #[test]
+    fn check(){
+        let mut s = String::new();
+        for path in recurse("C:\\git\\atra\\atra\\src") {
+            File::open(&path).unwrap().read_to_string(&mut s).unwrap();
+            if !s.starts_with("//Copyright") {
+                println!("{}", path.to_str().unwrap());
+            }
+            s.clear();
+        }
+
+        println!("{}", ATRA_LOGO)
+    }
 
     fn init() {
         // let stdout = ConsoleAppender::builder().build();
@@ -345,8 +373,8 @@ mod test {
             ]),
             configs,
         )
-        .await
-        .expect("no errors");
+            .await
+            .expect("no errors");
 
         drop(app);
         barrier.wait().await;

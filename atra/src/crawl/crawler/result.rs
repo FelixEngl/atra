@@ -1,16 +1,16 @@
-//Copyright 2024 Felix Engl
+// Copyright 2024 Felix Engl
 //
-//Licensed under the Apache License, Version 2.0 (the "License");
-//you may not use this file except in compliance with the License.
-//You may obtain a copy of the License at
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-//    http://www.apache.org/licenses/LICENSE-2.0
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-//Unless required by applicable law or agreed to in writing, software
-//distributed under the License is distributed on an "AS IS" BASIS,
-//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//See the License for the specific language governing permissions and
-//limitations under the License.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use crate::data::RawVecData;
 use crate::extraction::ExtractedLink;
@@ -129,8 +129,8 @@ pub mod test {
     use crate::extraction::ExtractedLink;
     use crate::format::supported::InterpretedProcessibleFileFormat;
     use crate::format::AtraFileInformation;
-    use crate::language_detection::LanguageInformation;
-    use crate::response::ResponseData;
+    use crate::toolkit::LanguageInformation;
+    use crate::fetching::ResponseData;
     use crate::url::UrlWithDepth;
     use reqwest::header::HeaderMap;
     use reqwest::StatusCode;

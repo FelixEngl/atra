@@ -1,16 +1,16 @@
-//Copyright 2024 Felix Engl
+// Copyright 2024 Felix Engl
 //
-//Licensed under the Apache License, Version 2.0 (the "License");
-//you may not use this file except in compliance with the License.
-//You may obtain a copy of the License at
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-//    http://www.apache.org/licenses/LICENSE-2.0
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-//Unless required by applicable law or agreed to in writing, software
-//distributed under the License is distributed on an "AS IS" BASIS,
-//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//See the License for the specific language governing permissions and
-//limitations under the License.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use crate::contexts::traits::SupportsStopwordsRegistry;
 use crate::contexts::BaseContext;
@@ -83,8 +83,8 @@ pub trait GdbrIdentifierCreationContext<TF: TfAlgorithm, IDF: IdfAlgorithm> {
     deserialize = "TF: Clone + DeserializeOwned + Debug, IDF: Clone + DeserializeOwned + Debug"
 ))]
 pub struct GdbrIdentifierRegistryConfig<TF: TfAlgorithm, IDF: IdfAlgorithm> {
-    default: Option<GdbrIdentifierConfig<TF, IDF>>,
-    by_language: Option<HashMap<Language, LanguageBoundGdbrIdentifierConfig<TF, IDF>>>,
+    pub default: Option<GdbrIdentifierConfig<TF, IDF>>,
+    pub by_language: Option<HashMap<Language, LanguageBoundGdbrIdentifierConfig<TF, IDF>>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -94,8 +94,8 @@ pub struct GdbrIdentifierRegistryConfig<TF: TfAlgorithm, IDF: IdfAlgorithm> {
 ))]
 pub struct LanguageBoundGdbrIdentifierConfig<TF: TfAlgorithm, IDF: IdfAlgorithm> {
     #[serde(default = "_default_required_reliability")]
-    required_reliability: f64,
-    identifier: GdbrIdentifierConfig<TF, IDF>,
+    pub required_reliability: f64,
+    pub identifier: GdbrIdentifierConfig<TF, IDF>,
 }
 
 fn _default_required_reliability() -> f64 {
@@ -654,7 +654,6 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::gdbr::identifier::GdbrIdentifier;
     use crate::gdbr::identifier::{FilterMode, GdbrIdentifier};
     use crate::gdbr::scraper_ext::Text;
     use camino::Utf8PathBuf;
@@ -677,7 +676,7 @@ mod test {
         let reg = StopwordRegistryConfig {
             registries: vec![StopWordRepository::IsoDefault],
         };
-        let reg = StopWordRegistry::initialize(&reg);
+        let reg = StopWordRegistry::initialize(&reg).unwrap();
 
         let cfg: DocumentClassifierConfig = DocumentClassifierConfig::new(
             text_processing::tf_idf::defaults::TERM_FREQUENCY_INVERSE.tf,

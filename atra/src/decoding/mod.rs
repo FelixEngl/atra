@@ -1,16 +1,16 @@
-//Copyright 2024 Felix Engl
+// Copyright 2024 Felix Engl
 //
-//Licensed under the Apache License, Version 2.0 (the "License");
-//you may not use this file except in compliance with the License.
-//You may obtain a copy of the License at
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-//    http://www.apache.org/licenses/LICENSE-2.0
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-//Unless required by applicable law or agreed to in writing, software
-//distributed under the License is distributed on an "AS IS" BASIS,
-//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//See the License for the specific language governing permissions and
-//limitations under the License.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
 use crate::data::{Decoded, RawData, RawVecData};
@@ -266,7 +266,16 @@ fn do_decode<'a>(
             }
             let mut output = File::options().write(true).open(&out_path)?;
             let mut reader = BufReader::new(File::options().read(true).open(&file)?);
-            let mut output_buf = [0u8; crate::DEFAULT_BUF_SIZE];
+
+            // Bare metal platforms usually have very small amounts of RAM
+            // (in the order of hundreds of KB)
+            pub const DEFAULT_BUF_SIZE: usize = if cfg!(target_os = "espidf") {
+                512
+            } else {
+                8 * 1024
+            };
+
+            let mut output_buf = [0u8; DEFAULT_BUF_SIZE];
             let mut had_error = false;
             loop {
                 let buffer = reader.fill_buf()?;
@@ -314,13 +323,13 @@ fn do_decode<'a>(
 #[cfg(test)]
 mod test {
     use crate::decoding::decode;
-    use crate::fetching::FetchedRequestData;
+    use crate::fetching::{FetchedRequestData, ResponseData};
     use crate::format::AtraFileInformation;
-    use crate::response::ResponseData;
     use encoding_rs::Encoding;
     use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
     use reqwest::StatusCode;
     use std::borrow::Cow;
+    use crate::test_impls::InMemoryContext;
 
     macro_rules! test_for {
         (@old $name: ident: $sample: ident($encoding: expr)) => {

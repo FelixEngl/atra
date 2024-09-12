@@ -1,3 +1,17 @@
+// Copyright 2024 Felix Engl
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use crate::contexts::traits::{SupportsConfigs, SupportsGdbrRegistry};
 use crate::data::{Decoded, RawVecData};
 use crate::extraction::extractor::{ExtractorResult, ProcessedData};
@@ -64,8 +78,10 @@ pub enum ExtractorMethod {
     #[serde(alias = "PT_v1")]
     #[serde(alias = "Plain_v1")]
     PlainText,
-    #[serde(alias = "RAW_v1")]
-    RawV1,
+    #[serde(alias = "binary")]
+    #[serde(alias = "heuristic")]
+    #[serde(alias = "brute_force")]
+    BinaryHeuristic,
     #[serde(alias = "rtf_v1")]
     Rtf,
     #[serde(alias = "ooxml")]
@@ -103,7 +119,7 @@ impl ExtractorMethod {
             ExtractorMethod::HtmlV1 => extract_links_hml(self, context, page, output).await,
             ExtractorMethod::JSV1 => extract_links_javascript(self, page, output).await,
             ExtractorMethod::PlainText => extract_links_plain_text(self, page, output).await,
-            ExtractorMethod::RawV1 => extract_links_raw(self, page, output).await,
+            ExtractorMethod::BinaryHeuristic => extract_links_raw(self, page, output).await,
             ExtractorMethod::Rtf => extract_links_rtf(self, page, output).await,
             ExtractorMethod::Ooxml => extract_links_ooxml(self, page, output).await,
             ExtractorMethod::Odf => extract_links_odf(self, page, output).await,
@@ -169,7 +185,7 @@ impl ExtractorMethod {
             ExtractorMethod::Xlink => {
                 matches!(page.1.format, InterpretedProcessibleFileFormat::XML)
             }
-            ExtractorMethod::RawV1 => true,
+            ExtractorMethod::BinaryHeuristic => true,
         }
     }
 }

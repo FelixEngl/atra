@@ -1,16 +1,16 @@
-//Copyright 2024 Felix Engl
+// Copyright 2024 Felix Engl
 //
-//Licensed under the Apache License, Version 2.0 (the "License");
-//you may not use this file except in compliance with the License.
-//You may obtain a copy of the License at
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-//    http://www.apache.org/licenses/LICENSE-2.0
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-//Unless required by applicable law or agreed to in writing, software
-//distributed under the License is distributed on an "AS IS" BASIS,
-//WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//See the License for the specific language governing permissions and
-//limitations under the License.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use crate::runtime::{AtraHandleOption, RuntimeContext};
 use crate::seed::BasicSeed;
@@ -120,8 +120,6 @@ pub enum LinkNetError {
 
 /// Manages the webgraph
 pub trait WebGraphManager {
-    fn is_healthy(&self) -> bool;
-
     async fn add(&self, link_net_entry: WebGraphEntry) -> Result<(), LinkNetError>;
 }
 
@@ -260,10 +258,6 @@ impl QueuingWebGraphManager {
 }
 
 impl WebGraphManager for QueuingWebGraphManager {
-    fn is_healthy(&self) -> bool {
-        !self.queue_in.is_closed()
-    }
-
     async fn add(&self, link_net_entry: WebGraphEntry) -> Result<(), LinkNetError> {
         match self.queue_in.send(link_net_entry).await {
             Ok(_) => return Ok(()),
