@@ -19,18 +19,17 @@ mod toolkit;
 
 mod csv2;
 
-use crate::classifier::DocumentClassifier;
+use crate::classifier::{DocumentClassifier, TrainDataEntry};
 use crate::config::{DocumentClassifierConfig, SvmRecognizerConfig};
 use crate::error::{LibLinearError, SvmCreationError};
 use camino::Utf8Path;
 pub use csv2::CsvProvider;
-pub use csv2::CsvTrainModelEntry;
 use isolang::Language;
 use liblinear::parameter::serde::{GenericParameters, SupportsParametersCreation};
 use liblinear::solver::GenericSolver;
 use liblinear::Model;
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::fs::File;
@@ -40,18 +39,17 @@ use std::sync::Arc;
 use text_processing::stopword_registry::{StopWordList, StopWordRegistry};
 use text_processing::tf_idf::{IdfAlgorithm, TfAlgorithm, TfIdf};
 use text_processing::tokenizer::Tokenizer;
+use crate::error::LibLinearError::Prediction;
 
-pub fn create_document_classifier<TF, IDF, SOLVER, P>(
+pub fn create_document_classifier<TF, IDF, SOLVER>(
     cfg: &SvmRecognizerConfig<TF, IDF>,
     stopword_registry: Option<&StopWordRegistry>,
-    root: Option<P>,
 ) -> Result<DocumentClassifier<TF, IDF, SOLVER>, SvmCreationError<IDF>>
 where
     TF: TfAlgorithm + Serialize + DeserializeOwned + Clone + Debug,
     IDF: IdfAlgorithm + Serialize + DeserializeOwned + Clone + Debug,
     SOLVER: SupportsParametersCreation,
     Model<SOLVER>: TryFrom<Model<GenericSolver>>,
-    P: AsRef<Utf8Path>,
 {
     let model = match &cfg {
         SvmRecognizerConfig::Load {
@@ -60,11 +58,6 @@ where
             min_vector_length,
             ..
         } => {
-            let trained_svm = if let Some(root) = root {
-                Cow::Owned(root.as_ref().join(trained_svm))
-            } else {
-                Cow::Borrowed(trained_svm)
-            };
             let mut outp = BufReader::new(File::options().read(true).open(trained_svm.as_path())?);
             let mut recognizer: DocumentClassifier<TF, IDF, SOLVER> =
                 bincode::deserialize_from(&mut outp)?;
@@ -96,11 +89,6 @@ where
             min_vector_length,
             ..
         } => {
-            let trained_svm = if let Some(root) = root {
-                Cow::Owned(root.as_ref().join(trained_svm))
-            } else {
-                Cow::Borrowed(trained_svm)
-            };
             if !retrain_if_possible && trained_svm.exists() {
                 let mut outp =
                     BufReader::new(File::options().read(true).open(trained_svm.as_path())?);
@@ -130,7 +118,7 @@ where
                         .truncate(true)
                         .open(trained_svm.as_path())?,
                 );
-                bincode::serialize_into(&mut outp, &trained_svm)?;
+                bincode::serialize_into(&mut outp, &trained)?;
                 trained
             }
         }
@@ -143,6 +131,28 @@ where
     }
 
     Ok(model)
+}
+
+/// An entry of a train csv
+#[derive(Debug, Deserialize)]
+pub struct CsvTrainModelEntry {
+    #[serde(alias = "is_gdbr")]
+    pub is_class: bool,
+    pub text: String,
+}
+
+impl TrainDataEntry for crate::CsvTrainModelEntry {
+    fn get_label(&self) -> f64 {
+        if self.is_class {
+            1.0
+        } else {
+            -1.0
+        }
+    }
+
+    fn get_text(&self) -> &str {
+        &self.text
+    }
 }
 
 /// Reads the train data from a csv.
@@ -183,6 +193,7 @@ where
         stopwords,
         training.stemmer.clone(),
     );
+
 
     let vectorizer = match &training.tf_idf_data {
         None => {

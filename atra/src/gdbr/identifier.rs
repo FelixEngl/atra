@@ -224,7 +224,6 @@ where
                 match create_document_classifier(
                     &default.svm,
                     context.stopword_registry(),
-                    context.root(),
                 ) {
                     Ok(value) => Some(GdbrIdentifier::new(
                         value,
@@ -245,7 +244,6 @@ where
                         match create_document_classifier(
                             &v.identifier.svm,
                             context.stopword_registry(),
-                            context.root(),
                         ) {
                             Ok(value) => Ok((
                                 *k,
