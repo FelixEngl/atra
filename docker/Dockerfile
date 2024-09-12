@@ -5,12 +5,13 @@ RUN mkdir atra
 
 WORKDIR /atra
 
-COPY ../src ./src
-COPY ../data ./data
+COPY ../atra ./atra
 COPY ../external ./external
-COPY ../liblinear ./liblinear
-COPY ../build.rs ./build.rs
+COPY ../iso_stopwords ./iso_stopwords
+COPY ../svm ./svm
+COPY ../warc ./warc
 COPY ../Cargo.toml ./Cargo.toml
+COPY ../logo.txt ./logo.txt
 
 RUN cargo generate-lockfile
 RUN cargo fetch

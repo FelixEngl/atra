@@ -19,7 +19,6 @@ use crate::crawl::ErrorConsumer;
 use crate::database::DatabaseError;
 use crate::link_state::{LinkStateDBError, LinkStateError};
 use crate::queue::QueueError;
-use crate::web_graph::LinkNetError;
 use thiserror::Error;
 
 pub struct GlobalErrorConsumer;

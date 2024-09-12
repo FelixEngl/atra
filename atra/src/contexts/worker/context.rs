@@ -15,8 +15,8 @@
 use crate::config::Configs;
 use crate::contexts::traits::*;
 use crate::contexts::worker::error::CrawlWriteError;
-use crate::crawl::CrawlResult;
-use crate::crawl::{SlimCrawlResult, StoredDataHint};
+use crate::crawl::{CrawlResult, SlimCrawlResult};
+use crate::crawl::{StoredDataHint};
 use crate::data::RawVecData;
 use crate::extraction::ExtractedLink;
 use crate::io::errors::ErrorWithPath;

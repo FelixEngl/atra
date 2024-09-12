@@ -147,7 +147,7 @@ pub fn create_example_config() -> crate::config::configs::Configs {
                             train_data: "pyth/to/my/train/data/svm.csv".into(),
                             stemmer: Some(Algorithm::English),
                             filter_stopwords: true,
-                            tf_idf_data: Some("pyth/to/my/train/data/tf_idf.tct".into()),
+                            tf_idf_data: Some("pyth/to/my/train/data/tf_idf.txt".into()),
                             normalize_tokens: true,
                             parameters: Some(GenericParameters {
                                 epsilon: Some(0.0003),

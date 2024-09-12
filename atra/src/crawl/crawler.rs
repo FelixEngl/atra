@@ -57,7 +57,6 @@ use smallvec::SmallVec;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Display;
 use std::fs::File;
-use std::future::Future;
 use std::io;
 use std::io::Write;
 use std::sync::atomic::{AtomicU8, Ordering};

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use std::fs::File;
-use std::io::{BufWriter, Write};
+use std::io::{BufWriter};
 use std::num::NonZeroUsize;
 use std::str::FromStr;
 
@@ -203,8 +203,9 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
         if args.generate_example_config {
             let cfg = create_example_config();
             let root = cfg.paths.root_path();
-            match File::open(root.join("example_config.json")) {
-                Ok(file) => match serde_json::to_writer(BufWriter::new(file), &cfg) {
+            std::fs::create_dir_all(root).unwrap();
+            match File::options().create(true).write(true).open(root.join("example_config.json")) {
+                Ok(file) => match serde_json::to_writer_pretty(BufWriter::new(file), &cfg) {
                     Ok(_) => {}
                     Err(err) => {
                         println!("Failed to create the example file: {err}")

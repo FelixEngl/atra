@@ -25,7 +25,6 @@ pub mod consumer;
 mod logging;
 
 use crate::app::atra::{ApplicationMode, Atra};
-use crate::app::constants::{ATRA_LOGO, ATRA_WELCOME};
 pub use args::AtraArgs;
 
 pub fn exec_args(args: AtraArgs) {

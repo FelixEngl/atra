@@ -15,11 +15,10 @@
 use crate::crawl::CrawlResult;
 use crate::data::RawVecData;
 use crate::format::supported::InterpretedProcessibleFileFormat;
-use crate::io::file_owner::FileOwner;
 use crate::toolkit::digest::labeled_xxh128_digest;
 use crate::warc_ext::errors::WriterError;
 use crate::warc_ext::instructions::WarcSkipInstruction;
-use crate::warc_ext::skip_pointer::{WarcSkipPointer, WarcSkipPointerWithPath};
+use crate::warc_ext::skip_pointer::{WarcSkipPointerWithPath};
 use crate::warc_ext::special_writer::SpecialWarcWriter;
 use data_encoding::BASE64;
 use itertools::{Itertools, Position};
@@ -32,7 +31,6 @@ use warc::header::WarcHeader;
 use warc::media_type::parse_media_type;
 use warc::record_type::WarcRecordType;
 use warc::truncated_reason::TruncatedReason;
-use warc::writer::WarcWriterError as WarcWriterErrorExt;
 
 macro_rules! log_consume {
     ($e: expr) => {{
