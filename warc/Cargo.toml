@@ -1,0 +1,24 @@
+[package]
+name = "warc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+strum = { workspace = true, features = ["derive"] }
+thiserror.workspace = true
+ubyte.workspace = true
+encoding_rs.workspace = true
+itertools.workspace = true
+paste.workspace = true
+serde = {workspace = true, features = ["serde_derive"]}
+time = {workspace = true, features = ["serde", "serde-human-readable", "formatting"]}
+memchr.workspace = true
+nom.workspace = true
+mime.workspace = true
+const_format.workspace = true
+compact_str.workspace = true
+unescaper.workspace = true
+
+
+[features]
+atra-fieldnames = []

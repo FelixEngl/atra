@@ -1,0 +1,11 @@
+[package]
+name = "iso_stopwords"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+isolang = {workspace = true, features = ["serde"]}
+
+[build-dependencies]
+isolang = {workspace = true}
+tinyjson = "2.5"
