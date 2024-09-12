@@ -21,8 +21,9 @@ use crate::seed::SeedDefinition;
 mod logging;
 mod constants;
 mod args;
-mod consumer;
+pub mod consumer;
 mod atra;
+
 
 pub use args::AtraArgs;
 use crate::app::atra::{ApplicationMode, Atra};

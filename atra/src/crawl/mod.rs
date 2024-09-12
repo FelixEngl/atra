@@ -108,14 +108,7 @@ where
                     .build(guarded_seed)
                     .await;
 
-                match crawler.crawl::<_, _, E>(&context, shutdown.clone()).await {
-                    Ok(_) => {}
-                    Err(errors) => {
-                        for error in errors {
-                            consumer.consume_poll_error(error.into())?;
-                        }
-                    }
-                }
+                crawler.crawl(&context, shutdown.clone(), &consumer).await?
             }
             UrlQueuePollResult::Abort(cause) => {
                 if patience < 0 {

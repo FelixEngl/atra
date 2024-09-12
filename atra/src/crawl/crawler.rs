@@ -56,12 +56,14 @@ use smallvec::SmallVec;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Display;
 use std::fs::File;
+use std::future::Future;
 use std::io;
 use std::io::Write;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 use strum::EnumString;
 use time::{Duration, OffsetDateTime};
+use crate::crawl::ErrorConsumer;
 
 /// A builder for a crawl task, can be used as template
 #[derive(Debug, Clone)]
@@ -152,7 +154,7 @@ impl<'a> WebsiteCrawlerBuilder<'a> {
         self
     }
 
-    pub fn add_sitemaps<I: IntoIterator<Item = String>>(
+    pub fn add_sitemaps<I: IntoIterator<Item=String>>(
         mut self,
         url_with_depth: &UrlWithDepth,
         values: Vec<String>,
@@ -207,11 +209,11 @@ impl<'a> WebsiteCrawlerBuilder<'a> {
 
                         if tld && attempt_url == host_domain_name
                             || subdomains
-                                && attempt
-                                    .url()
-                                    .host_str()
-                                    .unwrap_or_default()
-                                    .ends_with(host_s.as_ref())
+                            && attempt
+                            .url()
+                            .host_str()
+                            .unwrap_or_default()
+                            .ends_with(host_s.as_ref())
                             || to_mode.url().same_host_url(&attempt.url())
                         {
                             default_policy.redirect(attempt)
@@ -219,7 +221,7 @@ impl<'a> WebsiteCrawlerBuilder<'a> {
                             attempt.error("too many redirects")
                         } else if attempt.status().is_redirection()
                             && (0..initial_redirect_limit)
-                                .contains(&initial_redirect.load(Ordering::Relaxed))
+                            .contains(&initial_redirect.load(Ordering::Relaxed))
                         {
                             initial_redirect.fetch_add(1, Ordering::Relaxed);
                             default_policy.redirect(attempt)
@@ -410,74 +412,75 @@ impl<'a> WebsiteCrawler<WebsiteCrawlerBuilder<'a>> {
 
 impl<S: BasicSeed> WebsiteCrawler<S> {
     async fn update_linkstate<C, E>(
-        handler: &mut Vec<E>,
+        handler: &impl ErrorConsumer<E>,
         context: &C,
         target: &UrlWithDepth,
         link_state_type: LinkStateType,
-    ) -> bool
+    ) -> Result<(), E>
     where
         C: SupportsLinkState,
         E: From<<C as SupportsLinkState>::Error>,
     {
         match context.update_link_state(target, link_state_type).await {
-            Ok(_) => true,
+            Ok(_) => Ok(()),
             Err(error) => {
-                handler.push(error.into());
-                false
+                handler.consume_crawl_error(error.into())
             }
         }
     }
 
     async fn pack_shutdown<C, E>(
-        mut handler: Vec<E>,
+        handler: &impl ErrorConsumer<E>,
         context: &C,
         target: &UrlWithDepth,
         link_state_type: LinkStateType,
-    ) -> Result<Option<Vec<E>>, Vec<E>>
+    ) -> Result<(), E>
     where
         C: SupportsLinkState,
         E: From<<C as SupportsLinkState>::Error>,
     {
-        if !Self::update_linkstate(&mut handler, context, &target, link_state_type).await {
-            log::info!("Failed to set link state of {target}, continue shutdown.");
+        match Self::update_linkstate(handler, context, target, link_state_type).await {
+            Ok(_) => {
+                Ok(())
+            }
+            Err(_) => {
+                log::info!("Continue shutdown without error handling.");
+                Err(handler)
+            }
         }
-        return if handler.is_empty() {
-            Ok(Some(handler))
-        } else {
-            log::trace!("Shutdown with errors");
-            Err(handler)
-        };
     }
 
     /// The crawl method.
-    pub async fn crawl<Cont, Shutdown, E>(
+    pub async fn crawl<Cont, Shutdown, E, EC>(
         &mut self,
         context: &Cont,
         shutdown: Shutdown,
-    ) -> Result<Option<Vec<E>>, Vec<E>>
+        consumer: &EC,
+    ) -> Result<(), E>
     where
         Cont: SupportsGdbrRegistry
-            + SupportsConfigs
-            + SupportsRobotsManager
-            + SupportsBlackList
-            + SupportsLinkState
-            + SupportsSlimCrawlResults
-            + SupportsFileSystemAccess
-            + SupportsCrawlResults
-            + SupportsLinkSeeding,
+        + SupportsConfigs
+        + SupportsRobotsManager
+        + SupportsBlackList
+        + SupportsLinkState
+        + SupportsSlimCrawlResults
+        + SupportsFileSystemAccess
+        + SupportsCrawlResults
+        + SupportsLinkSeeding,
         Shutdown: ShutdownReceiver,
         E: From<<Cont as SupportsSlimCrawlResults>::Error>
-            + From<<Cont as SupportsLinkSeeding>::Error>
-            + From<<Cont as SupportsCrawlResults>::Error>
-            + From<<Cont as SupportsLinkState>::Error>
-            + From<crate::client::ClientError>
-            + From<io::Error>
-            + Display,
+        + From<<Cont as SupportsLinkSeeding>::Error>
+        + From<<Cont as SupportsCrawlResults>::Error>
+        + From<<Cont as SupportsLinkState>::Error>
+        + From<crate::client::ClientError>
+        + From<io::Error>
+        + Display,
+        EC: ErrorConsumer<E>,
     {
         let configuration = context.configs().crawl();
 
         if shutdown.is_shutdown() {
-            return Ok(None);
+            return Ok(());
         }
 
         log::debug!("Start Crawling of {}", self.seed.url());
@@ -488,8 +491,8 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
                 self.user_agent.clone(),
                 configuration.max_robots_age.clone(),
             )
-            .bind_to_domain(&self.client, self.seed.url())
-            .await,
+                .bind_to_domain(&self.client, self.seed.url())
+                .await,
         );
 
         let budget = configuration
@@ -504,12 +507,11 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
 
         queue.push_back(self.seed.url().clone());
 
-        let mut handler = Vec::new();
 
         match context.register_seed(&self.seed).await {
             Ok(_) => {}
             Err(err) => {
-                handler.push(err.into());
+                consumer.consume_crawl_error(err.into())?;
             }
         }
 
@@ -532,8 +534,8 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
                 &mut interval_manager,
                 None,
             )
-            .await
-            .urls
+                .await
+                .urls
             {
                 match value.loc {
                     Location::None => {}
@@ -554,7 +556,7 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
 
         while let Some(target) = queue.pop_front() {
             if shutdown.is_shutdown() {
-                return Ok(Some(handler));
+                return Ok(());
             }
             log::trace!("Queue.len() => {}", queue.len());
             if !checker.check_if_allowed(self, &target).await {
@@ -562,18 +564,17 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
                 continue;
             }
 
-            if !Self::update_linkstate(
-                &mut handler,
+            match Self::update_linkstate(
+                consumer,
                 context,
                 &target,
                 LinkStateType::ReservedForCrawl,
-            )
-            .await
-            {
-                log::error!(
-                    "Failed setting of linkstate of {target}, continue without further processing."
-                );
-                continue;
+            ).await {
+                Ok(_) => {}
+                Err(_) => {
+                    log::info!("Failed setting of linkstate of {target}, continue without further processing.");
+                    continue;
+                }
             }
 
             match context.retrieve_slim_crawled_website(&target).await {
@@ -588,29 +589,24 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
                                 >= recrawl
                             {
                                 log::debug!("The url was already crawled.");
-                                if !Self::update_linkstate(
-                                    &mut handler,
+                                if Self::update_linkstate(
+                                    consumer,
                                     context,
                                     &target,
                                     LinkStateType::ProcessedAndStored,
-                                )
-                                .await
-                                {
-                                    log::info!(
-                                        "Failed set correct linkstate of {target}, ignoring."
-                                    );
+                                ).await.is_err() {
+                                    log::info!("Failed set correct linkstate of {target}, ignoring.");
                                 }
                                 continue;
                             }
                         } else {
                             log::debug!("The url was already crawled.");
-                            if !Self::update_linkstate(
-                                &mut handler,
+                            if Self::update_linkstate(
+                                consumer,
                                 context,
                                 &target,
                                 LinkStateType::ProcessedAndStored,
-                            )
-                            .await
+                            ).await.is_err()
                             {
                                 log::info!("Failed set correct linkstate of {target}, ignoring.");
                             }
@@ -626,7 +622,7 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
             }
 
             if shutdown.is_shutdown() {
-                return Self::pack_shutdown(handler, context, &target, LinkStateType::Discovered)
+                return Self::pack_shutdown(consumer, context, &target, LinkStateType::Discovered)
                     .await;
             }
             if log::max_level() == LevelFilter::Trace {
@@ -639,13 +635,12 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
             let url_str = target.as_str().into_owned();
             match crate::fetching::fetch_request(context, &self.client, &url_str).await {
                 Ok(page) => {
-                    if !Self::update_linkstate(
-                        &mut handler,
+                    if Self::update_linkstate(
+                        consumer,
                         context,
                         &target,
                         LinkStateType::Discovered,
-                    )
-                    .await
+                    ).await.is_err()
                     {
                         log::info!("Failed to set link state of {target}.");
                     }
@@ -664,8 +659,8 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
                                     &file_information,
                                     &decoded,
                                 )
-                                .ok()
-                                .flatten();
+                                    .ok()
+                                    .flatten();
 
                                 let result = context
                                     .configs()
@@ -719,12 +714,12 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
 
                     if shutdown.is_shutdown() {
                         return Self::pack_shutdown(
-                            handler,
+                            consumer,
                             context,
                             &target,
                             LinkStateType::Discovered,
                         )
-                        .await;
+                            .await;
                     }
                     log::debug!(
                         "Number of links in {}: {}",
@@ -753,14 +748,14 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
                             }
                             Err(err) => {
                                 log::error!("Failed to handle links with {err}. Stopping crawl.");
-                                handler.push(err.into());
+                                let _ = consumer.consume_crawl_error(err.into());
                                 return Self::pack_shutdown(
-                                    handler,
+                                    consumer,
                                     context,
                                     &target,
                                     LinkStateType::Discovered,
                                 )
-                                .await;
+                                    .await;
                             }
                         }
                     } else {
@@ -771,12 +766,12 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
                     drop(analyzed);
                     if shutdown.is_shutdown() {
                         return Self::pack_shutdown(
-                            handler,
+                            consumer,
                             context,
                             &target,
                             LinkStateType::Discovered,
                         )
-                        .await;
+                            .await;
                     }
 
                     log::trace!("CrawlResult {}", response_data.url);
@@ -792,27 +787,27 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
                     match context.store_crawled_website(&result).await {
                         Err(err) => {
                             log::error!("Failed to store data for {target}. Stopping crawl. {err}");
-                            handler.push(err.into());
+                            let _ = consumer.consume_crawl_error(err.into());
                             return Self::pack_shutdown(
-                                handler,
+                                consumer,
                                 context,
                                 &target,
                                 LinkStateType::Discovered,
                             )
-                            .await;
+                                .await;
                         }
                         _ => {
                             log::debug!("Stored: {}", result.meta.url);
                         }
                     }
 
-                    if !Self::update_linkstate(
-                        &mut handler,
+                    if Self::update_linkstate(
+                        consumer,
                         context,
                         &target,
                         LinkStateType::ProcessedAndStored,
                     )
-                    .await
+                        .await.is_err()
                     {
                         log::error!("Failed setting of linkstate of {target}.");
                     }
@@ -820,20 +815,20 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
                 Err(err) => {
                     log::warn!("Failed to fetch {} with error {}", target, err);
 
-                    if !Self::update_linkstate(
-                        &mut handler,
+                    if Self::update_linkstate(
+                        consumer,
                         context,
                         &target,
                         LinkStateType::InternalError,
                     )
-                    .await
+                        .await.is_err()
                     {
                         log::error!("Failed recovery of linkstate of {target}.");
                     }
                 }
             }
         }
-        Ok((!handler.is_empty()).then_some(handler))
+        Ok(())
     }
 }
 
@@ -869,9 +864,9 @@ impl<'a, R: RobotsInformation, B: BlackList> UrlChecker<'a, R, B> {
         let result = !task.links_visited.contains(url)
             && !self.blacklist.has_match_for(&url.as_str())
             && self
-                .configured_robots
-                .check_if_allowed(&task.client, url)
-                .await
+            .configured_robots
+            .check_if_allowed(&task.client, url)
+            .await
             && self.budget.is_in_budget(url);
 
         match log::max_level() {
@@ -1047,7 +1042,7 @@ mod test {
                         .unwrap(),
                     "choosealicense.com".into(),
                 )
-                .unwrap(),
+                    .unwrap(),
             )
             .await;
 
@@ -1059,7 +1054,7 @@ mod test {
         ));
 
         crawl
-            .crawl::<_, _, anyhow::Error>(&context, ShutdownPhantom)
+            .crawl(&context, ShutdownPhantom, &crate::app::consumer::GlobalErrorConsumer::new())
             .await
             .expect("Expected a positive result!");
 
@@ -1100,7 +1095,7 @@ mod test {
                         .unwrap(),
                     "choosealicense.com".into(),
                 )
-                .unwrap(),
+                    .unwrap(),
             )
             .await;
 
@@ -1118,7 +1113,7 @@ mod test {
         );
 
         crawl
-            .crawl::<_, _, anyhow::Error>(&context, ShutdownPhantom)
+            .crawl(&context, ShutdownPhantom, &crate::app::consumer::GlobalErrorConsumer::new())
             .await
             .expect("Expected a positive result!");
     }
@@ -1145,8 +1140,8 @@ mod test {
             ),
             RuntimeContext::unbound(),
         )
-        .await
-        .unwrap();
+            .await
+            .unwrap();
         let config = context.configs().crawl.clone();
 
         context
@@ -1179,7 +1174,7 @@ mod test {
                 .build(guard_with_seed.get_guarded_seed())
                 .await;
             log::trace!("Crawl Task");
-            crawl_task.crawl::<_, _, anyhow::Error>(&context, ShutdownPhantom).await.unwrap();
+            crawl_task.crawl(&context, ShutdownPhantom, &crate::app::consumer::GlobalErrorConsumer::new()).await.unwrap();
             log::trace!("Continue");
         }
     }
