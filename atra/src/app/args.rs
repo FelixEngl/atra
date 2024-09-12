@@ -180,12 +180,12 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
 
                 configs.paths.root = configs.paths.root_path().join(format!(
                     "multi_{}_{}",
-                    data_encoding::BASE32.encode(
+                    data_encoding::BASE64URL.encode(
                         &time::OffsetDateTime::now_utc()
                             .unix_timestamp_nanos()
                             .to_be_bytes()
                     ),
-                    data_encoding::BASE32.encode(&rand::random::<u64>().to_be_bytes()),
+                    data_encoding::BASE64URL.encode(&rand::random::<u64>().to_be_bytes()),
                 ));
 
                 configs.system.log_to_file = log_to_file;
@@ -208,7 +208,9 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
                 println!("{}\n\n{}\n", ATRA_WELCOME, ATRA_LOGO);
                 println!("Start creating the default config.");
                 let cfg = Configs::default();
-                let path = Utf8PathBuf::from_str("config.json").unwrap();
+                let root = cfg.paths.root_path();
+                std::fs::create_dir_all(root).unwrap();
+                let path = root.join("config.json");
                 if path.exists() {
                     println!("The default config already exists in {path}.\nDelete is before regenerating.")
                 } else {
