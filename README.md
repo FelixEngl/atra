@@ -61,12 +61,15 @@ Atra follows a simple philosophy:
 - Services are short-lived, but monoliths are for eternity.
 - One config to rule them all.
 
-### Careware
-Even if licensed as MIT / Apache License Atra is also Careware, 
-when you like my work please consider to donate to the 
+### You like Atra?
+When you like Atra please consider to donate to the 
 [Zeehondencentrum Pietersburen](https://www.zeehondencentrum.nl/en/).
-
 Even small donations around 10€ can feed a seal for a whole day!
+
+> The Zeehondencentrum Pietersburen is the largest seal hospital in Europe. Since the 70's they have been caring for sick, injured or weakened seals. The seals are released after recovery and no animal remains permanently in care.
+The seal hospital depends entirely on donations, gifts and entrance fees.
+
+
 
 
 ### Why is the crawler named Atra?
