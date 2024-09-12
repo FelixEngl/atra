@@ -41,6 +41,16 @@ You will then find a folder `atra_data` on the level of the binary.
 ## How to build?
 In order to build Atra you need [Rust](https://www.rust-lang.org/).
 
+### Git Submodules
+Initialize the submodules:
+````commandline
+git submodule update --init --recursive
+````
+Update the submodules:
+````commandline
+git submodule update --remote --recursive
+````
+
 ### Windows
 After installing Rust you need [LLVM](https://llvm.org/), with the proper 
 environment paths set.
