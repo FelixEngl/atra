@@ -73,7 +73,7 @@ The seal hospital depends entirely on donations, gifts and entrance fees.
 
 
 ### Why is the crawler named Atra?
-The name Atra comes from the Erigone atra, a dwarf spider with a body length of 1.8mm to 2.8mm.
+The name Atra comes from "Erigone atra", a dwarf spider with a body length of 1.8mm to 2.8mm.
 Not only do they play a central role in natural pest control in
 agriculture (aphids), but they are also aerial spiders that can
 travel long distances by ballooning, also known as kiting.
