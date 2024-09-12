@@ -36,7 +36,8 @@ use svm::{create_document_classifier};
 use svm::error::SvmCreationError;
 use text_processing::tf_idf::{IdfAlgorithm, TfAlgorithm};
 use text_processing::stopword_registry::StopWordRegistry;
-use crate::language_detection::LanguageInformation;
+use crate::contexts::BaseContext;
+use crate::toolkit::LanguageInformation;
 use crate::contexts::traits::SupportsStopwordsRegistry;
 use crate::html::{HtmlTag, HtmlTagCategory};
 use crate::gdbr::scraper_ext::Text;
@@ -56,6 +57,8 @@ impl<'a, TF: TfAlgorithm, IDF: IdfAlgorithm> GdbrIdentifierCreationContext<TF, I
         self.root
     }
 }
+
+impl<'a, TF: TfAlgorithm, IDF: IdfAlgorithm> BaseContext for InitHelper<'a, TF, IDF> {}
 
 impl<'a, TF: TfAlgorithm, IDF: IdfAlgorithm> SupportsStopwordsRegistry for InitHelper<'a, TF, IDF> {
     fn stopword_registry(&self) -> Option<&StopWordRegistry> {
@@ -128,6 +131,16 @@ impl<TF: TfAlgorithm + PartialEq, IDF: IdfAlgorithm + PartialEq> PartialEq for G
 }
 
 
+pub trait GdbrRegistry {
+    type TF: TfAlgorithm;
+    type IDF: IdfAlgorithm;
+    type SOLVER: Solver;
+
+    fn get_default(&self) -> Option<&GdbrIdentifier<Self::TF, Self::IDF, Self::SOLVER>>;
+    fn get_by_language(&self, language: &LanguageInformation) -> Option<&GdbrIdentifier<Self::TF, Self::IDF, Self::SOLVER>>;
+    fn get_by_language_or_default(&self, language: Option<&LanguageInformation>) -> Option<&GdbrIdentifier<Self::TF, Self::IDF, Self::SOLVER>>;
+}
+
 
 #[derive(Debug, Default)]
 pub struct GdbrIdentifierRegistry<TF, IDF, SOLVER: Solver> {
@@ -135,18 +148,28 @@ pub struct GdbrIdentifierRegistry<TF, IDF, SOLVER: Solver> {
     by_language: Option<HashMap<Language, LanguageBoundGdbrIdentifier<TF, IDF, SOLVER>>>
 }
 
-impl<TF, IDF, SOLVER: Solver> GdbrIdentifierRegistry<TF, IDF, SOLVER> {
-    pub fn get_by_language(&self, language: &LanguageInformation) -> Option<&GdbrIdentifier<TF, IDF, SOLVER>> {
+impl<TF, IDF, SOLVER> GdbrRegistry for GdbrIdentifierRegistry<TF, IDF, SOLVER>
+where
+    TF: TfAlgorithm,
+    IDF: IdfAlgorithm,
+    SOLVER: Solver
+{
+
+    type TF = TF;
+    type IDF = IDF;
+    type SOLVER = SOLVER;
+
+    fn get_by_language(&self, language: &LanguageInformation) -> Option<&GdbrIdentifier<TF, IDF, SOLVER>> {
         let by_language = self.by_language.as_ref()?;
         let found = by_language.get(&language.lang())?;
         found.get_with_reliability(language.confidence())
     }
 
-    pub fn get_default(&self) -> Option<&GdbrIdentifier<TF, IDF, SOLVER>> {
+    fn get_default(&self) -> Option<&GdbrIdentifier<TF, IDF, SOLVER>> {
         self.default.as_ref()
     }
 
-    pub fn get_by_language_or_default(&self, language: Option<&LanguageInformation>) -> Option<&GdbrIdentifier<TF, IDF, SOLVER>> {
+    fn get_by_language_or_default(&self, language: Option<&LanguageInformation>) -> Option<&GdbrIdentifier<TF, IDF, SOLVER>> {
         if let Some(language) = language {
             match self.get_by_language(language) {
                 x @ Some(_) => x,

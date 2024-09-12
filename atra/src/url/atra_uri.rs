@@ -22,7 +22,7 @@ use thiserror::Error;
 use url::Url;
 use warc::field::{ToUriLikeFieldValue, UriLikeFieldValue};
 use crate::url::cleaner::AtraUrlCleaner;
-use crate::origin::{AtraUrlOrigin, AtraOriginProvider};
+use super::origin::{AtraUrlOrigin, AtraOriginProvider};
 
 /// A separated type for URL to prepare for supporting different kind of URLs
 #[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]

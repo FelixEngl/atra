@@ -21,10 +21,12 @@ macro_rules! html_tags {
     ($($name: ident = $value: literal;)+) => {
 
         #[derive(Serialize, Deserialize, Debug, Display)]
+        #[allow(dead_code)]
         pub enum HtmlTag {
             $($name),+
         }
 
+        #[allow(dead_code)]
         impl HtmlTag {
             pub fn tag(&self) -> &'static str {
                 match self {
@@ -33,7 +35,7 @@ macro_rules! html_tags {
             }
         }
 
-
+        #[allow(dead_code)]
         impl FromStr for HtmlTag {
             type Err = NotAHtmlTag;
 

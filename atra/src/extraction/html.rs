@@ -19,8 +19,9 @@ use compact_str::{CompactString, ToCompactString};
 use scraper::Html;
 use serde::{Deserialize, Serialize};
 use crate::contexts::traits::{SupportsConfigs, SupportsGdbrRegistry};
-use crate::language_detection::LanguageInformation;
-use crate::url::url_with_depth::UrlWithDepth;
+use crate::gdbr::identifier::GdbrRegistry;
+use crate::toolkit::LanguageInformation;
+use crate::url::UrlWithDepth;
 
 /// Describes the origin of the extracted link
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]

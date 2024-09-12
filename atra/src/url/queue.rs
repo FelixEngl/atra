@@ -18,9 +18,9 @@ use std::path::Path;
 use tokio::sync::broadcast::Receiver;
 pub use element::UrlQueueElementBase;
 use crate::queue::{QueueError};
-use crate::queue::file::RawAgingQueueFile;
-use crate::queue::traits::RawAgingQueue;
-use crate::url::url_with_depth::UrlWithDepth;
+use crate::queue::RawAgingQueueFile;
+use crate::queue::RawAgingQueue;
+use crate::url::UrlWithDepth;
 
 /// The element in an url queue
 pub type UrlQueueElement = UrlQueueElementBase<UrlWithDepth>;
@@ -131,7 +131,7 @@ impl<T: RawAgingQueue> From<T> for UrlQueueWrapper<T> {
 mod test {
     use scopeguard::defer;
     use crate::url::queue::{UrlQueue, UrlQueueWrapper};
-    use crate::url::url_with_depth::UrlWithDepth;
+    use crate::url::UrlWithDepth;
 
     #[tokio::test]
     async fn can_initialize(){

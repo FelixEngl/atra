@@ -11,28 +11,24 @@ edition = "2021"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(RUSTC_IS_NIGHTLY)'] }
 
 [dependencies]
-
 # Async
-futures = "0.3"
-tokio = { version="1.35", features = ["rt-multi-thread", "macros", "time", "fs", "io-util", "signal"] }
+tokio = { version="1.35", features = ["rt-multi-thread", "macros", "time", "io-util", "signal"] }
 tokio-stream = "0.1"
 tokio-util = "0.7"
-async-trait = "0.1"
 
 # Downloading data
-reqwest = { version = "0.12", features = ["brotli", "gzip", "deflate", "stream", "cookies"] }
+reqwest = { workspace = true, features = ["brotli", "gzip", "deflate", "stream", "cookies"] }
 reqwest-middleware = "0.3"
 http-cache-reqwest = "0.14"
 ua_generator = "0.5"
-tempfile = "3.10"
+tempfile = "3"
 
 # Webdrivers
 chromiumoxide = { version = "0.7", optional = true, features = ["tokio-runtime", "bytes"], default-features = false }
 
 # Configuration and Init
 clap = { version = "4", features = ["derive"] }
-config = { version = "0.14" }
-notify = "6.1"
+config.workspace = true
 
 # On disk
 queue-file = "1.4"
@@ -44,71 +40,55 @@ camino-tempfile.workspace = true
 serde = { workspace = true, features = ["derive", "rc"] }
 serde_json.workspace = true
 serde_bytes = "0.11"
-serde_yaml = "0.9"
 bincode.workspace = true
-#ron = "0.8"
-
-# Output formats
-rio_api = "0.8"
-rio_turtle = "0.8"
 
 # Hashing
 twox-hash = "1.6"
-fuzzyhash = "0.2"
 
 # Encoding
-flate2 = "1.0"
 data-encoding = "2.5"
 
 # Identifier
 uuid = { version = "1.7", features = ["serde", "v4", "v5", "fast-rng"] }
 time = { workspace = true, features = ["serde", "serde-human-readable", "formatting"] }
-#chrono = "0.4"
 
 # Basics
-regex = "1.10"
-rand = "0.8"
+regex.workspace = true
+rand.workspace = true
 itertools.workspace = true
-url = { version = "2.5", features = ["serde"] }
+url = { workspace = true, features = ["serde"] }
 const_format.workspace = true
-#libm = "0.2"
-#bitflags = { version = "2.6", features = ["serde"] }
 
 # Special Types
-## Ranged Integers
 deranged = { version = "0.3", features = ["serde"] }
 
 # Pattern Matching
 memchr.workspace = true
-aho-corasick = "1"
 
 # Float
 float-cmp.workspace = true
 
 # Memory stuff
-smallvec = { version = "1.13", features = ["serde", "const_new", "const_generics", "write", "union"] }
+smallvec = { workspace = true, features = ["serde", "const_new", "const_generics", "union"] }
 compact_str = { workspace = true, features = ["serde", "bytes"] }
-case_insensitive_string = { version = "0.2", features = ["serde"] }
+case_insensitive_string = { workspace = true, features = ["serde"] }
 
 # Data structures
 indexmap = "2"
-#lru = "0.12"
 moka = { version = "0.12", features = ["future"] }
-bytes = { version = "1.5", features = ["serde", "default"] }
-yada = "0.5"
-state = "0.6"
+bytes = { workspace = true }
 
 # Delegating
 delegate.workspace = true
 
 # Enum extensions
 strum = { workspace = true, features = ["derive"] }
-num_enum = "0.7"
-enum-iterator = "2.0"
+num_enum.workspace = true
+enum-iterator.workspace = true
 
 # Bits and bytes
 ubyte.workspace = true
-byteorder = "1"
+byteorder.workspace = true
 
 # Macros
 paste.workspace = true
@@ -124,7 +104,7 @@ sys-info = "0.9"
 
 # Errors
 thiserror.workspace = true
-anyhow = "1.0"
+anyhow.workspace = true
 
 # Cluster
 # https://crates.io/crates/paxakos
@@ -132,10 +112,9 @@ anyhow = "1.0"
 # HTML Parsing
 html5ever = "0"
 ego-tree = "0"
-#tendril = "0.4"
 
 # Scraping
-scraper = { version = "0.20" }
+scraper = "0.20"
 selectors = "0.25"
 texting_robots = "0.2"
 sitemap = "0.4"
@@ -150,13 +129,13 @@ file-format = { workspace = true, features = ["reader", "serde", "extended-enums
 
 # String Encodings
 encoding_rs = { workspace = true, features = ["serde"] }
-chardetng = "0.1"
+chardetng.workspace = true
 
+# WARC
 warc = { workspace = true, features = ["atra-fieldnames"] }
 
 # Parsing
 nom.workspace = true
-ryu = "1.0"
 
 # Archive
 tar = "0.4"
@@ -196,7 +175,7 @@ link_scraper = { version = "0.1", features = ["pdf", "plaintext", "xml", "xlink"
 
 [dev-dependencies]
 scopeguard = "1.2"
-mockall = "0.12"
+mockall = "0.13"
 lipsum = "0.9"
 
 

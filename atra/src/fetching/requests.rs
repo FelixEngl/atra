@@ -24,14 +24,15 @@ use ubyte::ToByteUnit;
 use crate::client::Client;
 use crate::client::Result;
 use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
-use crate::data_holder::{DataHolder, VecDataHolder};
+use crate::data::{RawData, RawVecData};
+use crate::io::fs::AtraFS;
 
 /// The response of a fetch.
 #[derive(Debug, Default)]
 #[allow(dead_code)]
 pub struct FetchedRequestData {
     /// A dataholder with the body of a fetched request.
-    pub content: VecDataHolder,
+    pub content: RawVecData,
     /// The headers of the response. (Always None if a webdriver protocol is used for fetching.).
     pub headers: Option<HeaderMap>,
     /// The status code of the request.
@@ -48,7 +49,7 @@ pub struct FetchedRequestData {
 
 impl FetchedRequestData {
     #[cfg(test)] pub fn new(
-        content: VecDataHolder,
+        content: RawVecData,
         headers: Option<HeaderMap>,
         status_code: StatusCode,
         final_url: Option<String>,
@@ -156,9 +157,9 @@ where C: SupportsConfigs + SupportsFileSystemAccess,
             let content = if can_download {
                 if can_download_in_memory {
                     if let Some(value) = res.bytes().await.ok().map(|value| value.to_vec()) {
-                        DataHolder::from_vec(value)
+                        RawData::from_vec(value)
                     } else {
-                        DataHolder::None
+                        RawData::None
                     }
                 } else  {
                     match NamedTempFile::new() {
@@ -203,9 +204,9 @@ where C: SupportsConfigs + SupportsFileSystemAccess,
                                                         log::info!("{target_url_str}: The size of the tempfile {} differs from the read size {}", meta.len(), read);
                                                     }
                                                     if buf.is_empty() {
-                                                        DataHolder::None
+                                                        RawData::None
                                                     } else {
-                                                        DataHolder::from_vec(buf)
+                                                        RawData::from_vec(buf)
                                                     }
                                                 }
                                                 Err(err) => {
@@ -218,13 +219,13 @@ where C: SupportsConfigs + SupportsFileSystemAccess,
                                                             log::error!("{target_url_str}: Had problems persisting the downloaded data as file: {err}")
                                                         }
                                                     }
-                                                    DataHolder::from_external(path)
+                                                    RawData::from_external(path)
                                                 }
                                             }
                                         }
                                         Err(err) => {
                                             log::error!("Failed to work with temp file {:?}: {err}", temp);
-                                            DataHolder::None
+                                            RawData::None
                                         }
                                     }
 
@@ -237,7 +238,7 @@ where C: SupportsConfigs + SupportsFileSystemAccess,
                                             log::error!("{target_url_str}: Had problems persisting the downloaded data as file: {err}")
                                         }
                                     }
-                                    DataHolder::from_external(path)
+                                    RawData::from_external(path)
                                 }
                             } else {
                                 let path = context.fs().create_unique_path_for_dat_file(target_url_str);
@@ -248,18 +249,18 @@ where C: SupportsConfigs + SupportsFileSystemAccess,
                                         log::error!("{target_url_str}: Had problems persisting the downloaded data as file: {err}")
                                     }
                                 }
-                                DataHolder::from_external(path)
+                                RawData::from_external(path)
                             }
                         }
                         Err(err) => {
                             defect = true;
                             log::error!("{target_url_str}: Was not able to download the file due to error when creating a temp file: {err}");
-                            DataHolder::None
+                            RawData::None
                         }
                     }
                 }
             } else {
-                DataHolder::None
+                RawData::None
             };
 
             Ok(

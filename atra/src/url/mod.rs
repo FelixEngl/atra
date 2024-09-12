@@ -13,7 +13,17 @@
 //limitations under the License.
 
 pub mod queue;
-
-pub mod url_with_depth;
-pub mod atra_uri;
+mod url_with_depth;
+mod atra_uri;
 pub mod cleaner;
+mod guarded;
+mod origin;
+pub mod guard;
+
+mod depth;
+
+pub use depth::*;
+pub use guarded::UrlWithGuard;
+pub use atra_uri::*;
+pub use url_with_depth::UrlWithDepth;
+pub use origin::*;

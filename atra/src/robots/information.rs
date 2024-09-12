@@ -16,8 +16,7 @@ use std::sync::Arc;
 use time::Duration;
 use crate::client::Client;
 use crate::robots::{CachedRobots, RobotsError, RobotsManager};
-use crate::origin::{AtraOriginProvider, AtraUrlOrigin};
-use crate::url::url_with_depth::UrlWithDepth;
+use crate::url::{UrlWithDepth, AtraOriginProvider, AtraUrlOrigin};
 
 /// A trait for unifying different robots information providers
 pub trait RobotsInformation {

@@ -15,7 +15,14 @@
 use std::num::NonZeroUsize;
 use serde::{Deserialize, Serialize};
 use crate::web_graph::DEFAULT_CACHE_SIZE_WEB_GRAPH;
-use crate::system::{DEFAULT_CACHE_SIZE_ROBOTS, DEFAULT_MAX_SIZE_IN_MEMORY_DOWNLOAD};
+use ubyte::ByteUnit;
+
+/// The default cache size for the robots cache
+pub const DEFAULT_CACHE_SIZE_ROBOTS: NonZeroUsize = unsafe{NonZeroUsize::new_unchecked(32)};
+
+/// The default size of a fetched side that can be stored in memory (in byte)
+pub const DEFAULT_MAX_SIZE_IN_MEMORY_DOWNLOAD: u64 =
+    ByteUnit::Megabyte(100).as_u64();
 
 
 /// Config of the system, basically caches etc.

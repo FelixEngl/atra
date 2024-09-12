@@ -12,8 +12,6 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-pub mod data_holder;
-
 use std::borrow::Cow;
 use std::fs::File;
 use std::io;
@@ -25,12 +23,12 @@ use itertools::Itertools;
 use scraper::Html;
 use thiserror::Error;
 use tokio::task::yield_now;
-pub use data_holder::DecodedData;
-use crate::data_holder::{DataHolder, VecDataHolder};
 use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
+use crate::data::{Decoded, RawData, RawVecData};
 use crate::format::AtraFileInformation;
 use crate::response::{ResponseData};
 use crate::format::supported::{InterpretedProcessibleFileFormat};
+use crate::io::fs::AtraFS;
 use crate::static_selectors;
 
 /// An error while decoding
@@ -63,16 +61,16 @@ pub enum DecodingError {
 /// _Note:_ It is wrong to use this when the input buffer represents only
 /// a segment of the input instead of the whole input. Use `new_decoder()`
 /// when decoding segmented input.
-pub async fn decode<'a, C>(context: &C, page: &'a ResponseData, identified_type: &AtraFileInformation) -> Result<DecodedData<Cow<'a, str>, Utf8PathBuf>, DecodingError>
+pub async fn decode<'a, C>(context: &C, page: &'a ResponseData, identified_type: &AtraFileInformation) -> Result<Decoded<Cow<'a, str>, Utf8PathBuf>, DecodingError>
 where C: SupportsConfigs + SupportsFileSystemAccess {
     match page.content() {
-        VecDataHolder::None => {return Ok(DecodedData::None)}
-        VecDataHolder::ExternalFile { .. } => {
+        RawVecData::None => {return Ok(Decoded::None)}
+        RawVecData::ExternalFile { .. } => {
             if let Some(max_size) = context.configs().crawl().decode_big_files_up_to {
                 let size = page.content().size()?;
                 if max_size < size {
                     log::info!("Skip decoding for {} because the file has {size} bytes but the maximum is {max_size}", page.url);
-                    return Ok(DecodedData::None)
+                    return Ok(Decoded::None)
                 }
             }
         }
@@ -107,20 +105,20 @@ where C: SupportsConfigs + SupportsFileSystemAccess {
     for enc in decodings.iter() {
         let succ = do_decode(page, *enc)?;
         match &succ {
-            DecodedData::InMemory { encoding, had_errors, .. } => {
+            Decoded::InMemory { encoding, had_errors, .. } => {
                 if *had_errors {
                     log::debug!("Failed to decode {} with {}.", page.url, encoding.name());
                     continue;
                 }
             }
-            DecodedData::OffMemory { reference: result, encoding, had_errors } => {
+            Decoded::OffMemory { reference: result, encoding, had_errors } => {
                 if *had_errors {
                     log::debug!("Failed to decode {} with {}.", page.url, encoding.name());
                     context.fs().cleanup_data_file(result.as_str())?;
                     continue;
                 }
             }
-            DecodedData::None => {
+            Decoded::None => {
                 continue;
             }
         }
@@ -148,7 +146,7 @@ fn get_decoders_by_mime<'a>(identified_type: &AtraFileInformation) -> Option<Vec
 }
 
 /// Decodes by BOM only.
-fn decode_by_bom<'a, C>(context: &C, page: &'a ResponseData) -> Result<DecodedData<Cow<'a, str>, Utf8PathBuf>, DecodingError> where C: SupportsFileSystemAccess {
+fn decode_by_bom<'a, C>(context: &C, page: &'a ResponseData) -> Result<Decoded<Cow<'a, str>, Utf8PathBuf>, DecodingError> where C: SupportsFileSystemAccess {
     let bom_buf = page.content().peek_bom(context)?;
 
     if let Some((encoder, _)) = Encoding::for_bom(&bom_buf) {
@@ -157,10 +155,10 @@ fn decode_by_bom<'a, C>(context: &C, page: &'a ResponseData) -> Result<DecodedDa
         let mut enc = EncodingDetector::new();
 
         let result = match page.content() {
-            VecDataHolder::InMemory { data } => {
+            RawVecData::InMemory { data } => {
                 enc.feed(data.as_ref(), true)
             }
-            VecDataHolder::ExternalFile { file } => {
+            RawVecData::ExternalFile { file } => {
                 let mut reader = BufReader::new(File::options().read(true).open(file)?);
                 let mut has_non_ascii = false;
                 loop {
@@ -176,7 +174,7 @@ fn decode_by_bom<'a, C>(context: &C, page: &'a ResponseData) -> Result<DecodedDa
                 }
                 has_non_ascii
             }
-            VecDataHolder::None => unreachable!()
+            RawVecData::None => unreachable!()
         };
 
         if result {
@@ -210,16 +208,16 @@ fn decode_by_bom<'a, C>(context: &C, page: &'a ResponseData) -> Result<DecodedDa
 }
 
 /// Decodes the content of [page] with [encoding]
-fn do_decode<'a>(page: &'a ResponseData, encoding: &'static Encoding) -> Result<DecodedData<Cow<'a, str>, Utf8PathBuf>, DecodingError> {
+fn do_decode<'a>(page: &'a ResponseData, encoding: &'static Encoding) -> Result<Decoded<Cow<'a, str>, Utf8PathBuf>, DecodingError> {
     match &page.content {
-        DataHolder::InMemory { data } => {
+        RawData::InMemory { data } => {
             let decoded = encoding.decode(data.as_slice());
             if decoded.2 {
                 log::info!("The page for {} had an error while decoding with {}. ", page.url, encoding.name());
             }
             Ok(decoded.into())
         }
-        DataHolder::ExternalFile { file } => {
+        RawData::ExternalFile { file } => {
             let mut decoder = encoding.new_decoder_with_bom_removal();
             let mut out_path = file.clone();
             {
@@ -269,13 +267,13 @@ fn do_decode<'a>(page: &'a ResponseData, encoding: &'static Encoding) -> Result<
                 assert_eq!(written, real_written, "Expected to write {written} but only wrote {real_written}!");
                 reader.consume(read);
             }
-            Ok(DecodedData::new_off_memory(
+            Ok(Decoded::new_off_memory(
                 out_path,
                 encoding,
                 had_error,
             ))
         },
-        DataHolder::None => unreachable!()
+        RawData::None => unreachable!()
     }
 }
 
@@ -288,7 +286,6 @@ mod test {
     use crate::decoding::{decode};
     use crate::response::{ResponseData};
     use crate::fetching::{FetchedRequestData};
-    use crate::contexts::inmemory::InMemoryContext;
     use crate::format::AtraFileInformation;
 
     macro_rules! test_for {
@@ -338,7 +335,7 @@ mod test {
         let (content, used_enc, _) = encode(encoding, DATA);
         assert_eq!(encoding, used_enc, "The used encoding {} differs from the expected one {}", used_enc.name(), encoding.name());
         let data = FetchedRequestData::new(
-            DataHolder::from_vec(content.to_vec()),
+            RawData::from_vec(content.to_vec()),
             None,
             StatusCode::OK,
             None,
@@ -360,7 +357,7 @@ mod test {
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::try_from(format!("text/html; charset={}", encoding.name())).unwrap());
         let data = FetchedRequestData::new(
-            DataHolder::from_vec(content.to_vec()),
+            RawData::from_vec(content.to_vec()),
             Some(headers),
             StatusCode::OK,
             None,
@@ -381,7 +378,7 @@ mod test {
         let (content, used_enc, _) = encode(encoding, &replaces);
         assert_eq!(encoding, used_enc, "The used encoding {} differs from the expected one {}", used_enc.name(), encoding.name());
         let data = FetchedRequestData::new(
-            DataHolder::from_vec(content.to_vec()),
+            RawData::from_vec(content.to_vec()),
             None,
             StatusCode::OK,
             None,
@@ -400,7 +397,7 @@ mod test {
         let (content, used_enc, _) = encode(encoding, &replaces);
         assert_eq!(encoding, used_enc, "The used encoding {} differs from the expected one {}", used_enc.name(), encoding.name());
         let data = FetchedRequestData::new(
-            DataHolder::from_vec(content.to_vec()),
+            RawData::from_vec(content.to_vec()),
             None,
             StatusCode::OK,
             None,
@@ -421,7 +418,7 @@ mod test {
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::try_from(format!("text/html; charset={}", encoding.name())).unwrap());
         let data = FetchedRequestData::new(
-            DataHolder::from_vec(content.to_vec()),
+            RawData::from_vec(content.to_vec()),
             Some(headers),
             StatusCode::OK,
             None,
@@ -435,8 +432,8 @@ mod test {
     }
 
     use paste::paste;
-    use crate::data_holder::DataHolder;
-    use crate::url::url_with_depth::UrlWithDepth;
+    use crate::data::RawData;
+    use crate::url::UrlWithDepth;
 
     macro_rules! multi_test_for {
         ($encoding: ident) => {

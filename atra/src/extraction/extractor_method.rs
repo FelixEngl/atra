@@ -9,11 +9,10 @@ use crate::extraction::extractor::{ProcessedData, ExtractorResult};
 use crate::format::supported::InterpretedProcessibleFileFormat;
 use crate::contexts::traits::{SupportsConfigs, SupportsGdbrRegistry};
 use crate::extraction::links::ExtractedLink;
-use crate::decoding::DecodedData;
 use crate::extraction::extractor_method::LinkExtractionError::NotCompatible;
 use crate::extraction::raw::extract_possible_urls;
 use crate::toolkit::utf8::RobustUtf8Reader;
-use crate::data_holder::VecDataHolder;
+use crate::data::{Decoded, RawVecData};
 
 #[derive(Debug, Error)]
 pub enum LinkExtractionError {
@@ -167,7 +166,7 @@ async fn extract_links_hml<C>(extractor: &impl ExtractorMethodMetaFactory, conte
 where C: SupportsConfigs + SupportsGdbrRegistry
 {
     match &page.2 {
-        DecodedData::InMemory { data: result, .. } => {
+        Decoded::InMemory { data: result, .. } => {
             match crate::extraction::html::extract_links(
                 &page.0.url,
                 result.as_str(),
@@ -206,14 +205,14 @@ where C: SupportsConfigs + SupportsGdbrRegistry
                 }
             }
         }
-        DecodedData::OffMemory { .. } => { Err(LinkExtractionError::CanNotStoreInMemory) }
-        DecodedData::None => { Ok(0) }
+        Decoded::OffMemory { .. } => { Err(LinkExtractionError::CanNotStoreInMemory) }
+        Decoded::None => { Ok(0) }
     }
 }
 
 async fn extract_links_javascript(extractor: &impl ExtractorMethodMetaFactory, page: &ProcessedData<'_>, output: &mut ExtractorResult) -> Result<usize, LinkExtractionError> {
     match &page.2 {
-        DecodedData::InMemory { data: result, .. } => {
+        Decoded::InMemory { data: result, .. } => {
             let mut ct = 0usize;
             for entry in crate::extraction::js::extract_links(result.as_str()) {
                 match ExtractedLink::pack(&page.0.url, entry.as_str(), extractor.new_without_meta()) {
@@ -229,14 +228,14 @@ async fn extract_links_javascript(extractor: &impl ExtractorMethodMetaFactory, p
             }
             Ok(ct)
         }
-        DecodedData::OffMemory { .. } => { Err(LinkExtractionError::CanNotStoreInMemory) }
-        DecodedData::None => { Ok(0) }
+        Decoded::OffMemory { .. } => { Err(LinkExtractionError::CanNotStoreInMemory) }
+        Decoded::None => { Ok(0) }
     }
 }
 
 async fn extract_links_plain_text(extractor: &impl ExtractorMethodMetaFactory, page: &ProcessedData<'_>, output: &mut ExtractorResult) -> Result<usize, LinkExtractionError> {
     match &page.2 {
-        DecodedData::InMemory { data: result, .. } => {
+        Decoded::InMemory { data: result, .. } => {
             let mut finder = linkify::LinkFinder::new();
             finder.kinds(&[linkify::LinkKind::Url]);
             let mut ct = 0usize;
@@ -254,8 +253,8 @@ async fn extract_links_plain_text(extractor: &impl ExtractorMethodMetaFactory, p
             }
             Ok(ct)
         }
-        DecodedData::OffMemory { .. } => { Err(LinkExtractionError::CanNotStoreInMemory) }
-        DecodedData::None => { Ok(0) }
+        Decoded::OffMemory { .. } => { Err(LinkExtractionError::CanNotStoreInMemory) }
+        Decoded::None => { Ok(0) }
     }
 }
 
@@ -284,7 +283,7 @@ async fn extract_links_raw(extractor: &impl ExtractorMethodMetaFactory, page: &P
     }
 
     match page.2 {
-        DecodedData::InMemory { data: in_memory, .. } => {
+        Decoded::InMemory { data: in_memory, .. } => {
             execute(
                 extractor,
                 RobustUtf8Reader::new(Cursor::new(in_memory)),
@@ -292,7 +291,7 @@ async fn extract_links_raw(extractor: &impl ExtractorMethodMetaFactory, page: &P
                 output
             ).await
         }
-        DecodedData::OffMemory { reference, .. } => {
+        Decoded::OffMemory { reference, .. } => {
             execute(
                 extractor,
                 RobustUtf8Reader::new(BufReader::new(File::options().read(true).open(reference)?)),
@@ -300,12 +299,12 @@ async fn extract_links_raw(extractor: &impl ExtractorMethodMetaFactory, page: &P
                 output
             ).await
         }
-        DecodedData::None => {
+        Decoded::None => {
             match &page.0.content {
-                VecDataHolder::None => {
+                RawVecData::None => {
                     Ok(0)
                 }
-                VecDataHolder::InMemory { data, .. } => {
+                RawVecData::InMemory { data, .. } => {
                     execute(
                         extractor,
                         RobustUtf8Reader::new(data.reader()),
@@ -313,7 +312,7 @@ async fn extract_links_raw(extractor: &impl ExtractorMethodMetaFactory, page: &P
                         output
                     ).await
                 }
-                VecDataHolder::ExternalFile { file } => {
+                RawVecData::ExternalFile { file } => {
                     execute(
                         extractor,
                         RobustUtf8Reader::new(BufReader::new(File::options().read(true).open(file)?)),
@@ -330,7 +329,7 @@ macro_rules! create_extraction_fn {
     ($vis: vis $name: ident(raw, $n: literal, $($tt:tt)+)) => {
         $vis async fn $name(extractor: &impl ExtractorMethodMetaFactory, page: &ProcessedData<'_>, output: &mut ExtractorResult) -> Result<usize, LinkExtractionError> {
             match &page.0.content {
-                VecDataHolder::InMemory { data } => {
+                RawVecData::InMemory { data } => {
                     match $($tt)+::scrape(&data) {
                         Ok(result) => {
                             let mut ct = 0;
@@ -357,8 +356,8 @@ macro_rules! create_extraction_fn {
                         }
                     }
                 }
-                VecDataHolder::ExternalFile { .. } => { Err(LinkExtractionError::CanNotStoreInMemory) }
-                VecDataHolder::None => { Ok(0) }
+                RawVecData::ExternalFile { .. } => { Err(LinkExtractionError::CanNotStoreInMemory) }
+                RawVecData::None => { Ok(0) }
             }
         }
 
@@ -367,7 +366,7 @@ macro_rules! create_extraction_fn {
     ($vis: vis $name: ident(decoded, $n: literal, $($tt:tt)+)) => {
         $vis async fn $name(extractor: &impl ExtractorMethodMetaFactory, page: &ProcessedData<'_>, output: &mut ExtractorResult) -> Result<usize, LinkExtractionError> {
             match &page.2 {
-                DecodedData::InMemory { data, .. } => {
+                Decoded::InMemory { data, .. } => {
                     match $($tt)+::scrape(data.as_bytes()) {
                         Ok(result) => {
                             let mut ct = 0;
@@ -394,8 +393,8 @@ macro_rules! create_extraction_fn {
                         }
                     }
                 }
-                DecodedData::OffMemory { .. } => { Err(LinkExtractionError::CanNotStoreInMemory) }
-                DecodedData::None => { Ok(0) }
+                Decoded::OffMemory { .. } => { Err(LinkExtractionError::CanNotStoreInMemory) }
+                Decoded::None => { Ok(0) }
             }
         }
 

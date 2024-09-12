@@ -17,16 +17,14 @@ use std::sync::{Arc};
 use time::OffsetDateTime;
 use tokio::task::JoinSet;
 use crate::config::Configs;
-use crate::contexts::{LocalContext};
+use crate::contexts::local::LocalContext;
 use crate::contexts::traits::{SupportsLinkState, SupportsMetaInfo, SupportsUrlQueue};
-use crate::contexts::worker_context::WorkerContext;
-use crate::runtime::{AtraRuntime, OptionalAtraHandle};
-use crate::seeds::seed_definition::SeedDefinition;
-use crate::shutdown::{graceful_shutdown, GracefulShutdown, GracefulShutdownBarrier, ShutdownReceiver, ShutdownSignalSender};
+use crate::contexts::worker::WorkerContext;
+use crate::crawl::crawl;
+use crate::seed::SeedDefinition;
+use crate::runtime::{AtraRuntime, OptionalAtraHandle, RuntimeContext, graceful_shutdown, GracefulShutdown, GracefulShutdownBarrier, ShutdownReceiver, ShutdownSignalSender};
 use crate::sync::barrier::WorkerBarrier;
-use crate::worker::{work};
 use crate::logging::configure_logging;
-use crate::util::RuntimeContext;
 
 /// The application
 pub struct Atra {
@@ -74,9 +72,9 @@ fn num_cpus() -> NonZeroUsize {
                 )
             });
             assert!(n > 0, "\"{}\" cannot be set to 0", ENV_WORKER_THREADS);
-            unsafe{NonZeroUsize::new_unchecked(n)}
+            unsafe { NonZeroUsize::new_unchecked(n) }
         }
-        Err(std::env::VarError::NotPresent) => NonZeroUsize::new(usize::max(1, num_cpus::get())).unwrap_or(unsafe{NonZeroUsize::new_unchecked(1)}),
+        Err(std::env::VarError::NotPresent) => NonZeroUsize::new(usize::max(1, num_cpus::get())).unwrap_or(unsafe { NonZeroUsize::new_unchecked(1) }),
         Err(std::env::VarError::NotUnicode(e)) => {
             panic!(
                 "\"{}\" must be valid unicode, error: {:?}",
@@ -88,7 +86,6 @@ fn num_cpus() -> NonZeroUsize {
 
 
 impl Atra {
-
     pub fn new(
         mode: ApplicationMode,
         notify_shutdown: ShutdownSignalSender,
@@ -152,7 +149,6 @@ impl Atra {
     // }
 
 
-
     /// Start the application
     pub async fn run(&mut self, seeds: SeedDefinition, configs: Configs) -> Result<(), anyhow::Error> {
         configure_logging(&configs);
@@ -166,21 +162,21 @@ impl Atra {
 
                 let shutdown_and_handle = RuntimeContext::new(
                     self.shutdown.new_guard_instance().to_unsafe(),
-                    self.handle.clone()
+                    self.handle.clone(),
                 );
 
                 let context = Arc::new(
                     LocalContext::new(
                         configs,
-                        shutdown_and_handle
+                        shutdown_and_handle,
                     ).await.unwrap()
                 );
-                let barrier = WorkerBarrier::new(unsafe{NonZeroUsize::new_unchecked(1)});
+                let barrier = WorkerBarrier::new(unsafe { NonZeroUsize::new_unchecked(1) });
                 seeds.fill_queue(context.url_queue()).await;
-                work(
+                crawl(
                     WorkerContext::create(0, context.clone()).await?,
                     self.shutdown.weak_handle(),
-                    Arc::new(barrier)
+                    Arc::new(barrier),
                 ).await.expect("Failed the crawl.");
                 let time_needed = OffsetDateTime::now_utc() - start;
                 log::info!("Needed {} for discovering {} websites", time_needed, context.discovered_websites());
@@ -191,7 +187,7 @@ impl Atra {
                 let start = OffsetDateTime::now_utc();
                 let shutdown_and_handle = RuntimeContext::new(
                     self.shutdown.new_guard_instance().to_unsafe(),
-                    self.handle.clone()
+                    self.handle.clone(),
                 );
 
                 let context = Arc::new(
@@ -210,7 +206,7 @@ impl Atra {
                         async move {
                             let context = context;
                             while context.can_poll().await {
-                                match work(context.clone(), s.clone(), b.clone()).await {
+                                match crawl(context.clone(), s.clone(), b.clone()).await {
                                     Ok(stop) => {
                                         log::info!("Exit {i} with {stop}.")
                                     }
@@ -242,7 +238,7 @@ impl Atra {
 pub enum ApplicationMode {
     Single,
     /// Contains the number of threads to be used
-    Multi(Option<NonZeroUsize>)
+    Multi(Option<NonZeroUsize>),
 }
 
 
@@ -258,7 +254,7 @@ mod test {
     use crate::config::{BudgetSetting, Configs, CrawlConfig};
     use crate::config::crawl::UserAgent;
     use crate::runtime::OptionalAtraHandle;
-    use crate::seeds::seed_definition::SeedDefinition;
+    use crate::seed::SeedDefinition;
 
     fn init() {
         // let stdout = ConsoleAppender::builder().build();
@@ -278,19 +274,19 @@ mod test {
         let _ = log4rs::init_config(config).unwrap();
     }
 
-    #[tokio::test(flavor ="multi_thread", worker_threads = 8)]
-    async fn can_multithread(){
+    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+    async fn can_multithread() {
         init();
         let (app, mut barrier) = Atra::create_contained_with(
             ApplicationMode::Multi(None),
-            OptionalAtraHandle::None
+            OptionalAtraHandle::None,
         );
 
         let mut config: CrawlConfig = CrawlConfig::default();
         config.budget.default = BudgetSetting::Absolute {
             depth: 2,
             recrawl_interval: None,
-            request_timeout: None
+            request_timeout: None,
         };
         config.delay = Some(Duration::milliseconds(1000));
         config.user_agent = UserAgent::Custom("TestCrawl/Atra/v0.1.0".to_string());
@@ -322,10 +318,10 @@ mod test {
 #[cfg(test)]
 mod config_test {
     use crate::config::Configs;
-    use crate::seeds::seed_reader::read_seeds;
+    use crate::seed::read_seeds;
 
     #[test]
-    fn can_load(){
+    fn can_load() {
         Configs::load_from("test_crawl/atra").expect("Works");
         let _ = read_seeds("test_crawl/atra/seeds.txt").expect("Was not able to read file");
     }

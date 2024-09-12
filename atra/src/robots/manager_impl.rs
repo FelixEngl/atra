@@ -25,8 +25,8 @@ use crate::robots::{CachedRobots, RobotsError, RobotsManager};
 use crate::{db_health_check, declare_column_families};
 use crate::database_error::DBActionType::{Delete, Read, Write};
 use crate::database_error::RawDatabaseError;
-use crate::origin::{AtraOriginProvider, AtraUrlOrigin};
-use crate::url::url_with_depth::UrlWithDepth;
+use crate::url::{AtraOriginProvider, AtraUrlOrigin};
+use crate::url::UrlWithDepth;
 
 /// Allows to share the threadsafe variants of  [RobotsManager] over threads
 #[derive(Debug, Clone)]
@@ -392,7 +392,7 @@ mod test {
     use crate::client::ClientBuilder;
     use crate::system::DEFAULT_CACHE_SIZE_ROBOTS;
     use crate::robots::{RobotsManager, OffMemoryRobotsManager};
-    use crate::url::url_with_depth::UrlWithDepth;
+    use crate::url::UrlWithDepth;
     use crate::rocksdb_ext::{destroy_db, open_db};
 
     #[tokio::test]

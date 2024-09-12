@@ -16,7 +16,7 @@ use std::sync::Arc;
 use time::Duration;
 use crate::client::Client;
 use crate::robots::{CachedRobots, RobotsError};
-use crate::url::url_with_depth::UrlWithDepth;
+use crate::url::UrlWithDepth;
 
 /// The basics that share all robots manager
 pub trait RobotsManager {

@@ -212,16 +212,17 @@ impl<W: Write> WarcWriter<W> {
 #[cfg(test)]
 pub(crate) mod test {
     use std::io::Cursor;
-    use crate::warc::writer::WarcWriter;
+    use crate::parser::test::create_test_header;
+    use crate::writer::WarcWriter;
 
     pub fn build_test_warc() -> Vec<u8> {
         const A1: &[u8; 36] = b"Hallo Welt,\n\n das hier ist ein test!";
         const A2: &[u8; 64] = b"Ich bin auch eine testfile \n\r\n\rWARC/1.1\r\n Aber das macht nichts!";
-        let header = crate::warc::parser::test::create_test_header("amazon", A1.len() as u64);
+        let header = create_test_header("amazon", A1.len() as u64);
         let mut writer = WarcWriter::new(Vec::new());
         writer.write_header(&header).unwrap();
         writer.write_complete_body(A1.as_slice()).unwrap();
-        let header = crate::warc::parser::test::create_test_header("ebay", A2.len() as u64);
+        let header = create_test_header("ebay", A2.len() as u64);
         writer.write_header(&header).unwrap();
         writer.write_body(&mut Cursor::new(A2.as_slice())).unwrap();
         writer.into_inner()

@@ -23,6 +23,21 @@ use crate::io::templating::{file_name_template, FileNameTemplate, FileNameTempla
 use crate::io::unique_path_provider::{UniquePathProvider, UniquePathProviderWithTemplate};
 use crate::stores::warc::WarcFilePathProvider;
 
+
+pub trait AtraFS {
+    /// Creates a unique path to a fresh data file.
+    fn create_unique_path_for_dat_file(&self, url: &str) -> Utf8PathBuf;
+
+    /// Builds the path to the data-file with a given name
+    fn get_unique_path_for_data_file(&self, name: impl AsRef<Utf8Path>) -> Utf8PathBuf;
+
+    /// Deletes a datafile
+    fn cleanup_data_file(&self, name: impl AsRef<Utf8Path> + Debug) -> io::Result<()>;
+
+    async fn create_worker_file_provider(&self, worker_id: usize) -> Result<WorkerFileSystemAccess, ErrorWithPath>;
+}
+
+
 /// Provides the paths in the application
 #[derive(Debug)]
 pub struct FileSystemAccess {
@@ -33,7 +48,6 @@ pub struct FileSystemAccess {
 }
 
 impl FileSystemAccess {
-
     pub fn new(
         service: String,
         collection: String,
@@ -67,29 +81,32 @@ impl FileSystemAccess {
             }
         )
     }
+}
 
+
+impl AtraFS for FileSystemAccess {
 
     /// Creates a unique path to a fresh data file.
-    pub fn create_unique_path_for_dat_file(&self, url: &str) -> Utf8PathBuf {
+    fn create_unique_path_for_dat_file(&self, url: &str) -> Utf8PathBuf {
         let mut args = FileNameTemplateArgs::with_capacity(1);
         args.insert("url64", BASE64URL_NOPAD.encode(url.as_bytes()));
         return self.big_file.provide_path_with_args(&args).unwrap();
     }
 
     /// Builds the path to the data-file with a given name
-    pub fn get_unique_path_for_data_file(&self, name: impl AsRef<Utf8Path>) -> Utf8PathBuf {
+    fn get_unique_path_for_data_file(&self, name: impl AsRef<Utf8Path>) -> Utf8PathBuf {
         self.big_file.root().join(name)
     }
 
 
     /// Deletes a datafile
-    pub fn cleanup_data_file(&self, name: impl AsRef<Utf8Path> + Debug) -> io::Result<()> {
+    fn cleanup_data_file(&self, name: impl AsRef<Utf8Path> + Debug) -> io::Result<()> {
         log::debug!("Delete the file {name:?}");
         let path = self.big_file.root().join(name);
         std::fs::remove_file(path)
     }
 
-    pub async fn create_worker_file_provider(&self, worker_id: usize) -> Result<WorkerFileSystemAccess, ErrorWithPath> {
+    async fn create_worker_file_provider(&self, worker_id: usize) -> Result<WorkerFileSystemAccess, ErrorWithPath> {
         let _ = self.filesystem_lock.lock().await;
         WorkerFileSystemAccess::new(
             self.collection_root.clone(),
@@ -100,12 +117,9 @@ impl FileSystemAccess {
 }
 
 
-
 /// A worker bound access for writing warcs
 #[derive(Debug)]
 pub struct WorkerFileSystemAccess {
-    // worker_root: Utf8PathBuf,
-    // worker_base: FileNameTemplate,
     provider: UniquePathProviderWithTemplate
 }
 

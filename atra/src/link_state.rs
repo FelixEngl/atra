@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use thiserror::Error;
 use time::{error, OffsetDateTime};
-use crate::depth::DepthDescriptor;
+use crate::url::Depth;
 use num_enum::IntoPrimitive;
 use num_enum::FromPrimitive;
 use strum::{Display, EnumIs};
@@ -30,7 +30,7 @@ use crate::{db_health_check, declare_column_families};
 use crate::database_error::{DatabaseError, DBActionType, RawDatabaseError};
 use crate::database_error::DBActionType::{Merge, Read, Write};
 use crate::rocksdb_ext::LINK_STATE_DB_CF;
-use crate::url::url_with_depth::UrlWithDepth;
+use crate::url::UrlWithDepth;
 
 /// The state of a link
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq, Hash)]
@@ -38,7 +38,7 @@ pub struct LinkState {
     pub typ: LinkStateType,
     pub last_significant_typ: LinkStateType,
     pub timestamp: OffsetDateTime,
-    pub depth: DepthDescriptor,
+    pub depth: Depth,
     pub payload: Option<Vec<u8>>
 }
 
@@ -47,7 +47,7 @@ impl LinkState {
         typ: LinkStateType,
         last_significant_typ: LinkStateType,
         timestamp: OffsetDateTime,
-        depth: DepthDescriptor,
+        depth: Depth,
         payload: Option<Vec<u8>>
     ) -> Self {
         Self {
@@ -63,7 +63,7 @@ impl LinkState {
         typ: LinkStateType,
         last_significant_typ: LinkStateType,
         timestamp: OffsetDateTime,
-        depth: DepthDescriptor,
+        depth: Depth,
         payload: Vec<u8>
     ) -> Self {
         Self {
@@ -79,7 +79,7 @@ impl LinkState {
         typ: LinkStateType,
         last_significant_typ: LinkStateType,
         timestamp: OffsetDateTime,
-        depth: DepthDescriptor,
+        depth: Depth,
     ) -> Self {
         Self {
             typ,
@@ -162,6 +162,7 @@ pub enum LinkStateError {
 }
 
 
+
 impl LinkState {
     pub const TYP_POS: usize = 0;
     pub const LAST_SIGNIFICANT_TYP_POS: usize = 1;
@@ -174,7 +175,7 @@ impl LinkState {
         (&mut target[Self::OFFSET_TIME..Self::OFFSET_DEPTH]).copy_from_slice(&time.unix_timestamp_nanos().to_be_bytes())
     }
 
-    fn write_depth_descriptor(target: &mut [u8], depth: &DepthDescriptor) {
+    fn write_depth_descriptor(target: &mut [u8], depth: &Depth) {
         (&mut target[Self::OFFSET_DEPTH..Self::OFFSET_DEPTH +8]).copy_from_slice(&depth.depth_on_website.to_be_bytes());
         (&mut target[Self::OFFSET_DEPTH +8..Self::OFFSET_DEPTH +16]).copy_from_slice(&depth.distance_to_seed.to_be_bytes());
         (&mut target[Self::OFFSET_DEPTH +16..Self::OFFSET_PAYLOAD]).copy_from_slice(&depth.total_distance_to_seed.to_be_bytes());
@@ -219,14 +220,14 @@ impl LinkState {
         Ok(OffsetDateTime::from_unix_timestamp_nanos(i128::from_be_bytes(buffer[Self::OFFSET_TIME..Self::OFFSET_DEPTH].try_into()?))?)
     }
 
-    pub fn read_depth_desc(buffer: &[u8]) -> Result<DepthDescriptor, LinkStateError> {
+    pub fn read_depth_desc(buffer: &[u8]) -> Result<Depth, LinkStateError> {
         if buffer.len() < Self::OFFSET_PAYLOAD {
             return Err(LinkStateError::BufferTooSmall(Self::OFFSET_PAYLOAD, buffer.len()))
         }
         let depth_on_website = u64::from_be_bytes((&buffer[Self::OFFSET_DEPTH..Self::OFFSET_DEPTH +8]).try_into()?);
         let distance_to_seed = u64::from_be_bytes((&buffer[Self::OFFSET_DEPTH +8..Self::OFFSET_DEPTH +16]).try_into()?);
         let total_distance_to_seed = u64::from_be_bytes((&buffer[Self::OFFSET_DEPTH +16..Self::OFFSET_PAYLOAD]).try_into()?);
-        Ok(DepthDescriptor::new(depth_on_website, distance_to_seed, total_distance_to_seed))
+        Ok(Depth::new(depth_on_website, distance_to_seed, total_distance_to_seed))
     }
 
     pub fn read_optional_payload(buffer: &[u8]) -> Option<Vec<u8>> {
@@ -264,7 +265,6 @@ pub enum LinkStateDBError {
     #[error(transparent)]
     LinkStateError(#[from] LinkStateError),
 }
-
 
 pub trait LinkStateManager {
     /// Sets the state of [url] to [new_state]
@@ -359,7 +359,6 @@ impl LinkStateDB {
         )
     }
 
-    #[allow(dead_code)]
     async fn scan_for_any_link_state_internal<T: RangeBounds<LinkStateType>>(&self, states: T) -> bool {
         let mut options = ReadOptions::default();
         options.fill_cache(false);
@@ -480,9 +479,9 @@ mod test {
     use std::sync::Arc;
     use scopeguard::defer;
     use time::OffsetDateTime;
-    use crate::depth::DepthDescriptor;
+    use crate::depth::Depth;
     use crate::rocksdb_ext::{destroy_db, open_db};
-    use crate::url::url_with_depth::UrlWithDepth;
+    use crate::url::UrlWithDepth;
     use super::{LinkStateManager, LinkState, LinkStateDB, LinkStateType};
 
     #[test]
@@ -491,7 +490,7 @@ mod test {
             LinkStateType::Crawled,
             LinkStateType::Crawled,
             OffsetDateTime::now_utc().replace_nanosecond(0).unwrap(),
-            DepthDescriptor::ZERO + (1,2,3),
+            Depth::ZERO + (1, 2, 3),
             vec![1,2,3,4,5]
         );
 
@@ -512,17 +511,17 @@ mod test {
 
         db.set_state(
             &UrlWithDepth::from_seed("https://google.de").unwrap(),
-            &LinkState::without_payload(LinkStateType::Discovered, LinkStateType::Discovered, OffsetDateTime::now_utc(), DepthDescriptor::ZERO)
+            &LinkState::without_payload(LinkStateType::Discovered, LinkStateType::Discovered, OffsetDateTime::now_utc(), Depth::ZERO)
         ).unwrap();
 
         db.set_state(
             &UrlWithDepth::from_seed("https://amazon.de").unwrap(),
-            &LinkState::without_payload(LinkStateType::Crawled, LinkStateType::Discovered, OffsetDateTime::now_utc(), DepthDescriptor::ZERO)
+            &LinkState::without_payload(LinkStateType::Crawled, LinkStateType::Discovered, OffsetDateTime::now_utc(), Depth::ZERO)
         ).unwrap();
         
         db.upsert_state(
             &UrlWithDepth::from_seed("https://google.de").unwrap(),
-            &LinkState::without_payload(LinkStateType::InternalError, LinkStateType::Discovered, OffsetDateTime::now_utc(), DepthDescriptor::ZERO),
+            &LinkState::without_payload(LinkStateType::InternalError, LinkStateType::Discovered, OffsetDateTime::now_utc(), Depth::ZERO),
         ).unwrap();
 
         println!("{:?}", db.get_state(&UrlWithDepth::from_seed("https://amazon.de").unwrap()).unwrap());
@@ -541,12 +540,12 @@ mod test {
 
             db.set_state(
                 &UrlWithDepth::from_seed("https://amazon.de").unwrap(),
-                &LinkState::without_payload(LinkStateType::Discovered, LinkStateType::Discovered, OffsetDateTime::now_utc(), DepthDescriptor::ZERO)
+                &LinkState::without_payload(LinkStateType::Discovered, LinkStateType::Discovered, OffsetDateTime::now_utc(), Depth::ZERO)
             ).unwrap();
 
             db.set_state(
                 &UrlWithDepth::from_seed("https://google.de").unwrap(),
-                &LinkState::without_payload(LinkStateType::Crawled, LinkStateType::Discovered, OffsetDateTime::now_utc(), DepthDescriptor::ZERO)
+                &LinkState::without_payload(LinkStateType::Crawled, LinkStateType::Discovered, OffsetDateTime::now_utc(), Depth::ZERO)
             ).unwrap();
         }
 

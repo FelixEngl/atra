@@ -15,10 +15,10 @@
 use std::sync::Arc;
 use rocksdb::{DB};
 use crate::config::Configs;
-use crate::crawl::slim::SlimCrawlResult;
+use crate::crawl::SlimCrawlResult;
 use crate::database_error::{DatabaseError, RawDatabaseError, RawIOError};
 use crate::database_error::DBActionType::{Read, Write};
-use crate::url::url_with_depth::UrlWithDepth;
+use crate::url::UrlWithDepth;
 use crate::db_health_check;
 use crate::declare_column_families;
 
@@ -72,32 +72,6 @@ impl CrawlDB {
 
         Ok(())
     }
-
-    // /// Adds in bulk, returns the number of added elements.
-    // pub fn bulk_add<I: IntoIterator<Item=SlimCrawlResult>>(&self, values: I) -> Result<usize, DatabaseError> {
-    //     let handle = self.cf_handle();
-    //     let mut batch = rocksdb::WriteBatch::default();
-    //     let mut added_elements = 0usize;
-    //     for value in values {
-    //         let key = value.url.as_str().as_bytes();
-    //         let value = bincode::serialize(&value).enrich_ser(
-    //             Self::CRAWL_DB_CF,
-    //             key,
-    //             value.clone()
-    //         )?;
-    //         self.check_size(key, &value)?;
-    //         batch.put_cf(&handle, key, value);
-    //         added_elements += 1;
-    //     }
-    //
-    //
-    //     self.db.write(batch).enrich_without_entry(
-    //         CRAWL_DB_CF,
-    //         DBActionType::BulkWrite,
-    //         &[],
-    //     )?;
-    //     Ok(added_elements)
-    // }
 
     /// Gets the complete entry for the [url]
     pub fn get(&self, url: &UrlWithDepth) -> Result<Option<SlimCrawlResult>, DatabaseError> {

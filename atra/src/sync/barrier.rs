@@ -2,7 +2,7 @@ use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::select;
 use tokio_util::sync::CancellationToken;
-use crate::contexts::traits::SupportsUrlQueue;
+use crate::contexts::traits::{SupportsUrlQueue, SupportsWorkerId};
 use crate::url::queue::UrlQueue;
 
 /// The result of the [WorkerBarrier]
@@ -10,12 +10,6 @@ use crate::url::queue::UrlQueue;
 pub enum ContinueOrStop<T> {
     Continue(T),
     Cancelled(T)
-}
-
-
-/// A trait for a context that supports worker ID
-pub trait SupportsWorkerId {
-    fn worker_id(&self) -> usize;
 }
 
 

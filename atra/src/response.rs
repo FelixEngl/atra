@@ -15,16 +15,16 @@
 use std::str::FromStr;
 use reqwest::header::HeaderMap;
 use reqwest::StatusCode;
-use crate::data_holder::VecDataHolder;
+use crate::data::RawVecData;
 use crate::fetching::{FetchedRequestData};
-use crate::url::atra_uri::AtraUri;
-use crate::url::url_with_depth::UrlWithDepth;
+use crate::url::AtraUri;
+use crate::url::UrlWithDepth;
 
 /// The response for a request
 #[derive(Debug)]
 pub struct ResponseData {
     /// The bytes of the resource.
-    pub content: VecDataHolder,
+    pub content: RawVecData,
     /// The url of the page
     pub url: UrlWithDepth,
     /// The headers of the page request response.
@@ -41,7 +41,7 @@ pub struct ResponseData {
 impl ResponseData {
     #[cfg(not(feature = "chrome"))]
     pub fn reconstruct(
-        content: VecDataHolder,
+        content: RawVecData,
         url: UrlWithDepth,
         headers: Option<HeaderMap>,
         status_code: StatusCode,
@@ -58,7 +58,7 @@ impl ResponseData {
 
     #[cfg(feature = "chrome")]
     pub fn reconstruct(
-        content: VecDataHolder,
+        content: RawVecData,
         url: UrlWithDepth,
         headers: Option<HeaderMap>,
         status_code: StatusCode,
@@ -88,7 +88,7 @@ impl ResponseData {
     }
 
     /// Returns a reference to the dataholder
-    pub fn content(&self) -> &VecDataHolder {
+    pub fn content(&self) -> &RawVecData {
         &self.content
     }
 

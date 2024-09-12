@@ -27,12 +27,9 @@ use thiserror::Error;
 use tokio::sync::mpsc::{Sender};
 use tokio::sync::mpsc::error::{SendError};
 use ubyte::ByteUnit;
-use crate::crawl::seed::CrawlSeed;
-use crate::origin::{AtraOriginProvider, AtraUrlOrigin};
-use crate::runtime::AtraHandleOption;
-use crate::url::atra_uri::AtraUri;
-use crate::url::url_with_depth::UrlWithDepth;
-use crate::util::RuntimeContext;
+use crate::seed::BasicSeed;
+use crate::url::{UrlWithDepth, AtraUri, AtraUrlOrigin, AtraOriginProvider};
+use crate::runtime::{RuntimeContext, AtraHandleOption};
 
 #[derive(Debug)]
 pub enum WebGraphEntry {
@@ -54,7 +51,7 @@ impl WebGraphEntry {
         }
     }
 
-    pub fn create_seed(seed: &impl CrawlSeed) -> Self {
+    pub fn create_seed(seed: &impl BasicSeed) -> Self {
         Self::Seed {
             origin: seed.origin().to_owned(),
             seed: seed.url().url().clone(),
@@ -126,6 +123,8 @@ pub enum LinkNetError {
 
 /// Manages the webgraph
 pub trait WebGraphManager {
+    fn is_healthy(&self) -> bool;
+
     async fn add(&self, link_net_entry: WebGraphEntry) -> Result<(), LinkNetError>;
 }
 
@@ -135,7 +134,7 @@ pub const DEFAULT_CACHE_SIZE_WEB_GRAPH: NonZeroUsize = unsafe{NonZeroUsize::new_
 /// A link net manager with a backing file.
 #[derive(Debug)]
 pub struct QueuingWebGraphManager {
-    queue_in: Sender<WebGraphEntry>,
+    queue_in: Sender<WebGraphEntry>
 }
 
 impl QueuingWebGraphManager {
@@ -246,6 +245,11 @@ impl QueuingWebGraphManager {
 }
 
 impl WebGraphManager for QueuingWebGraphManager {
+
+    fn is_healthy(&self) -> bool {
+        !self.queue_in.is_closed()
+    }
+
     async fn add(&self, link_net_entry: WebGraphEntry) -> Result<(), LinkNetError> {
         match self.queue_in.send(link_net_entry).await {
             Ok(_) => {return Ok(())}
@@ -270,10 +274,8 @@ mod test {
     use tokio::sync::{Barrier};
     use crate::web_graph::{WebGraphEntry, WebGraphManager, QueuingWebGraphManager};
     use tokio::task::{JoinSet};
-    use crate::runtime::OptionalAtraHandle;
-    use crate::shutdown::{graceful_shutdown, UnsafeShutdownGuard};
-    use crate::url::atra_uri::AtraUri;
-    use crate::util::RuntimeContext;
+    use crate::runtime::{graceful_shutdown, OptionalAtraHandle, RuntimeContext, UnsafeShutdownGuard};
+    use crate::url::AtraUri;
 
     #[tokio::test]
     async fn can_write_propery(){

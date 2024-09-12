@@ -6,9 +6,9 @@ use tokio::sync::RwLock;
 use crate::io::errors::{ErrorWithPath, ToErrorWithPath};
 use crate::io::file_owner::FileOwner;
 use crate::io::fs::WorkerFileSystemAccess;
-use crate::warc::SpecialWarcWriter;
 use warc::header::WarcHeader;
 use warc::writer::{WarcWriter, WarcWriterError};
+use crate::warc_ext::SpecialWarcWriter;
 
 pub trait WarcFilePathProvider {
     /// Creates a fresh warc file

@@ -16,8 +16,8 @@ use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use serde::{Deserialize, Serialize};
 use crate::extraction::marker::ExtractorMethodHint;
-use crate::url::atra_uri::ParseError;
-use crate::url::url_with_depth::UrlWithDepth;
+use crate::url::ParseError;
+use crate::url::UrlWithDepth;
 
 /// An extracted link, this is either a new URL or the base URL with some
 #[derive(Debug, Eq, Serialize, Deserialize, Clone)]

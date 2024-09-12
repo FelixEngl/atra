@@ -23,10 +23,10 @@ use itertools::{EitherOrBoth, Itertools, Position};
 use reqwest::IntoUrl;
 use serde::{Deserialize, Serialize};
 use warc::field::{ToUriLikeFieldValue, UriLikeFieldValue};
-use crate::depth::DepthDescriptor;
-use crate::origin::{AtraUrlOrigin, AtraOriginProvider};
+use super::origin::{AtraUrlOrigin, AtraOriginProvider};
 use crate::url::cleaner::SingleUrlCleaner;
 use crate::url::atra_uri::{AtraUri, ParseError, HostComparisonError};
+use crate::url::Depth;
 
 /// Represents an url with knowledge about its depth and raw representation.
 /// The equals and hash methods only consider the [parsed_url].
@@ -34,14 +34,14 @@ use crate::url::atra_uri::{AtraUri, ParseError, HostComparisonError};
 #[derive(Debug, Eq, Clone, Serialize, Deserialize)]
 pub struct UrlWithDepth {
     /// Describes the depth of the url.
-    pub depth: DepthDescriptor,
+    pub depth: Depth,
     /// The parsed url, may add / at the end
     pub url: AtraUri,
 }
 
 impl UrlWithDepth {
     /// Creates a new [UrlWithDepth]
-    pub fn new(depth: DepthDescriptor, mut url: AtraUri) -> Self {
+    pub fn new(depth: Depth, mut url: AtraUri) -> Self {
         url.clean(SingleUrlCleaner::Fragment);
         Self {
             url,
@@ -51,7 +51,7 @@ impl UrlWithDepth {
 
     /// Creates an url with depth from
     pub fn from_seed<U: IntoUrl>(url: U) -> Result<Self, ParseError> {
-        Ok(Self::new(DepthDescriptor::ZERO, url.as_str().parse::<AtraUri>()?))
+        Ok(Self::new(Depth::ZERO, url.as_str().parse::<AtraUri>()?))
     }
 
     #[inline(always)]
@@ -60,7 +60,7 @@ impl UrlWithDepth {
     }
 
     #[inline(always)]
-    pub fn depth(&self) -> &DepthDescriptor {
+    pub fn depth(&self) -> &Depth {
         &self.depth
     }
 
@@ -287,9 +287,9 @@ impl ToUriLikeFieldValue for UrlWithDepth {
 
 #[cfg(test)]
 mod test {
-    use crate::depth::DepthDescriptor;
+    use crate::depth::Depth;
     use crate::origin::AtraOriginProvider;
-    use crate::url::url_with_depth::UrlWithDepth;
+    use crate::url::{AtraOriginProvider, UrlWithDepth};
 
     #[test]
     fn base_only_changes_if_not_given(){
@@ -316,11 +316,11 @@ mod test {
         let base = UrlWithDepth::from_seed("https://www.example.com/").unwrap();
         let created1 = UrlWithDepth::with_base(&base, "https://www.siemens.com/lookup?v=20").unwrap();
         assert_eq!(Some("www.siemens.com".into()), created1.url.atra_origin());
-        assert_eq!(DepthDescriptor::ZERO + (0,1,1), created1.depth);
+        assert_eq!(Depth::ZERO + (0, 1, 1), created1.depth);
         let created2 = UrlWithDepth::with_base(&created1, "https://www.siemens.com/test?v=20").unwrap();
         assert_eq!(created1.depth + (1, 0, 1), created2.depth);
         let created3 = UrlWithDepth::with_base(&created2, "https://www.google.com/test?v=20").unwrap();
-        assert_eq!(DepthDescriptor::ZERO + (0, created2.depth.distance_to_seed + 1, created2.depth.total_distance_to_seed + 1), created3.depth);
+        assert_eq!(Depth::ZERO + (0, created2.depth.distance_to_seed + 1, created2.depth.total_distance_to_seed + 1), created3.depth);
     }
 
     #[test]

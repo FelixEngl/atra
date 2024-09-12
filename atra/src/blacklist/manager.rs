@@ -28,7 +28,7 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 use crate::blacklist::BlackListType;
 use crate::io::simple_line::SupportsSimpleLineReader;
-use crate::shutdown::UnsafeShutdownGuard;
+use crate::runtime::UnsafeShutdownGuard;
 
 /// Manages a blacklist in a thread safe way.
 #[derive(Debug)]

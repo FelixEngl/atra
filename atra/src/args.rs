@@ -26,7 +26,7 @@ use crate::application::ApplicationMode;
 use crate::config::{BudgetSetting, Configs};
 use crate::config::crawl::{CookieSettings, RedirectPolicy, UserAgent};
 use crate::extraction::extractor::Extractor;
-use crate::seeds::seed_definition::SeedDefinition;
+use crate::seed::SeedDefinition;
 
 #[derive(Parser, Debug, Default)]
 #[command(author, version, about, long_about = None)]
@@ -42,8 +42,6 @@ pub struct AtraArgs {
 }
 
 
-
-
 #[derive(Subcommand, Debug)]
 pub enum RunMode {
     /// Single mode allows to crawls on a single seed without leaving the domain.
@@ -52,7 +50,9 @@ pub enum RunMode {
         #[arg(short, long)]
         session_name: Option<String>,
         /// What is the name of the agent?
-        #[arg(short, long, value_parser = UserAgent::from_str, default_value_t = UserAgent::Default)]
+        #[arg(
+            short, long, value_parser = UserAgent::from_str, default_value_t = UserAgent::Default
+        )]
         agent: UserAgent,
         /// How deep do you want to crawl on the domain, starting from the seed?
         #[arg(short, long)]
@@ -70,7 +70,7 @@ pub enum RunMode {
         #[arg(long)]
         log_to_file: bool,
         /// The seed url to be crawled.
-        seeds: SeedDefinition
+        seeds: SeedDefinition,
     },
     /// Crawl multiple seeds
     MULTI {
@@ -90,7 +90,7 @@ pub enum RunMode {
         #[arg(long)]
         log_to_file: bool,
         /// Seed to be crawled
-        seeds: SeedDefinition
+        seeds: SeedDefinition,
     },
     // CLUSTER,
 }
@@ -99,17 +99,15 @@ pub enum RunMode {
 #[derive(Debug)]
 pub enum ConsumedArgs {
     RunConfig(ApplicationMode, SeedDefinition, Configs),
-    Nothing
+    Nothing,
 }
-
 
 
 /// Consumes the args and returns everything necessary to execute Atra
 pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
-
     if let Some(mode) = args.mode {
         match mode {
-            RunMode::SINGLE { session_name, absolute, agent, seeds, depth, timeout, log_level, log_to_file} => {
+            RunMode::SINGLE { session_name, absolute, agent, seeds, depth, timeout, log_level, log_to_file } => {
                 let mut configs = Configs::discover_or_default().expect("Expected some kind of config!");
 
                 configs.paths.root = configs.paths.root_path().join(
@@ -129,13 +127,13 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
                     BudgetSetting::Absolute {
                         depth,
                         recrawl_interval: None,
-                        request_timeout: timeout.map(|value| Duration::saturating_seconds_f64(value))
+                        request_timeout: timeout.map(|value| Duration::saturating_seconds_f64(value)),
                     }
                 } else {
                     BudgetSetting::SeedOnly {
                         depth_on_website: depth,
                         recrawl_interval: None,
-                        request_timeout: timeout.map(|value| Duration::saturating_seconds_f64(value))
+                        request_timeout: timeout.map(|value| Duration::saturating_seconds_f64(value)),
                     }
                 };
 
@@ -146,13 +144,13 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
                 ConsumedArgs::RunConfig(
                     ApplicationMode::Single,
                     seeds,
-                    configs
+                    configs,
                 )
             }
             RunMode::MULTI { session_name, seeds, config: configs_folder, threads, override_log_level: log_level, log_to_file } => {
                 let mut configs = match configs_folder {
-                    None => {Configs::discover_or_default()}
-                    Some(path) => {Configs::load_from(path)}
+                    None => { Configs::discover_or_default() }
+                    Some(path) => { Configs::load_from(path) }
                 }.expect("Expected some kind of config!");
 
                 configs.paths.root = configs.paths.root_path().join(
@@ -175,7 +173,7 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
                 ConsumedArgs::RunConfig(
                     ApplicationMode::Multi(threads.map(|value| NonZeroUsize::new(value)).flatten()),
                     seeds,
-                    configs
+                    configs,
                 )
             }
         }
@@ -262,12 +260,9 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
             cfg.crawl.decode_big_files_up_to = Some(200.megabytes().as_u64());
 
 
-
             ConsumedArgs::Nothing
         } else {
             ConsumedArgs::Nothing
         }
     }
-
-
 }

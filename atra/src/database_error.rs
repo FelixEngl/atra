@@ -17,11 +17,10 @@ use data_encoding::{BASE64, DecodeError};
 use rocksdb::{Error, ErrorKind};
 use thiserror::Error;
 use crate::io::errors::ErrorWithPath;
-use crate::warc::WarcReadError;
 use warc::header::{WarcHeaderValueError};
 use warc::reader::WarcCursorReadError;
 use warc::writer::WarcWriterError;
-
+use crate::warc_ext::ReaderError;
 
 /// Returns the reason why a database is failing
 #[derive(Debug, Error)]
@@ -92,7 +91,7 @@ pub enum DatabaseError {
         source: bincode::Error
     },
     #[error(transparent)]
-    WarcError(#[from] WarcCursorReadError),
+    WarcCursorError(#[from] WarcCursorReadError),
     #[error(transparent)]
     IOErrorWithPath(#[from] ErrorWithPath),
     #[error(transparent)]
@@ -104,7 +103,7 @@ pub enum DatabaseError {
     #[error(transparent)]
     Base64DecodeError(#[from] DecodeError),
     #[error(transparent)]
-    WarcReadError(#[from] WarcReadError)
+    WarcReadError(#[from] ReaderError)
 }
 
 

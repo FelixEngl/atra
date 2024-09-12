@@ -200,7 +200,7 @@ pub fn parse_warc_header(b: &[u8]) -> IResult<&[u8], WarcHeader> {
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use std::net::{IpAddr, Ipv4Addr};
 
     use encoding_rs::UTF_8;
@@ -213,11 +213,11 @@ mod test {
     use crate::record_type::WarcRecordType;
     use crate::truncated_reason::TruncatedReason;
 
-    fn create_uri_num(id_base: &str, ct: u64) -> UriLikeFieldValue {
+    pub fn create_uri_num(id_base: &str, ct: u64) -> UriLikeFieldValue {
         UriLikeFieldValue::new(format!("https://www.{id_base}.com/{ct}").parse().unwrap()).unwrap()
     }
 
-    fn create_test_header(id_base: &str, content_length: u64) -> WarcHeader {
+    pub fn create_test_header(id_base: &str, content_length: u64) -> WarcHeader {
         let mut data = WarcHeader::new();
         let mut uri_ct = 0;
         data.warc_record_id(create_uri_num(id_base, {let x = uri_ct; uri_ct+=1; x})).unwrap();

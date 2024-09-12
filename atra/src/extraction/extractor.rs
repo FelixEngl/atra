@@ -19,11 +19,11 @@ use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString};
 use enum_iterator::{all};
 use crate::contexts::traits::{SupportsConfigs, SupportsGdbrRegistry};
-use crate::decoding::DecodedData;
+use crate::data::Decoded;
 use super::ExtractedLink;
 use crate::extraction::extractor_method::ExtractorMethod;
 use crate::format::AtraFileInformation;
-use crate::language_detection::LanguageInformation;
+use crate::toolkit::LanguageInformation;
 use crate::response::ResponseData;
 /*
     To register a new extractor, create a extractor_decode_action_declaration
@@ -72,7 +72,7 @@ impl Extractor {
     }
 
     /// Extracts the data this the set extractors
-    pub async fn extract<C>(&self, context: &C, response: &ResponseData, identified_type: &AtraFileInformation, decoded: &DecodedData<String, Utf8PathBuf>, lang: Option<&LanguageInformation>) -> ExtractorResult
+    pub async fn extract<C>(&self, context: &C, response: &ResponseData, identified_type: &AtraFileInformation, decoded: &Decoded<String, Utf8PathBuf>, lang: Option<&LanguageInformation>) -> ExtractorResult
     where C: SupportsConfigs + SupportsGdbrRegistry
     {
         log::trace!("Extractor: {:?} - {}", identified_type.format, response.url);
@@ -104,7 +104,7 @@ impl Default for Extractor {
 pub(crate) struct ProcessedData<'a>(
     pub &'a ResponseData,
     pub &'a AtraFileInformation,
-    pub &'a DecodedData<String, Utf8PathBuf>,
+    pub &'a Decoded<String, Utf8PathBuf>,
     pub Option<&'a LanguageInformation>
 );
 
@@ -234,19 +234,19 @@ mod test {
     use crate::config::CrawlConfig;
     use crate::response::{ResponseData};
     use crate::data_processing::process;
-    use crate::contexts::inmemory::InMemoryContext;
-    use crate::data_holder::DataHolder;
+    use crate::data::RawData;
     use crate::extraction::extractor::Extractor;
     use crate::fetching::{FetchedRequestData};
     use crate::format::AtraFileInformation;
     use crate::language_detection::LanguageInformation;
-    use crate::url::url_with_depth::UrlWithDepth;
+    use crate::test_impls::InMemoryContext;
+    use crate::url::UrlWithDepth;
 
     #[tokio::test]
     async fn can_extract_data() {
         let page = ResponseData::new(
             FetchedRequestData::new(
-                DataHolder::from_vec(include_bytes!("../samples/HTML attribute reference - HTML_ HyperText Markup Language _ MDN.html").to_vec()),
+                RawData::from_vec(include_bytes!("../samples/HTML attribute reference - HTML_ HyperText Markup Language _ MDN.html").to_vec()),
                 None,
                 reqwest::StatusCode::OK,
                 None,

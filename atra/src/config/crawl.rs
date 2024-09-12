@@ -19,7 +19,7 @@ use std::num::{NonZeroU64};
 use case_insensitive_string::CaseInsensitiveString;
 use time::Duration;
 use reqwest::header::{HeaderMap};
-use crate::header_map_extensions::optional_header_map;
+use crate::toolkit::header_map_extensions::optional_header_map;
 use serde;
 use serde::{Deserialize, Serialize};
 use strum::{Display};
@@ -29,7 +29,7 @@ use crate::extraction::extractor::{Extractor};
 use crate::gdbr::identifier::GdbrIdentifierRegistryConfig;
 use text_processing::tf_idf::{Idf, Tf};
 use text_processing::configs::StopwordRegistryConfig;
-use crate::url::url_with_depth::UrlWithDepth;
+use crate::url::UrlWithDepth;
 
 /// The general crawling settings for a single
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
