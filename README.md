@@ -68,9 +68,9 @@ and `ca-certificates` installed on you system.
 
 Atra is designed with a clear set of guiding principles to ensure simplicity, efficiency, and longevity:
 
-- **Minimal Dependencies:** "If you can’t embed it, you don’t need it." Atra prioritizes a streamlined architecture by minimizing the need for external components.
-- **Sustainability and Durability:** "Services are short-lived, but monoliths are eternal." Atra is built to be robust, ensuring long-term reliability and stability.
-- **Unified Configuration:** "One config to rule them all." Atra simplifies configuration management by consolidating all settings into a single, easily manageable file.
+- **Minimal Dependencies:** Atra focuses on a streamlined architecture, ensuring only necessary components are included.
+- **Sustainability and Durability:** Atra is built for long-term reliability, prioritizing robustness and stability.
+- **Unified Configuration:** All settings are managed within a single configuration file, simplifying setup and operation.
 
 ### You like Atra?
 If you appreciate Atra, please consider supporting the [Zeehondencentrum Pietersburen](https://www.zeehondencentrum.nl/en/). Even a small donation of €10 can provide food for a seal for an entire day.
