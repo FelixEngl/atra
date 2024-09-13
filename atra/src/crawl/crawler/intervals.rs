@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::client::Client;
 use crate::config::CrawlConfig;
 use crate::robots::information::RobotsInformation;
 use crate::url::{AtraOriginProvider, AtraUrlOrigin, UrlWithDepth};
@@ -20,9 +19,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use time::Duration;
 use tokio::time::Interval;
+use crate::client::traits::AtraClient;
 
 /// Manages the interval
-pub struct InvervalManager<'a, R: RobotsInformation> {
+pub struct InvervalManager<'a, Client: AtraClient, R: RobotsInformation> {
     client: &'a Client,
     configured_robots: Arc<R>,
     registered_intervals: HashMap<AtraUrlOrigin, Interval>,
@@ -30,7 +30,7 @@ pub struct InvervalManager<'a, R: RobotsInformation> {
     no_domain_default: Interval,
 }
 
-impl<'a, R: RobotsInformation> InvervalManager<'a, R> {
+impl<'a, Client, R: RobotsInformation> InvervalManager<'a, Client, R> where Client: AtraClient {
     pub fn new(client: &'a Client, config: &CrawlConfig, configured_robots: Arc<R>) -> Self {
         Self {
             client,

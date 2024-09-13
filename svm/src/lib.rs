@@ -22,7 +22,6 @@ mod csv2;
 use crate::classifier::{DocumentClassifier, TrainDataEntry};
 use crate::config::{DocumentClassifierConfig, SvmRecognizerConfig};
 use crate::error::{LibLinearError, SvmCreationError};
-use camino::Utf8Path;
 pub use csv2::CsvProvider;
 use isolang::Language;
 use liblinear::parameter::serde::{GenericParameters, SupportsParametersCreation};
@@ -30,7 +29,6 @@ use liblinear::solver::GenericSolver;
 use liblinear::Model;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use std::borrow::Cow;
 use std::fmt::Debug;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, ErrorKind, Read};
@@ -39,7 +37,6 @@ use std::sync::Arc;
 use text_processing::stopword_registry::{StopWordList, StopWordRegistry};
 use text_processing::tf_idf::{IdfAlgorithm, TfAlgorithm, TfIdf};
 use text_processing::tokenizer::Tokenizer;
-use crate::error::LibLinearError::Prediction;
 
 pub fn create_document_classifier<TF, IDF, SOLVER>(
     cfg: &SvmRecognizerConfig<TF, IDF>,

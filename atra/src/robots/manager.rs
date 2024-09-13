@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::client::Client;
 use crate::robots::{CachedRobots, RobotsError};
 use crate::url::UrlWithDepth;
 use std::sync::Arc;
 use time::Duration;
+use crate::client::traits::AtraClient;
 
 /// The basics that share all robots manager
 pub trait RobotsManager {
@@ -27,15 +27,15 @@ pub trait RobotsManager {
         agent: &str,
         url: &UrlWithDepth,
         max_age: Option<&Duration>,
-    ) -> Result<Option<Arc<CachedRobots>>, RobotsError>;
+    ) -> Result<Option<Arc<CachedRobots>>, RobotsError<()>>;
 
     /// Uses a mutex internally, therefore you should cache the returned value in your task.
     /// If nothing is in any cache it downloads the robots.txt with the client.
-    async fn get_or_retrieve(
+    async fn get_or_retrieve<C: AtraClient>(
         &self,
-        client: &Client,
+        client: &C,
         agent: &str,
         url: &UrlWithDepth,
         max_age: Option<&Duration>,
-    ) -> Result<Arc<CachedRobots>, RobotsError>;
+    ) -> Result<Arc<CachedRobots>, RobotsError<C::Error>>;
 }

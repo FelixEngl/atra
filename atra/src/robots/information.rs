@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::client::Client;
 use crate::robots::{CachedRobots, RobotsError, RobotsManager};
 use crate::url::{AtraOriginProvider, AtraUrlOrigin, UrlWithDepth};
 use std::sync::Arc;
 use time::Duration;
+use crate::client::traits::AtraClient;
 
 /// A trait for unifying different robots information providers
 pub trait RobotsInformation {
@@ -29,18 +29,18 @@ pub trait RobotsInformation {
     /// If the download fails is creats a replacement with default values for a missing robots.txt
     async fn get_or_retrieve(
         &self,
-        client: &Client,
+        client: &impl AtraClient,
         url: &UrlWithDepth,
     ) -> Result<Arc<CachedRobots>, RobotsError>;
 
     /// Get the duration needed for the intervall between the requests.
-    async fn get_or_retrieve_delay(&self, client: &Client, url: &UrlWithDepth) -> Option<Duration>;
+    async fn get_or_retrieve_delay(&self, client: &impl AtraClient, url: &UrlWithDepth) -> Option<Duration>;
 
     /// Tries to check in any of the cache-layers, if there is no cache entry or an error it returns None
     async fn check_if_allowed_fast(&self, url: &UrlWithDepth) -> Option<bool>;
 
     /// Tries to check in any of the cache-layers, if there is an error it returns false
-    async fn check_if_allowed(&self, client: &Client, url: &UrlWithDepth) -> bool;
+    async fn check_if_allowed(&self, client: &impl AtraClient, url: &UrlWithDepth) -> bool;
 }
 
 pub enum AnyRobotsInformation<R: RobotsManager> {
@@ -64,7 +64,7 @@ impl<R: RobotsManager> RobotsInformation for AnyRobotsInformation<R> {
     #[inline]
     async fn get_or_retrieve(
         &self,
-        client: &Client,
+        client: &impl AtraClient,
         url: &UrlWithDepth,
     ) -> Result<Arc<CachedRobots>, RobotsError> {
         match self {
@@ -74,7 +74,7 @@ impl<R: RobotsManager> RobotsInformation for AnyRobotsInformation<R> {
     }
     #[doc = " Get the duration needed for the intervall between the requests."]
     #[inline]
-    async fn get_or_retrieve_delay(&self, client: &Client, url: &UrlWithDepth) -> Option<Duration> {
+    async fn get_or_retrieve_delay(&self, client: &impl AtraClient, url: &UrlWithDepth) -> Option<Duration> {
         match self {
             AnyRobotsInformation::Origin(a) => a.get_or_retrieve_delay(client, url).await,
             AnyRobotsInformation::General(b) => b.get_or_retrieve_delay(client, url).await,
@@ -90,7 +90,7 @@ impl<R: RobotsManager> RobotsInformation for AnyRobotsInformation<R> {
     }
     #[doc = " Tries to check in any of the cache-layers, if there is an error it returns false"]
     #[inline]
-    async fn check_if_allowed(&self, client: &Client, url: &UrlWithDepth) -> bool {
+    async fn check_if_allowed(&self, client: &impl AtraClient, url: &UrlWithDepth) -> bool {
         match self {
             AnyRobotsInformation::Origin(a) => a.check_if_allowed(client, url).await,
             AnyRobotsInformation::General(b) => b.check_if_allowed(client, url).await,
@@ -124,7 +124,7 @@ impl<R: RobotsManager> RobotsInformation for OriginSpecificRobotsInformation<R> 
 
     async fn get_or_retrieve(
         &self,
-        client: &Client,
+        client: &impl AtraClient,
         url: &UrlWithDepth,
     ) -> Result<Arc<CachedRobots>, RobotsError> {
         if let Some(origin) = url.atra_origin() {
@@ -136,7 +136,7 @@ impl<R: RobotsManager> RobotsInformation for OriginSpecificRobotsInformation<R> 
         self.general.get_or_retrieve(client, url).await
     }
 
-    async fn get_or_retrieve_delay(&self, client: &Client, url: &UrlWithDepth) -> Option<Duration> {
+    async fn get_or_retrieve_delay(&self, client: &impl AtraClient, url: &UrlWithDepth) -> Option<Duration> {
         if let Some(origin) = url.atra_origin() {
             if origin == self.origin {
                 log::trace!("Robots: Fast");
@@ -156,7 +156,7 @@ impl<R: RobotsManager> RobotsInformation for OriginSpecificRobotsInformation<R> 
         self.general.check_if_allowed_fast(url).await
     }
 
-    async fn check_if_allowed(&self, client: &Client, url: &UrlWithDepth) -> bool {
+    async fn check_if_allowed(&self, client: &impl AtraClient, url: &UrlWithDepth) -> bool {
         if let Some(origin) = url.atra_origin() {
             if origin == self.origin {
                 log::trace!("Robots: Fast");
@@ -192,7 +192,7 @@ impl<R: RobotsManager> GeneralRobotsInformation<R> {
 
     pub async fn bind_to_domain(
         self,
-        client: &Client,
+        client: &impl AtraClient,
         url: &UrlWithDepth,
     ) -> AnyRobotsInformation<R> {
         let domain = match url.atra_origin() {
@@ -232,7 +232,7 @@ impl<R: RobotsManager> RobotsInformation for GeneralRobotsInformation<R> {
     /// If the download fails is creats a replacement with default values for a missing robots.txt
     async fn get_or_retrieve(
         &self,
-        client: &Client,
+        client: &impl AtraClient,
         url: &UrlWithDepth,
     ) -> Result<Arc<CachedRobots>, RobotsError> {
         if let Some(ref value) = self.max_age {
@@ -247,7 +247,7 @@ impl<R: RobotsManager> RobotsInformation for GeneralRobotsInformation<R> {
     }
 
     /// Get the duration needed for the intervall between the requests.
-    async fn get_or_retrieve_delay(&self, client: &Client, url: &UrlWithDepth) -> Option<Duration> {
+    async fn get_or_retrieve_delay(&self, client: &impl AtraClient, url: &UrlWithDepth) -> Option<Duration> {
         match self.get_or_retrieve(client, url).await {
             Ok(found) => found.delay(),
             Err(_) => {
@@ -264,7 +264,7 @@ impl<R: RobotsManager> RobotsInformation for GeneralRobotsInformation<R> {
     }
 
     /// Tries to check in any of the cache-layers, if there is an error it returns false
-    async fn check_if_allowed(&self, client: &Client, url: &UrlWithDepth) -> bool {
+    async fn check_if_allowed(&self, client: &impl AtraClient, url: &UrlWithDepth) -> bool {
         match self
             .get_or_retrieve(client, url)
             .await

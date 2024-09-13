@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::client::ClientError;
 use crate::contexts::local::LinkHandlingError;
 use crate::contexts::worker::CrawlWriteError;
 use crate::crawl::ErrorConsumer;
@@ -44,7 +43,7 @@ pub enum GlobalError {
     #[error(transparent)]
     QueueError(#[from] QueueError),
     #[error(transparent)]
-    ClientError(#[from] ClientError),
+    ClientError(#[from] reqwest_middleware::Error),
     #[error(transparent)]
     IOError(#[from] std::io::Error),
 }

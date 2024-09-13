@@ -15,7 +15,7 @@
 use crate::config::Configs;
 use crate::contexts::traits::*;
 use crate::contexts::worker::error::CrawlWriteError;
-use crate::crawl::{CrawlResult, SlimCrawlResult};
+use crate::crawl::{CrawlResult, CrawlTask, SlimCrawlResult};
 use crate::crawl::{StoredDataHint};
 use crate::data::RawVecData;
 use crate::extraction::ExtractedLink;
@@ -328,6 +328,24 @@ where
     }
 }
 
+impl<T> SupportsCrawling for WorkerContext<T>
+where
+    T: SupportsCrawling,
+{
+    type Client = T::Client;
+    type Error = T::Error;
+
+    delegate::delegate! {
+        to self.inner {
+            fn create_crawl_task<T>(&self, seed: T) -> Result<CrawlTask<T, Self::Client>, Self::Error>
+            where
+                T: BasicSeed;
+
+            fn create_crawl_id(&self) -> String;
+        }
+    }
+}
+
 #[cfg(test)]
 pub mod test {
     use crate::config::Configs;
@@ -369,43 +387,43 @@ pub mod test {
             uri_ct += 1;
             x
         }))
-        .unwrap();
+            .unwrap();
         data.concurrent_to(create_uri_num(id_base, {
             let x = uri_ct;
             uri_ct += 1;
             x
         }))
-        .unwrap();
+            .unwrap();
         data.refers_to(create_uri_num(id_base, {
             let x = uri_ct;
             uri_ct += 1;
             x
         }))
-        .unwrap();
+            .unwrap();
         data.refers_to_target(create_uri_num(id_base, {
             let x = uri_ct;
             uri_ct += 1;
             x
         }))
-        .unwrap();
+            .unwrap();
         data.target_uri(create_uri_num(id_base, {
             let x = uri_ct;
             uri_ct += 1;
             x
         }))
-        .unwrap();
+            .unwrap();
         data.info_id(create_uri_num(id_base, {
             let x = uri_ct;
             uri_ct += 1;
             x
         }))
-        .unwrap();
+            .unwrap();
         data.profile(create_uri_num(id_base, {
             let x = uri_ct;
             uri_ct += 1;
             x
         }))
-        .unwrap();
+            .unwrap();
         data.segment_origin_id(create_uri_num(id_base, uri_ct))
             .unwrap();
 
@@ -425,7 +443,7 @@ pub mod test {
                 .unwrap()
                 .1,
         )
-        .unwrap();
+            .unwrap();
         data.indentified_payload_type(parse_media_type::<true>(b"text/xml").unwrap().1)
             .unwrap();
 
@@ -455,12 +473,12 @@ pub mod test {
             Utf8PathBuf::from("test\\data"),
             Utf8PathBuf::from("test\\data\\blobs"),
         )
-        .unwrap();
+            .unwrap();
 
         let wwr = ThreadsafeMultiFileWarcWriter::new_for_worker(Arc::new(
             fs.create_worker_file_provider(0).await.unwrap(),
         ))
-        .unwrap();
+            .unwrap();
 
         (fs, wwr)
     }
@@ -485,8 +503,8 @@ pub mod test {
             writer.write_body_complete(&DATA3)?;
             Ok(())
         })
-        .await
-        .unwrap();
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

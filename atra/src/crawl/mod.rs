@@ -23,10 +23,7 @@ pub use crawler::result::{CrawlResult};
 pub use crawler::slim::*;
 pub use crawler::*;
 
-use crate::contexts::traits::{
-    SupportsCrawlResults, SupportsLinkSeeding, SupportsLinkState, SupportsPolling,
-    SupportsSlimCrawlResults,
-};
+use crate::contexts::traits::{SupportsCrawling, SupportsCrawlResults, SupportsLinkSeeding, SupportsLinkState, SupportsPolling, SupportsSlimCrawlResults};
 use crate::contexts::Context;
 use crate::queue::polling::{AbortCause, QueueExtractionError, UrlQueuePollResult};
 use crate::queue::QueueError;
@@ -69,7 +66,7 @@ where
         + From<<C as SupportsCrawlResults>::Error>
         + From<<C as SupportsLinkState>::Error>
         + From<<C as SupportsPolling>::Error>
-        + From<crate::client::ClientError>
+        + From<<C as SupportsCrawling>::Error>
         + From<QueueError>
         + From<io::Error>
         + Error,
@@ -103,11 +100,14 @@ where
 
                 let guarded_seed = guard.get_unguarded_seed();
 
-                let mut crawler = WebsiteCrawlerBuilder::new(context.configs().crawl())
-                    .build(guarded_seed)
-                    .await;
-
-                crawler.crawl(&context, shutdown.clone(), &consumer).await?
+                match context.create_crawl_task(&guarded_seed) {
+                    Ok(mut task) => {
+                        task.run(&context, shutdown.clone(), &consumer).await?
+                    }
+                    Err(err) => {
+                        consumer.consume_crawl_error(err)?;
+                    }
+                }
             }
             UrlQueuePollResult::Abort(cause) => {
                 if patience < 0 {

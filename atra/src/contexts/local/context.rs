@@ -18,7 +18,7 @@ use crate::contexts::local::errors::LinkHandlingError;
 use crate::contexts::traits::*;
 use crate::contexts::BaseContext;
 use crate::crawl::db::CrawlDB;
-use crate::crawl::SlimCrawlResult;
+use crate::crawl::{CrawlTask, SlimCrawlResult};
 use crate::database::open_db;
 use crate::database::DatabaseError;
 use crate::extraction::ExtractedLink;
@@ -39,12 +39,20 @@ use crate::web_graph::{QueuingWebGraphManager, WebGraphEntry, WebGraphManager};
 use liblinear::solver::L2R_L2LOSS_SVR;
 use rocksdb::DB;
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::sync::Arc;
+use rand::distributions::Alphanumeric;
+use rand::Rng;
+use reqwest::header::HeaderMap;
+use reqwest::redirect::Attempt;
+use reqwest_middleware::ClientWithMiddleware;
 use text_processing::stopword_registry::StopWordRegistry;
 use text_processing::tf_idf::{Idf, Tf};
-use time::OffsetDateTime;
+use time::{Duration, OffsetDateTime};
 use tokio::sync::RwLock;
+use crate::client::{build_classic_client, ClientWithUserAgent};
+use crate::config::crawl::RedirectPolicy;
+use crate::toolkit::domains::domain_name;
 
 /// The state of the app
 #[derive(Debug)]
@@ -156,6 +164,9 @@ impl LocalContext {
         &self.crawled_data
     }
 }
+
+unsafe impl Send for LocalContext {}
+unsafe impl Sync for LocalContext {}
 
 impl BaseContext for LocalContext {}
 
@@ -393,5 +404,49 @@ impl SupportsSlimCrawlResults for LocalContext {
     }
 }
 
-unsafe impl Send for LocalContext {}
-unsafe impl Sync for LocalContext {}
+
+impl SupportsCrawling for LocalContext {
+    type Client = ClientWithUserAgent;
+    type Error = reqwest::Error;
+
+    fn create_crawl_task<T>(&self, seed: T) -> Result<CrawlTask<T, Self::Client>, Self::Error>
+    where
+        T: BasicSeed
+    {
+        let client = build_classic_client(self, &seed)?;
+        let client = ClientWithUserAgent::new(
+            self.configs.crawl.user_agent.get_user_agent().to_string(),
+            client,
+        );
+        Ok(CrawlTask::new(seed, client))
+    }
+
+    fn create_crawl_id(&self) -> String {
+        let mut result: String = "crawl".to_string();
+        result.reserve(15 + 2 + 22);
+        result.push('-');
+        result.push_str(
+            &data_encoding::BASE64URL_NOPAD
+                .encode(&OffsetDateTime::now_utc().unix_timestamp_nanos().to_be_bytes()),
+        );
+        result.push('-');
+        result.push_str(
+            &rand::thread_rng()
+                .sample_iter(&Alphanumeric)
+                .take(15)
+                .map(char::from)
+                .collect::<String>(),
+        );
+        result
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use data_encoding::BASE64URL_NOPAD;
+
+    #[test]
+    fn read() {
+        println!("{}", BASE64URL_NOPAD.encode(&i128::MIN.to_be_bytes()))
+    }
+}

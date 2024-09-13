@@ -44,13 +44,14 @@ create_context_trait! {
     SupportsLinkSeeding,
     SupportsPolling,
     SupportsWorkerId,
+    SupportsCrawling,
 }
 
 pub mod traits {
     use crate::blacklist::lists::BlackList;
     use crate::config::Configs;
     use crate::contexts::BaseContext;
-    use crate::crawl::CrawlResult;
+    use crate::crawl::{CrawlResult, CrawlTask};
     use crate::crawl::SlimCrawlResult;
     use crate::extraction::ExtractedLink;
     use crate::gdbr::identifier::GdbrRegistry;
@@ -68,6 +69,7 @@ pub mod traits {
     use std::error::Error;
     use std::time::Duration;
     use text_processing::stopword_registry::StopWordRegistry;
+    use crate::client::traits::{AtraClient};
 
     /// A marker interface for applying the context trait iff appropriate
     pub trait ContextDelegate {}
@@ -256,5 +258,20 @@ pub mod traits {
     /// A trait for a context that supports worker ID
     pub trait SupportsWorkerId: BaseContext {
         fn worker_id(&self) -> usize;
+    }
+
+    /// A trait to support client building
+    pub trait SupportsCrawling: BaseContext {
+        type Client: AtraClient;
+
+        type Error: Error + Send + Sync;
+
+        /// Creates the crawl task for a seed.
+        fn create_crawl_task<T>(&self, seed: T) -> Result<CrawlTask<T, Self::Client>, Self::Error>
+        where
+            T: BasicSeed;
+
+        /// Provides an unique id for this crawl instance.
+        fn create_crawl_id(&self) -> String;
     }
 }
