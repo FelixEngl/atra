@@ -24,11 +24,7 @@ use crate::blacklist::lists::BlackList;
 use crate::client::{Client, ClientBuilder};
 use crate::config::crawl::RedirectPolicy;
 use crate::config::{BudgetSetting, CrawlConfig};
-use crate::contexts::traits::{
-    SupportsBlackList, SupportsConfigs, SupportsCrawlResults, SupportsFileSystemAccess,
-    SupportsGdbrRegistry, SupportsLinkSeeding, SupportsLinkState, SupportsRobotsManager,
-    SupportsSlimCrawlResults,
-};
+use crate::contexts::traits::{SupportsBlackList, SupportsConfigs, SupportsCrawlResults, SupportsFileSystemAccess, SupportsGdbrRegistry, SupportsLinkSeeding, SupportsLinkState, SupportsRobotsManager, SupportsSlimCrawlResults, SupportsUrlQueue};
 use crate::crawl::crawler::intervals::InvervalManager;
 use crate::crawl::crawler::result::CrawlResult;
 use crate::crawl::crawler::sitemaps::retrieve_and_parse;
@@ -64,6 +60,8 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 use strum::EnumString;
 use time::{Duration, OffsetDateTime};
+use crate::queue::QueueError;
+use crate::url::queue::{UrlQueue, UrlQueueElementWeak};
 
 /// A builder for a crawl task, can be used as template
 #[derive(Debug, Clone)]
@@ -331,7 +329,7 @@ impl<'a> WebsiteCrawlerBuilder<'a> {
             let mut result: String = "crawl".to_string();
             result.push('-');
             result.push_str(
-                &data_encoding::BASE32_NOPAD
+                &data_encoding::BASE64URL_NOPAD
                     .encode(&build_crawl_task_at.unix_timestamp_nanos().to_be_bytes()),
             );
             result.push('-');
@@ -464,13 +462,15 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
             + SupportsSlimCrawlResults
             + SupportsFileSystemAccess
             + SupportsCrawlResults
-            + SupportsLinkSeeding,
+            + SupportsLinkSeeding
+            + SupportsUrlQueue,
         Shutdown: ShutdownReceiver,
         E: From<<Cont as SupportsSlimCrawlResults>::Error>
             + From<<Cont as SupportsLinkSeeding>::Error>
             + From<<Cont as SupportsCrawlResults>::Error>
             + From<<Cont as SupportsLinkState>::Error>
             + From<crate::client::ClientError>
+            + From<QueueError>
             + From<io::Error>
             + Display,
         EC: ErrorConsumer<E>,
@@ -601,6 +601,16 @@ impl<S: BasicSeed> WebsiteCrawler<S> {
                                         "Failed set correct linkstate of {target}, ignoring."
                                     );
                                 }
+                                // if let Err(err) = context.url_queue().enqueue(
+                                //     UrlQueueElementWeak::new(
+                                //         false,
+                                //         0,
+                                //         true,
+                                //         &target
+                                //     )
+                                // ).await {
+                                //     let _ = consumer.consume_crawl_error(err);
+                                // }
                                 continue;
                             }
                         } else {

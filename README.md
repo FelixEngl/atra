@@ -18,9 +18,7 @@ _________________
 /TTTTTTTTTTTTTTT\
 ```
 
-Atra is a novel web crawling solution, implemented in Rust, designed with
-the primary goal of scraping websites as comprehensively
-as possible, while ensuring ease of use and accessibility.
+Atra is a novel web crawling solution, implemented in Rust, designed with the primary goal of scraping websites as comprehensively as possible, while ensuring ease of use and accessibility.
 
 ## Your first crawl
 Download the precompiled executable (coming soon) and run the following command:
@@ -52,10 +50,12 @@ git submodule update --remote --recursive
 ````
 
 ### Windows
-After installing Rust you need [LLVM](https://llvm.org/), with the proper 
-environment paths set.
+After installing Rust you need [LLVM](https://llvm.org/) and [MSVC](https://visualstudio.microsoft.com/de/downloads/), with the proper environment paths set.
 
 ### Linux
+*Currently broken.*
+
+
 After installing rust you need `pkg-config`, `libssl-dev`, `clang`, and `llvm` in order to compile Atra. 
 You can also use the docker container to build a binary.
 
@@ -64,31 +64,23 @@ and `ca-certificates` installed on you system.
 
 ## General Informations
 
-### Philosophy
+### Core Principles
 
-Atra follows a simple philosophy:
-- If you can't embed it, you don't need it.
-- Services are short-lived, but monoliths are for eternity.
-- One config to rule them all.
+Atra is designed with a clear set of guiding principles to ensure simplicity, efficiency, and longevity:
+
+- **Minimal Dependencies:** "If you can’t embed it, you don’t need it." Atra prioritizes a streamlined architecture by minimizing the need for external components.
+- **Sustainability and Durability:** "Services are short-lived, but monoliths are eternal." Atra is built to be robust, ensuring long-term reliability and stability.
+- **Unified Configuration:** "One config to rule them all." Atra simplifies configuration management by consolidating all settings into a single, easily manageable file.
 
 ### You like Atra?
-When you like Atra please consider to donate to the 
-[Zeehondencentrum Pietersburen](https://www.zeehondencentrum.nl/en/).
-Even small donations around 10€ can feed a seal for a whole day!
+If you appreciate Atra, please consider supporting the [Zeehondencentrum Pietersburen](https://www.zeehondencentrum.nl/en/). Even a small donation of €10 can provide food for a seal for an entire day.
 
-> The Zeehondencentrum Pietersburen is the largest seal hospital in Europe. Since the 70's they have been caring for sick, injured or weakened seals. The seals are released after recovery and no animal remains permanently in care.
-The seal hospital depends entirely on donations, gifts and entrance fees.
-
-
-
+> The Zeehondencentrum Pietersburen is the largest seal hospital in Europe. Since the 1970s, they have been dedicated to the care of sick, injured, or weakened seals. After recovery, the seals are released back into the wild, with no animal remaining in permanent care. The center operates solely on donations, gifts, and entrance fees.
 
 ### Why is the crawler named Atra?
-The name Atra comes from "Erigone atra", a dwarf spider with a body length of 1.8mm to 2.8mm.
-Not only do they play a central role in natural pest control in
-agriculture (aphids), but they are also aerial spiders that can
-travel long distances by ballooning, also known as kiting.
+Atra takes its name from Erigone atra, a species of dwarf spider measuring 1.8mm to 2.8mm in length. These spiders play an essential role in natural pest control, particularly in agriculture, and are known for their unique ability to travel long distances by "ballooning," or kiting.
 
-More fun spider facts can be found on [Wikipedia](https://en.wikipedia.org/wiki/Erigone_atra).
+For more information, visit [Wikipedia](https://en.wikipedia.org/wiki/Erigone_atra).
 
 ## Config
 Atra is configured by using json-configs and environment variables. 

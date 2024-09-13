@@ -152,7 +152,25 @@ where
             let status_code = res.status();
             let address = res.remote_addr();
 
+
+            fn persist_temp<T>(temp: NamedTempFile, context: impl SupportsFileSystemAccess, target_url_str: &str) -> std::result::Result<RawData<T>, RawData<T>> {
+                let path = context
+                    .fs()
+                    .create_unique_path_for_dat_file(target_url_str);
+                let result = RawData::from_external(path);
+                match temp.persist(&path) {
+                    Ok(_) => {
+                        Ok(result)
+                    }
+                    Err(err) => {
+                        log::error!("{target_url_str}: Had problems persisting the downloaded data as file: {err}");
+                        Err(result)
+                    }
+                }
+            }
+
             let mut defect = false;
+
             let content = if can_download {
                 if can_download_in_memory {
                     if let Some(value) = res.bytes().await.ok().map(|value| value.to_vec()) {
@@ -236,29 +254,22 @@ where
                                         }
                                     }
                                 } else {
-                                    let path = context
-                                        .fs()
-                                        .create_unique_path_for_dat_file(target_url_str);
-                                    match temp.persist(&path) {
-                                        Ok(_) => {}
-                                        Err(err) => {
+                                    match persist_temp(temp, context, target_url_str) {
+                                        Ok(result) => result,
+                                        Err(result) => {
                                             defect = true;
-                                            log::error!("{target_url_str}: Had problems persisting the downloaded data as file: {err}")
+                                            result
                                         }
                                     }
-                                    RawData::from_external(path)
                                 }
                             } else {
-                                let path =
-                                    context.fs().create_unique_path_for_dat_file(target_url_str);
-                                match temp.persist(&path) {
-                                    Ok(_) => {}
-                                    Err(err) => {
+                                match persist_temp(temp, context, target_url_str) {
+                                    Ok(result) => result,
+                                    Err(result) => {
                                         defect = true;
-                                        log::error!("{target_url_str}: Had problems persisting the downloaded data as file: {err}")
+                                        result
                                     }
                                 }
-                                RawData::from_external(path)
                             }
                         }
                         Err(err) => {

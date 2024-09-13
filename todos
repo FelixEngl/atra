@@ -1,6 +1,5 @@
 Features:
-- YAML:
-    https://crates.io/crates/serde_yaml/0.8.26
+- Test recrawl feature
 
 - JS:
     - https://github.com/denoland/rusty_v8
