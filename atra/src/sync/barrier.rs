@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use crate::contexts::traits::{SupportsUrlQueue, SupportsWorkerId};
-use crate::url::queue::UrlQueue;
+use crate::queue::UrlQueue;
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::select;

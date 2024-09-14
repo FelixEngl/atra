@@ -12,22 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU8, Ordering};
-use http_cache_reqwest::{CACacheManager, Cache, CacheMode, HttpCache, HttpCacheOptions};
-use reqwest::Error;
-use reqwest::redirect::Attempt;
-use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
-use time::Duration;
-use crate::config::Configs;
 use crate::config::crawl::RedirectPolicy;
+use crate::config::Configs;
 use crate::contexts::traits::{SupportsConfigs, SupportsCrawling};
 use crate::seed::BasicSeed;
 use crate::toolkit::domains::domain_name;
 use crate::url::{AtraOriginProvider, UrlWithDepth};
+use http_cache_reqwest::{CACacheManager, Cache, CacheMode, HttpCache, HttpCacheOptions};
+use reqwest::redirect::Attempt;
+use reqwest::Error;
+use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Arc;
+use time::Duration;
 
 /// Builds the classic configured client used by Atra
-pub fn build_classic_client<C: SupportsCrawling, T: BasicSeed>(context: &C, seed: &T) -> Result<ClientWithMiddleware, Error>
+pub fn build_classic_client<C: SupportsCrawling, T: BasicSeed>(
+    context: &C,
+    seed: &T,
+    useragent: impl AsRef<str>,
+) -> Result<ClientWithMiddleware, Error>
 where
     C: SupportsCrawling + SupportsConfigs,
     T: BasicSeed,
@@ -35,14 +39,13 @@ where
     let configs = context.configs();
 
     let mut client = reqwest::Client::builder()
-        .user_agent(context.provide_user_agent())
+        .user_agent(useragent.as_ref())
         .danger_accept_invalid_certs(configs.crawl.accept_invalid_certs)
         .tcp_keepalive(Duration::milliseconds(500).unsigned_abs())
         .pool_idle_timeout(None);
 
     //todo
     // http2_prior_knowledge
-
 
     if let Some(ref headers) = configs.crawl.headers {
         client = client.default_headers(headers.clone());
@@ -99,12 +102,9 @@ where
     Ok(client.build())
 }
 
-
 fn setup_redirect_policy(config: &Configs, url: &UrlWithDepth) -> reqwest::redirect::Policy {
     match config.crawl.redirect_policy {
-        RedirectPolicy::Loose => {
-            reqwest::redirect::Policy::limited(config.crawl.redirect_limit)
-        }
+        RedirectPolicy::Loose => reqwest::redirect::Policy::limited(config.crawl.redirect_limit),
         RedirectPolicy::Strict => {
             let host_s = url.atra_origin().unwrap_or_default();
             let default_policy = reqwest::redirect::Policy::default();
@@ -131,11 +131,11 @@ fn setup_redirect_policy(config: &Configs, url: &UrlWithDepth) -> reqwest::redir
 
                     if tld && attempt_url == host_domain_name
                         || subdomains
-                        && attempt
-                        .url()
-                        .host_str()
-                        .unwrap_or_default()
-                        .ends_with(host_s.as_ref())
+                            && attempt
+                                .url()
+                                .host_str()
+                                .unwrap_or_default()
+                                .ends_with(host_s.as_ref())
                         || to_mode.url().same_host_url(&attempt.url())
                     {
                         default_policy.redirect(attempt)
@@ -143,7 +143,7 @@ fn setup_redirect_policy(config: &Configs, url: &UrlWithDepth) -> reqwest::redir
                         attempt.error("too many redirects")
                     } else if attempt.status().is_redirection()
                         && (0..initial_redirect_limit)
-                        .contains(&initial_redirect.load(Ordering::Relaxed))
+                            .contains(&initial_redirect.load(Ordering::Relaxed))
                     {
                         initial_redirect.fetch_add(1, Ordering::Relaxed);
                         default_policy.redirect(attempt)

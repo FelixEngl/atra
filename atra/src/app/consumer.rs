@@ -46,6 +46,8 @@ pub enum GlobalError {
     ClientError(#[from] reqwest_middleware::Error),
     #[error(transparent)]
     IOError(#[from] std::io::Error),
+    #[error(transparent)]
+    RequestError(#[from] reqwest::Error),
 }
 
 impl ErrorConsumer<GlobalError> for GlobalErrorConsumer {
@@ -179,6 +181,10 @@ impl ErrorConsumer<GlobalError> for GlobalErrorConsumer {
             }
             GlobalError::IOError(e) => {
                 log::debug!("Client error: {e}");
+                true
+            }
+            GlobalError::RequestError(err) => {
+                log::debug!("{err}");
                 true
             }
         };

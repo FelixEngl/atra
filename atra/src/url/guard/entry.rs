@@ -24,6 +24,7 @@ pub struct GuardEntry {
     pub(super) depth: Depth,
 }
 
+#[allow(dead_code)]
 impl GuardEntry {
     pub fn is_in_use(&self) -> bool {
         self.is_in_use

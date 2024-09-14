@@ -24,6 +24,7 @@ pub mod utf8;
 pub use language_detection::*;
 
 /// Compare two optionals by a function.
+#[cfg(test)]
 pub fn comp_opt<T, F: FnOnce(T, T) -> bool>(a: Option<T>, b: Option<T>, f: F) -> bool {
     match (a, b) {
         (Some(a), Some(b)) => f(a, b),

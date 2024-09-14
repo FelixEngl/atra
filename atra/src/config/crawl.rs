@@ -23,7 +23,6 @@ use reqwest::header::HeaderMap;
 use serde;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fmt::Display;
 use std::num::NonZeroU64;
 use strum::Display;
 use strum::EnumString;

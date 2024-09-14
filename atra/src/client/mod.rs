@@ -13,8 +13,8 @@
 // limitations under the License.
 
 mod classic;
-pub mod traits;
 mod impls;
+pub mod traits;
 
-pub use impls::ClientWithUserAgent;
 pub use classic::build_classic_client;
+pub use impls::ClientWithUserAgent;

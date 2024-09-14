@@ -11,10 +11,19 @@ edition = "2021"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(RUSTC_IS_NIGHTLY)'] }
 
 [dependencies]
+# Basics
+regex.workspace = true
+rand.workspace = true
+itertools.workspace = true
+url = { workspace = true, features = ["serde"] }
+const_format.workspace = true
+cfg-if.workspace = true
+
 # Async
-tokio = { version="1.35", features = ["rt-multi-thread", "macros", "time", "io-util", "signal"] }
+tokio = { version="1.35", features = ["rt-multi-thread", "macros", "time", "io-util", "signal", "sync"] }
 tokio-stream = "0.1"
 tokio-util = "0.7"
+#async-channel.workspace = true
 
 # Downloading data
 reqwest = { workspace = true, features = ["brotli", "gzip", "deflate", "stream", "cookies"] }
@@ -51,13 +60,6 @@ data-encoding = "2.5"
 # Identifier
 uuid = { version = "1.7", features = ["serde", "v4", "v5", "fast-rng"] }
 time = { workspace = true, features = ["serde", "serde-human-readable", "formatting"] }
-
-# Basics
-regex.workspace = true
-rand.workspace = true
-itertools.workspace = true
-url = { workspace = true, features = ["serde"] }
-const_format.workspace = true
 
 # Special Types
 deranged = { version = "0.3", features = ["serde"] }
@@ -174,9 +176,9 @@ link_scraper = { version = "0.1", features = ["pdf", "plaintext", "xml", "xlink"
 # torut = "0.2.1"
 
 [dev-dependencies]
-scopeguard = "1.2"
-mockall = "0.13"
-lipsum = "0.9"
+scopeguard.workspace = true
+mockall.workspace = true
+lipsum.workspace = true
 
 
 [build-dependencies]

@@ -12,20 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::error::Error;
-use reqwest::{IntoUrl, Response, StatusCode};
 use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
 use crate::fetching::FetchedRequestData;
+use reqwest::{IntoUrl, StatusCode};
+use std::error::Error;
 
 /// The client used by Atra to download the data.
 pub trait AtraClient {
     type Error: Error + Send + Sync;
 
-    type Response: AtraResponse<Error=Self::Error>;
+    type Response: AtraResponse<Error = Self::Error>;
 
-    fn user_agent(&self) -> impl AsRef<str>;
+    fn user_agent(&self) -> &str;
 
-    async fn get<U>(&self, url: U) -> Result<Self::Response, Self::Error>;
+    async fn get<U>(&self, url: U) -> Result<Self::Response, Self::Error>
+    where
+        U: IntoUrl;
 
     /// Perform a network request to a resource extracting all content
     async fn retrieve<C, U>(&self, context: &C, url: U) -> Result<FetchedRequestData, Self::Error>
@@ -33,7 +35,6 @@ pub trait AtraClient {
         C: SupportsConfigs + SupportsFileSystemAccess,
         U: IntoUrl;
 }
-
 
 pub trait AtraResponse {
     type Error: Error + Send + Sync;
@@ -44,8 +45,3 @@ pub trait AtraResponse {
     async fn text(self) -> Result<String, Self::Error>;
     async fn bytes(self) -> Result<Self::Bytes, Self::Error>;
 }
-
-fn x(){
-    Response::status()
-}
-

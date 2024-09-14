@@ -25,6 +25,7 @@ pub struct UniquePathProvider<S = DefaultSerialProvider> {
 }
 
 impl<S> UniquePathProvider<S> {
+    #[cfg(test)]
     pub fn root(&self) -> &Utf8Path {
         &self.root
     }
@@ -57,6 +58,7 @@ impl UniquePathProvider {
 }
 
 impl UniquePathProvider<NoSerial<u8>> {
+    #[cfg(test)]
     pub fn without_provider(root: impl AsRef<Utf8Path>) -> Self {
         Self::with_provider(root, NoSerial::<u8>::default())
     }
@@ -98,6 +100,7 @@ impl<S> UniquePathProviderWithTemplate<S>
 where
     S: SerialProvider,
 {
+    #[cfg(test)]
     pub fn provide_path(
         &self,
         args: Option<&FileNameTemplateArgs>,

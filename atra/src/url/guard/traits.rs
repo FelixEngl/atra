@@ -28,6 +28,7 @@ pub unsafe trait UnsafeUrlGuardian {
 }
 
 /// A class capable of managing origins
+#[allow(dead_code)]
 pub trait UrlGuardian: UnsafeUrlGuardian + Debug + Clone {
     /// Returns a guard if the reserve was successful.
     /// Returns an error if there is the domain is already in use.

@@ -17,6 +17,7 @@ use crate::contexts::BaseContext;
 use crate::gdbr::scraper_ext::Text;
 use crate::html::{HtmlTag, HtmlTagCategory};
 use crate::toolkit::LanguageInformation;
+#[cfg(test)]
 use camino::Utf8Path;
 use ego_tree::NodeRef;
 use isolang::Language;
@@ -44,7 +45,6 @@ use text_processing::tf_idf::{IdfAlgorithm, TfAlgorithm};
 
 pub struct InitHelper<'a, TF: TfAlgorithm, IDF: IdfAlgorithm> {
     pub gdbr_config: Option<&'a GdbrIdentifierRegistryConfig<TF, IDF>>,
-    pub root: Option<&'a Utf8Path>,
     pub stop_word_registry: Option<&'a StopWordRegistry>,
 }
 
@@ -53,10 +53,6 @@ impl<'a, TF: TfAlgorithm, IDF: IdfAlgorithm> GdbrIdentifierCreationContext<TF, I
 {
     fn gdbr_config(&self) -> Option<&GdbrIdentifierRegistryConfig<TF, IDF>> {
         self.gdbr_config
-    }
-
-    fn root(&self) -> Option<&Utf8Path> {
-        self.root
     }
 }
 
@@ -73,8 +69,6 @@ impl<'a, TF: TfAlgorithm, IDF: IdfAlgorithm> SupportsStopwordsRegistry for InitH
 /// A trait that allows a context to support the initialisation of gdbr
 pub trait GdbrIdentifierCreationContext<TF: TfAlgorithm, IDF: IdfAlgorithm> {
     fn gdbr_config(&self) -> Option<&GdbrIdentifierRegistryConfig<TF, IDF>>;
-
-    fn root(&self) -> Option<&Utf8Path>;
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
@@ -221,10 +215,7 @@ where
     ) -> Result<Option<Self>, SvmCreationError<IDF>> {
         if let Some(config) = context.gdbr_config() {
             let default = if let Some(ref default) = config.default {
-                match create_document_classifier(
-                    &default.svm,
-                    context.stopword_registry(),
-                ) {
+                match create_document_classifier(&default.svm, context.stopword_registry()) {
                     Ok(value) => Some(GdbrIdentifier::new(
                         value,
                         default.threshold,
@@ -319,6 +310,7 @@ pub enum FilterMode {
 }
 
 impl FilterMode {
+    #[cfg(test)]
     pub fn is_above_threshold<'a, T>(&self, score: &ScoredNodeRef<'a, T>, threshold: f64) -> bool {
         match self {
             FilterMode::OnScore => score.score() >= threshold,
@@ -327,6 +319,7 @@ impl FilterMode {
         }
     }
 
+    #[cfg(test)]
     pub fn find_all_above<'a, T: 'a, I: IntoIterator<Item = ScoredNodeRef<'a, T>>>(
         &self,
         scores: I,
@@ -435,6 +428,7 @@ pub struct ScoredNodeRef<'a, T> {
     inner: Rc<(f64, Cell<f64>, NodeRef<'a, T>)>,
 }
 impl<'a, T> ScoredNodeRef<'a, T> {
+    #[cfg(test)]
     pub fn new(score: f64, max_score: f64, node: NodeRef<'a, T>) -> Self {
         Self {
             inner: Rc::new((score, Cell::new(max_score), node)),
@@ -646,6 +640,7 @@ where
         }
     }
 
+    #[cfg(test)]
     pub fn has_gbr(&self, html: &str) -> bool {
         let html = Html::parse_document(html);
         self.get_most_probable(&html).is_some()

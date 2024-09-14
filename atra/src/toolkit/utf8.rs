@@ -159,6 +159,7 @@ pub struct Utf8Reader<'a, I> {
     stopped: bool,
 }
 
+#[allow(dead_code)]
 impl<'a, I> Utf8Reader<'a, I> {
     pub fn new(input: I) -> Self {
         RobustUtf8Reader::new(input).into()
@@ -239,6 +240,7 @@ impl<'a, R> RobustUtf8Reader<'a, R> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn stopped(&self) -> bool {
         self.stopped
     }

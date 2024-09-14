@@ -26,6 +26,7 @@ pub struct UnguardedSeed {
     origin: AtraUrlOrigin,
 }
 
+#[allow(dead_code)]
 impl UnguardedSeed {
     /// Creates a new UnguardedSeed for a [url] and an associated [host].
     pub fn new(

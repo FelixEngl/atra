@@ -14,13 +14,11 @@
 
 mod atra_uri;
 pub mod cleaner;
+mod depth;
 pub mod guard;
 mod guarded;
 mod origin;
-pub mod queue;
 mod url_with_depth;
-
-mod depth;
 
 pub use atra_uri::*;
 pub use depth::*;

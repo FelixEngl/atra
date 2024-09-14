@@ -232,6 +232,7 @@ dependencies = [
  "camino",
  "camino-tempfile",
  "case_insensitive_string",
+ "cfg-if",
  "chardetng",
  "chromiumoxide",
  "clap",

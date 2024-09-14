@@ -12,11 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::database::DatabaseError;
 use crate::link_state::LinkStateDBError;
 use crate::queue::QueueError;
 use crate::web_graph::LinkNetError;
-use std::io;
 use thiserror::Error;
 
 /// Error messages when the context fails somehow.
@@ -28,19 +26,4 @@ pub enum LinkHandlingError {
     UrlQueue(#[from] QueueError),
     #[error(transparent)]
     LinkNetError(#[from] LinkNetError),
-}
-
-/// The errors occuring during crawling
-#[derive(Debug, Error)]
-pub enum WebsiteCrawlerError {
-    #[error(transparent)]
-    Fetcher(#[from] crate::client::ClientError),
-    #[error(transparent)]
-    Database(#[from] DatabaseError),
-    #[error(transparent)]
-    LinkState(#[from] LinkStateDBError),
-    #[error(transparent)]
-    LinkHandling(#[from] LinkHandlingError),
-    #[error(transparent)]
-    IOError(#[from] io::Error),
 }

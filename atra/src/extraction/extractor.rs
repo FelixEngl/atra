@@ -68,14 +68,23 @@ impl Extractor {
                             log::debug!("Extracted {value} links with {extractor}.");
                         }
                         Err(err) => {
-                            log::warn!("Failed {extractor} for {} {} with: {}", response.0.url.url, response.1, err);
+                            log::warn!(
+                                "Failed {extractor} for {} {} with: {}",
+                                response.0.url.url,
+                                response.1,
+                                err
+                            );
                         }
                     }
                 } else {
                     log::debug!("Can not apply {extractor} because it was already used!")
                 }
             } else {
-                log::debug!("{extractor} is not compatible with {} {}!", response.0.url.url, response.1)
+                log::debug!(
+                    "{extractor} is not compatible with {} {}!",
+                    response.0.url.url,
+                    response.1
+                )
             }
         }
     }
@@ -265,7 +274,7 @@ mod test {
     use crate::fetching::FetchedRequestData;
     use crate::fetching::ResponseData;
     use crate::format::AtraFileInformation;
-    use crate::test_impls::InMemoryContext;
+    use crate::test_impls::TestContext;
     use crate::toolkit::LanguageInformation;
     use crate::url::UrlWithDepth;
 
@@ -283,7 +292,7 @@ mod test {
             UrlWithDepth::from_seed("https://www.example.com/").unwrap()
         );
 
-        let context = InMemoryContext::default();
+        let context = TestContext::default();
 
         let identified_type = AtraFileInformation::determine(&context, &page);
 

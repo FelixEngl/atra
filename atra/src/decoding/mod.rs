@@ -72,7 +72,7 @@ where
     match page.content() {
         RawVecData::None => return Ok(Decoded::None),
         RawVecData::ExternalFile { .. } => {
-            if let Some(max_size) = context.configs().crawl().decode_big_files_up_to {
+            if let Some(max_size) = context.configs().crawl.decode_big_files_up_to {
                 let size = page.content().size()?;
                 if max_size < size {
                     log::info!("Skip decoding for {} because the file has {size} bytes but the maximum is {max_size}", page.url);
@@ -325,7 +325,7 @@ mod test {
     use crate::decoding::decode;
     use crate::fetching::{FetchedRequestData, ResponseData};
     use crate::format::AtraFileInformation;
-    use crate::test_impls::InMemoryContext;
+    use crate::test_impls::TestContext;
     use encoding_rs::Encoding;
     use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
     use reqwest::StatusCode;
@@ -338,7 +338,7 @@ mod test {
             async fn $name(){
                 let original_enc = $encoding;
                 let (website, content) = $sample(original_enc);
-                let context = InMemoryContext::default();
+                let context = TestContext::default();
                 let format = AtraFileInformation::determine(&context, &website);
                 let decoded = decode(&context, &website, &format).await.unwrap();
                 assert_eq!(content, decoded.as_in_memory().unwrap().as_ref(), "The selected encoding {} does not equal the selected decoding {}", original_enc.name(), decoded.encoding().unwrap().name());
@@ -351,7 +351,7 @@ mod test {
             async fn $name(){
                 let original_enc = $encoding;
                 let (website, content) = $sample(original_enc);
-                let context = InMemoryContext::default();
+                let context = TestContext::default();
                 let format = AtraFileInformation::determine(&context, &website);
                 let decoded = decode(&context, &website, &format).await.unwrap();
                 assert_eq!(original_enc, decoded.encoding().unwrap(), "The selected encoding {} does not equal the selected decoding {}", original_enc.name(), decoded.encoding().unwrap().name());

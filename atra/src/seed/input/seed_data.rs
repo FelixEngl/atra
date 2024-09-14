@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::queue::UrlQueue;
 use crate::seed::read_seeds;
-use crate::url::queue::UrlQueue;
 use camino::Utf8PathBuf;
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take_while1};

@@ -46,6 +46,7 @@ impl<'a, T: UrlGuardian> fmt::Debug for UrlGuard<'a, T> {
     }
 }
 
+#[allow(dead_code)]
 impl<'a, T: UrlGuardian> UrlGuard<'a, T> {
     /// Checks the guard is poisoned.
     pub async fn check_for_poison(&self) -> Result<(), GuardPoisonedError> {

@@ -18,17 +18,25 @@ use crate::config::Configs;
 use crate::contexts::local::LocalContext;
 use crate::contexts::traits::{SupportsLinkState, SupportsMetaInfo, SupportsUrlQueue};
 use crate::contexts::worker::WorkerContext;
-use crate::crawl::{crawl, ExitState};
+use crate::crawl::crawl;
+use crate::link_state::LinkStateManager;
 use crate::runtime::{
-    graceful_shutdown, AtraRuntime, GracefulShutdown, GracefulShutdownBarrier, OptionalAtraHandle,
-    RuntimeContext, ShutdownReceiver, ShutdownSignalSender,
+    AtraRuntime, GracefulShutdown, OptionalAtraHandle, RuntimeContext, ShutdownReceiver,
+    ShutdownSignalSender,
 };
 use crate::seed::SeedDefinition;
 use crate::sync::barrier::WorkerBarrier;
+use cfg_if::cfg_if;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use time::OffsetDateTime;
 use tokio::task::JoinSet;
+
+cfg_if! {
+    if #[cfg(test)] {
+        use crate::runtime::{graceful_shutdown, GracefulShutdownBarrier};
+    }
+}
 
 /// The application
 pub struct Atra {
@@ -143,6 +151,7 @@ impl Atra {
         )
     }
 
+    #[cfg(test)]
     fn create_contained_with(
         mode: ApplicationMode,
         handle: OptionalAtraHandle,
@@ -207,6 +216,7 @@ impl Atra {
                     "Needed {} for crawling {} websites",
                     time_needed,
                     context
+                        .get_link_state_manager()
                         .crawled_websites()
                         .map(|value| value.to_string())
                         .unwrap_or("# ERROR COUNTING#".to_string())
@@ -247,7 +257,7 @@ impl Atra {
                             {
                                 Ok(s) => {
                                     log::info!("Exit {i} with {s}.");
-                                    break
+                                    break;
                                 }
                                 Err(_) => {
                                     log::error!("Encountered some errors.");
@@ -272,6 +282,7 @@ impl Atra {
                     "Needed {} for crawling {} websites",
                     time_needed,
                     context
+                        .get_link_state_manager()
                         .crawled_websites()
                         .map(|value| value.to_string())
                         .unwrap_or("# ERROR COUNTING#".to_string())

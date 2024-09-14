@@ -60,6 +60,7 @@ pub struct StaticSerialProvider<S> {
 unsafe impl<S> Send for StaticSerialProvider<S> {}
 unsafe impl<S> Sync for StaticSerialProvider<S> {}
 
+#[cfg(test)]
 impl<S> StaticSerialProvider<S> {
     pub const fn new(value: S) -> Self {
         Self { value }

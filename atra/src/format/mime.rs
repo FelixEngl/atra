@@ -17,12 +17,12 @@ use crate::format::mime_serialize::for_vec;
 use crate::static_selectors;
 use chardetng::EncodingDetector;
 use core::str;
-use std::fmt::{Display, Formatter};
 use encoding_rs::Encoding;
 use itertools::Itertools;
 use mime::{Mime, MimeIter, Name, Params};
 use scraper::Html;
 use serde::{Deserialize, Serialize};
+use std::fmt::{Display, Formatter};
 
 use crate::url::AtraUri;
 pub use mime::*;
@@ -35,10 +35,18 @@ pub struct MimeType {
 
 impl Display for MimeType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Mime(\"{}\")", self.types.iter().map(|value| value.to_string()).join("\", \""))
+        write!(
+            f,
+            "Mime(\"{}\")",
+            self.types
+                .iter()
+                .map(|value| value.to_string())
+                .join("\", \"")
+        )
     }
 }
 
+#[cfg(test)]
 macro_rules! create_fn {
     (
         $($name: ident => $targ: ident<$t:ty>),+
@@ -59,6 +67,7 @@ impl MimeType {
         Self { types }
     }
 
+    #[cfg(test)]
     pub fn new_single(mime: Mime) -> Self {
         Self { types: vec![mime] }
     }
@@ -70,6 +79,21 @@ impl MimeType {
         unsafe { Self::new_unchecked(collected) }
     }
 
+    pub fn get_param_values(&self, name: Name) -> Option<Vec<Name>> {
+        let found = MimeParamsIter::new_filtered(self.iter(), name)
+            .map(|value| value.1)
+            .collect_vec();
+        (!found.is_empty()).then_some(found)
+    }
+
+    #[inline]
+    pub fn iter(&self) -> std::slice::Iter<'_, Mime> {
+        self.types.iter()
+    }
+}
+
+#[cfg(test)]
+impl MimeType {
     create_fn! {
         types => type_<Name>,
         subtypes => subtype<Name>,
@@ -85,18 +109,6 @@ impl MimeType {
 
     pub fn params(&self) -> MimeParamsIter {
         MimeParamsIter::new(self.iter())
-    }
-
-    pub fn get_param_values(&self, name: Name) -> Option<Vec<Name>> {
-        let found = MimeParamsIter::new_filtered(self.iter(), name)
-            .map(|value| value.1)
-            .collect_vec();
-        (!found.is_empty()).then_some(found)
-    }
-
-    #[inline]
-    pub fn iter(&self) -> std::slice::Iter<'_, Mime> {
-        self.types.iter()
     }
 
     pub fn names_iter(&self) -> MimesNamesIter {
@@ -120,6 +132,7 @@ pub struct MimesNamesIter<'a> {
 }
 
 impl<'a> MimesNamesIter<'a> {
+    #[cfg(test)]
     fn new(mimes: std::slice::Iter<'a, Mime>) -> Self {
         Self {
             mimes,
@@ -198,6 +211,7 @@ pub struct MimeParamsIter<'a, 'b> {
 }
 
 impl<'a> MimeParamsIter<'a, 'static> {
+    #[cfg(test)]
     fn new(mut mimes: std::slice::Iter<'a, Mime>) -> Self {
         let current = mimes.next().map(|value| value.params());
         Self {

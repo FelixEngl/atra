@@ -19,18 +19,22 @@ use std::sync::Arc;
 use strum::{Display, EnumString};
 use tokio::task::yield_now;
 
-pub use crawler::result::{CrawlResult};
+pub use crawler::result::CrawlResult;
 pub use crawler::slim::*;
 pub use crawler::*;
 
-use crate::contexts::traits::{SupportsCrawling, SupportsCrawlResults, SupportsLinkSeeding, SupportsLinkState, SupportsPolling, SupportsSlimCrawlResults};
+use crate::contexts::traits::{
+    SupportsCrawlResults, SupportsCrawling, SupportsLinkSeeding, SupportsLinkState,
+    SupportsPolling, SupportsSlimCrawlResults,
+};
 use crate::contexts::Context;
-use crate::queue::polling::{AbortCause, QueueExtractionError, UrlQueuePollResult};
 use crate::queue::QueueError;
+use crate::queue::{AbortCause, QueueExtractionError, UrlQueuePollResult};
 use crate::runtime::ShutdownReceiver;
 use crate::sync::barrier::{ContinueOrStop, WorkerBarrier};
 use crate::url::guard::GuardianError;
 
+use crate::link_state::LinkStateManager;
 #[cfg(test)]
 pub use crawler::result::test;
 
@@ -64,7 +68,7 @@ where
     E: From<<C as SupportsSlimCrawlResults>::Error>
         + From<<C as SupportsLinkSeeding>::Error>
         + From<<C as SupportsCrawlResults>::Error>
-        + From<<C as SupportsLinkState>::Error>
+        + From<<<C as SupportsLinkState>::LinkStateManager as LinkStateManager>::Error>
         + From<<C as SupportsPolling>::Error>
         + From<<C as SupportsCrawling>::Error>
         + From<QueueError>
@@ -98,14 +102,10 @@ where
                     patience = PATIENCE;
                 }
 
-                let guarded_seed = guard.get_unguarded_seed();
-
-                match context.create_crawl_task(&guarded_seed) {
-                    Ok(mut task) => {
-                        task.run(&context, shutdown.clone(), &consumer).await?
-                    }
+                match context.create_crawl_task(guard.get_unguarded_seed()) {
+                    Ok(mut task) => task.run(&context, shutdown.clone(), &consumer).await?,
                     Err(err) => {
-                        consumer.consume_crawl_error(err)?;
+                        consumer.consume_crawl_error(err.into())?;
                     }
                 }
             }

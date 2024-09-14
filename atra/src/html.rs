@@ -57,6 +57,7 @@ macro_rules! hmtl_tags_categories {
         }
 
         impl HtmlTagCategory {
+            #[allow(dead_code)]
             pub fn tags(&self) -> &'static [HtmlTag] {
                 match self {
                     $(Self::$cat => &[$(HtmlTag::$tag),+]),+
@@ -74,6 +75,7 @@ macro_rules! hmtl_tags_categories {
     };
 }
 
+#[cfg(test)]
 macro_rules! has_characteristic {
     ($($target: ident::$name:ident($pattern:pat $(if $guard:expr)? $(,)?);)+) => {
         $(
@@ -218,9 +220,9 @@ html_tags! {
     Wbr = "wbr";
 }
 
-has_characteristic! {
-    HtmlTag::defines_section(HtmlTag::Div | HtmlTag::Span);
-}
+// has_characteristic! {
+//     HtmlTag::defines_section(HtmlTag::Div | HtmlTag::Span);
+// }
 
 hmtl_tags_categories!(
     Basic: Html, Head, Title, Body, H1, H2, H3, H4, H5, H6, P, Br, Hr;

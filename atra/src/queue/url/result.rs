@@ -1,4 +1,4 @@
-// Copyright 2024 Felix Engl
+// Copyright 2024. Felix Engl
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::queue::QueueError;
+use crate::queue::raw::errors::QueueError;
+use crate::queue::url::UrlQueueElement;
 use crate::url::guard::GuardianError;
-use crate::url::queue::UrlQueueElement;
+use crate::url::UrlWithDepth;
 use std::error::Error;
 use std::fmt::Debug;
 use thiserror::Error;
@@ -37,7 +38,7 @@ pub enum AbortCause {
     #[error("The queue is empty.")]
     QueueIsEmpty,
     #[error("The element does not have a host.")]
-    NoHost(UrlQueueElement),
+    NoHost(UrlQueueElement<UrlWithDepth>),
     #[error("Shutdown")]
     Shutdown,
 }

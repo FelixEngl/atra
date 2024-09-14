@@ -22,6 +22,7 @@ use warc::writer::WarcWriterError;
 
 /// A writer for WARC files
 #[cfg_attr(test, automock)]
+#[allow(dead_code)]
 pub trait SpecialWarcWriter {
     /// Returns the pointer with the current file and position as tuple, may fail is some kind of error occurs.
     fn get_skip_pointer(&self) -> Result<(Utf8PathBuf, u64), WarcWriterError>;

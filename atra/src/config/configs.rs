@@ -46,23 +46,6 @@ impl Configs {
             session,
         }
     }
-    #[inline]
-    pub fn paths(&self) -> &PathsConfig {
-        &self.paths
-    }
-
-    #[inline]
-    pub fn system(&self) -> &SystemConfig {
-        &self.system
-    }
-    #[inline]
-    pub fn crawl(&self) -> &CrawlConfig {
-        &self.crawl
-    }
-    #[inline]
-    pub fn session(&self) -> &SessionConfig {
-        &self.session
-    }
 
     pub fn load_from<P: AsRef<Utf8Path>>(folder: P) -> Result<Self, config::ConfigError> {
         Config::builder()
@@ -88,12 +71,8 @@ impl Configs {
             .add_source(config::Environment::with_prefix("ATRA").separator("."))
             .build()
         {
-            Ok(value) => {
-                value.try_deserialize()
-            }
-            Err(_) => {
-                Ok(Default::default())
-            }
+            Ok(value) => value.try_deserialize(),
+            Err(_) => Ok(Default::default()),
         }
     }
 

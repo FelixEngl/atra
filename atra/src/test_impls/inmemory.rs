@@ -12,31 +12,39 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::blacklist::PolyBlackList;
+use crate::blacklist::{
+    create_managed_blacklist, Blacklist, BlacklistError, BlacklistManager, BlacklistType,
+    ManagedBlacklist, ManagedBlacklistSender, PolyBlackList, RegexBlackList,
+};
+use crate::client::{build_classic_client, ClientWithUserAgent};
 use crate::config::Configs;
 use crate::contexts::local::LinkHandlingError;
 use crate::contexts::traits::*;
 use crate::contexts::{BaseContext, Context};
-use crate::crawl::{CrawlResult, SlimCrawlResult, StoredDataHint};
+use crate::crawl::{CrawlResult, CrawlTask, SlimCrawlResult, StoredDataHint};
 use crate::data::RawVecData;
 use crate::database::DatabaseError;
 use crate::extraction::ExtractedLink;
 use crate::gdbr::identifier::GdbrIdentifierRegistry;
 use crate::io::fs::FileSystemAccess;
-use crate::link_state::{LinkState, LinkStateDBError, LinkStateType};
+use crate::link_state::{LinkState, LinkStateDBError, LinkStateKind, LinkStateManager};
 use crate::queue::QueueError;
-use crate::robots::{InMemoryRobotsManager, ShareableRobotsManager};
+use crate::queue::{EnqueueCalled, UrlQueue, UrlQueueElement};
+use crate::robots::InMemoryRobotsManager;
 use crate::seed::BasicSeed;
 use crate::url::guard::InMemoryUrlGuardian;
-use crate::url::queue::{EnqueueCalled, UrlQueue, UrlQueueElement, UrlQueueElementWeak};
 use crate::url::UrlWithDepth;
 use crate::url::{AtraOriginProvider, AtraUri};
 use crate::web_graph::{LinkNetError, WebGraphEntry, WebGraphManager};
+use indexmap::IndexSet;
 use itertools::Itertools;
 use liblinear::solver::L2R_L2LOSS_SVR;
+use rand::distributions::Alphanumeric;
+use rand::Rng;
 use std::cmp::min;
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::ops::Deref;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use text_processing::stopword_registry::StopWordRegistry;
 use text_processing::tf_idf::{Idf, Tf};
@@ -45,46 +53,46 @@ use tokio::sync::broadcast::Receiver;
 use tokio::sync::Mutex;
 
 #[derive(Debug)]
-pub struct InMemoryContext {
+pub struct TestContext {
     ct_crawled_websites: AtomicUsize,
     ct_found_websites: AtomicUsize,
-    robots_manager: ShareableRobotsManager,
-    blacklist: PolyBlackList,
+    link_state_manager: InMemoryLinkStateManager,
+    robots_manager: InMemoryRobotsManager,
+    blacklist_manager: TestBlacklistManager,
     crawled_websites: tokio::sync::RwLock<HashMap<AtraUri, SlimCrawlResult>>,
-    state: tokio::sync::RwLock<HashMap<AtraUri, LinkState>>,
     data_urls: Mutex<Vec<(UrlWithDepth, UrlWithDepth)>>,
     configs: Configs,
     host_manager: InMemoryUrlGuardian,
     started_at: OffsetDateTime,
-    links_queue: InMemoryLinkQueue,
-    link_net_manager: InMemoryLinkNetManager,
+    links_queue: TestUrlQueue,
+    link_net_manager: TestLinkNetManager,
     stop_word_registry: StopWordRegistry,
     gdbr_registry: Option<GdbrIdentifierRegistry<Tf, Idf, L2R_L2LOSS_SVR>>,
 }
 
-impl InMemoryContext {
+impl TestContext {
     pub fn new(configs: Configs) -> Self {
         Self {
             ct_crawled_websites: AtomicUsize::new(0),
             ct_found_websites: AtomicUsize::new(0),
-            robots_manager: InMemoryRobotsManager::new().into(),
-            blacklist: PolyBlackList::default(),
+            robots_manager: InMemoryRobotsManager::new(),
+            blacklist_manager: TestBlacklistManager::new(Default::default()),
             crawled_websites: tokio::sync::RwLock::new(HashMap::new()),
-            state: tokio::sync::RwLock::new(HashMap::new()),
-            links_queue: InMemoryLinkQueue::default(),
+            link_state_manager: InMemoryLinkStateManager::new(),
+            links_queue: TestUrlQueue::default(),
             data_urls: Default::default(),
             stop_word_registry: StopWordRegistry::default(),
             configs,
             host_manager: Default::default(),
             started_at: OffsetDateTime::now_utc(),
-            link_net_manager: InMemoryLinkNetManager::default(),
+            link_net_manager: TestLinkNetManager::default(),
             gdbr_registry: None,
         }
     }
 
-    pub fn with_blacklist(configs: Configs, blacklist: PolyBlackList) -> Self {
+    pub fn with_blacklist(configs: Configs, blacklist: Option<Vec<String>>) -> Self {
         Self {
-            blacklist,
+            blacklist_manager: TestBlacklistManager::new(blacklist),
             ..Self::new(configs)
         }
     }
@@ -98,30 +106,67 @@ impl InMemoryContext {
             .into_iter()
             .map(|value| (value.0, value.1.inflate(None)))
             .collect();
-        let found = self.state.into_inner();
+        let found = self.link_state_manager.state.into_inner().unwrap();
         (data, found)
     }
 }
 
-impl Default for InMemoryContext {
+impl Default for TestContext {
     fn default() -> Self {
         Self::new(Configs::default())
     }
 }
 
-impl BaseContext for InMemoryContext {}
+impl BaseContext for TestContext {}
 
-impl AsyncContext for InMemoryContext {}
+impl AsyncContext for TestContext {}
 
-impl SupportsWorkerId for InMemoryContext {
+impl SupportsWorkerId for TestContext {
     fn worker_id(&self) -> usize {
         0
     }
 }
 
-impl Context for InMemoryContext {}
+impl SupportsCrawling for TestContext {
+    type Client = ClientWithUserAgent;
+    type Error = reqwest::Error;
 
-impl SupportsLinkSeeding for InMemoryContext {
+    fn create_crawl_task<S>(&self, seed: S) -> Result<CrawlTask<S, Self::Client>, Self::Error>
+    where
+        S: BasicSeed,
+    {
+        let useragent = self.configs.crawl.user_agent.get_user_agent().to_string();
+        let client = build_classic_client(self, &seed, &useragent)?;
+        let client = ClientWithUserAgent::new(useragent, client);
+        Ok(CrawlTask::new(seed, client))
+    }
+
+    fn create_crawl_id(&self) -> String {
+        let mut result: String = "crawl".to_string();
+        result.reserve(15 + 2 + 22);
+        result.push('-');
+        result.push_str(
+            &data_encoding::BASE64URL_NOPAD.encode(
+                &OffsetDateTime::now_utc()
+                    .unix_timestamp_nanos()
+                    .to_be_bytes(),
+            ),
+        );
+        result.push('-');
+        result.push_str(
+            &rand::thread_rng()
+                .sample_iter(&Alphanumeric)
+                .take(15)
+                .map(char::from)
+                .collect::<String>(),
+        );
+        result
+    }
+}
+
+impl Context for TestContext {}
+
+impl SupportsLinkSeeding for TestContext {
     type Error = LinkHandlingError;
 
     async fn register_seed<S: BasicSeed>(&self, seed: &S) -> Result<(), LinkHandlingError> {
@@ -153,13 +198,14 @@ impl SupportsLinkSeeding for InMemoryContext {
                         .add(WebGraphEntry::create_link(from, url))
                         .await
                         .unwrap();
-                    if self.get_link_state(url).await?.is_none() {
-                        self.update_link_state(url, LinkStateType::Discovered)
+                    if self.link_state_manager.get_link_state(url).await?.is_none() {
+                        self.link_state_manager
+                            .update_link_state(url, LinkStateKind::Discovered)
                             .await?;
                         if let Some(origin) = url.atra_origin() {
                             if self
                                 .configs
-                                .crawl()
+                                .crawl
                                 .budget
                                 .get_budget_for(&origin)
                                 .is_in_budget(url)
@@ -183,62 +229,14 @@ impl SupportsLinkSeeding for InMemoryContext {
     }
 }
 
-impl SupportsLinkState for InMemoryContext {
-    type Error = LinkStateDBError;
-
-    fn crawled_websites(&self) -> Result<u64, LinkStateDBError> {
-        Ok(self.ct_crawled_websites.load(Ordering::Relaxed) as u64)
-    }
-
-    async fn update_link_state(
-        &self,
-        url: &UrlWithDepth,
-        state: LinkStateType,
-    ) -> Result<(), LinkStateDBError> {
-        let mut lock = self.state.write().await;
-        let raw_url = url.url();
-        if let Some(target) = lock.get_mut(raw_url) {
-            target.update_in_place(state.into_update(url, None));
-        } else {
-            lock.insert(raw_url.clone(), state.into_update(url, None));
-        }
-        Ok(())
-    }
-
-    async fn update_link_state_with_payload(
-        &self,
-        url: &UrlWithDepth,
-        state: LinkStateType,
-        payload: Vec<u8>,
-    ) -> Result<(), LinkStateDBError> {
-        let mut lock = self.state.write().await;
-        let raw_url = url.url();
-        if let Some(target) = lock.get_mut(raw_url) {
-            target.update_in_place(state.into_update(url, Some(payload)));
-        } else {
-            lock.insert(raw_url.clone(), state.into_update(url, Some(payload)));
-        }
-        Ok(())
-    }
-
-    async fn get_link_state(
-        &self,
-        url: &UrlWithDepth,
-    ) -> Result<Option<LinkState>, LinkStateDBError> {
-        let lock = self.state.read().await;
-        Ok(lock.get(url.url()).map(|value| value.clone()))
-    }
-
-    async fn check_if_there_are_any_crawlable_links(&self, max_age: std::time::Duration) -> bool {
-        let lock = self.state.read().await;
-        lock.iter().any(|value| {
-            value.1.typ < LinkStateType::ProcessedAndStored
-                || OffsetDateTime::now_utc() - value.1.timestamp > max_age
-        })
+impl SupportsLinkState for TestContext {
+    type LinkStateManager = InMemoryLinkStateManager;
+    fn get_link_state_manager(&self) -> &Self::LinkStateManager {
+        &self.link_state_manager
     }
 }
 
-impl SupportsUrlGuarding for InMemoryContext {
+impl SupportsUrlGuarding for TestContext {
     type Guardian = InMemoryUrlGuardian;
 
     fn get_guardian(&self) -> &InMemoryUrlGuardian {
@@ -246,22 +244,22 @@ impl SupportsUrlGuarding for InMemoryContext {
     }
 }
 
-impl SupportsRobotsManager for InMemoryContext {
-    type RobotsManager = ShareableRobotsManager;
+impl SupportsRobotsManager for TestContext {
+    type RobotsManager = InMemoryRobotsManager;
 
-    async fn get_robots_instance(&self) -> Self::RobotsManager {
-        self.robots_manager.clone()
+    fn get_robots_manager(&self) -> &Self::RobotsManager {
+        &self.robots_manager
     }
 }
 
-impl SupportsBlackList for InMemoryContext {
-    type BlackList = PolyBlackList;
-    async fn get_blacklist(&self) -> PolyBlackList {
-        self.blacklist.clone()
+impl SupportsBlackList for TestContext {
+    type BlacklistManager = TestBlacklistManager;
+    fn get_blacklist_manager(&self) -> &Self::BlacklistManager {
+        &self.blacklist_manager
     }
 }
 
-impl SupportsMetaInfo for InMemoryContext {
+impl SupportsMetaInfo for TestContext {
     fn crawl_started_at(&self) -> OffsetDateTime {
         self.started_at
     }
@@ -271,14 +269,14 @@ impl SupportsMetaInfo for InMemoryContext {
     }
 }
 
-impl SupportsConfigs for InMemoryContext {
+impl SupportsConfigs for TestContext {
     fn configs(&self) -> &Configs {
         &self.configs
     }
 }
 
-impl SupportsUrlQueue for InMemoryContext {
-    type UrlQueue = InMemoryLinkQueue;
+impl SupportsUrlQueue for TestContext {
+    type UrlQueue = TestUrlQueue;
 
     async fn can_poll(&self) -> bool {
         !self.links_queue.is_empty().await
@@ -289,7 +287,7 @@ impl SupportsUrlQueue for InMemoryContext {
     }
 }
 
-impl SupportsFileSystemAccess for InMemoryContext {
+impl SupportsFileSystemAccess for TestContext {
     type FileSystem = FileSystemAccess;
 
     fn fs(&self) -> &FileSystemAccess {
@@ -297,21 +295,21 @@ impl SupportsFileSystemAccess for InMemoryContext {
     }
 }
 
-impl SupportsWebGraph for InMemoryContext {
-    type WebGraphManager = InMemoryLinkNetManager;
+impl SupportsWebGraph for TestContext {
+    type WebGraphManager = TestLinkNetManager;
 
     fn web_graph_manager(&self) -> &Self::WebGraphManager {
         &self.link_net_manager
     }
 }
 
-impl SupportsStopwordsRegistry for InMemoryContext {
+impl SupportsStopwordsRegistry for TestContext {
     fn stopword_registry(&self) -> Option<&StopWordRegistry> {
         Some(&self.stop_word_registry)
     }
 }
 
-impl SupportsGdbrRegistry for InMemoryContext {
+impl SupportsGdbrRegistry for TestContext {
     type Registry = GdbrIdentifierRegistry<Tf, Idf, L2R_L2LOSS_SVR>;
 
     fn gdbr_registry(&self) -> Option<&Self::Registry> {
@@ -319,7 +317,7 @@ impl SupportsGdbrRegistry for InMemoryContext {
     }
 }
 
-impl SupportsSlimCrawlResults for InMemoryContext {
+impl SupportsSlimCrawlResults for TestContext {
     type Error = DatabaseError;
 
     async fn retrieve_slim_crawled_website(
@@ -345,7 +343,7 @@ impl SupportsSlimCrawlResults for InMemoryContext {
     }
 }
 
-impl SupportsCrawlResults for InMemoryContext {
+impl SupportsCrawlResults for TestContext {
     type Error = DatabaseError;
 
     async fn store_crawled_website(&self, result: &CrawlResult) -> Result<(), DatabaseError> {
@@ -369,12 +367,98 @@ impl SupportsCrawlResults for InMemoryContext {
     }
 }
 
+#[derive(Debug)]
+pub struct TestBlacklistManager {
+    managed: ManagedBlacklist<PolyBlackList>,
+    sender: ManagedBlacklistSender<PolyBlackList>,
+    version: AtomicU64,
+    entries: tokio::sync::RwLock<IndexSet<String>>,
+}
+
+impl TestBlacklistManager {
+    pub fn new(entries: Option<Vec<String>>) -> Self {
+        let blacklist = if let Some(value) = entries.clone() {
+            PolyBlackList::new(value.len() as u64, value).unwrap()
+        } else {
+            PolyBlackList::default()
+        };
+
+        let (new, sender) = create_managed_blacklist(blacklist);
+
+        Self {
+            managed: new,
+            sender,
+            version: AtomicU64::default(),
+            entries: tokio::sync::RwLock::new(IndexSet::from_iter(entries.unwrap_or_default())),
+        }
+    }
+}
+
+impl BlacklistManager for TestBlacklistManager {
+    type Blacklist = PolyBlackList;
+
+    async fn current_version(&self) -> u64 {
+        self.version.load(Ordering::Acquire)
+    }
+
+    async fn add(&self, value: String) -> Result<bool, BlacklistError> {
+        let mut entries = self.entries.write().await;
+        if !entries.insert(value) {
+            return Ok(false);
+        }
+        let entries = entries.downgrade();
+        let v = self.managed.version();
+        self.sender.update(PolyBlackList::Regex(
+            RegexBlackList::new(v + 1, entries.deref().clone())
+                .expect("The regex blacklist should compile!"),
+        ));
+        Ok(true)
+    }
+
+    async fn apply_patch<I: IntoIterator<Item = String>>(&self, patch: I) {
+        let mut entries = self.entries.write().await;
+        let old = entries.len();
+        entries.extend(patch);
+        if old == entries.len() {
+            return;
+        }
+        let v = self.managed.version();
+        self.sender.update(PolyBlackList::Regex(
+            RegexBlackList::new(v + 1, entries.deref().clone())
+                .expect("The regex blacklist should compile!"),
+        ));
+    }
+
+    async fn get_patch(&self, since_version: u64) -> Option<Vec<String>> {
+        if self.current_version().await <= since_version {
+            None
+        } else {
+            let entries = self.entries.read().await;
+            Some(
+                entries
+                    .iter()
+                    .dropping(since_version as usize)
+                    .cloned()
+                    .collect(),
+            )
+        }
+    }
+
+    async fn is_empty(&self) -> bool {
+        self.entries.read().await.is_empty()
+    }
+
+    async fn get_blacklist(&self) -> ManagedBlacklist<PolyBlackList> {
+        self.managed.clone()
+    }
+}
+
 #[derive(Debug, Default, Clone)]
-pub struct InMemoryLinkNetManager {
+pub struct TestLinkNetManager {
     link_net: Arc<Mutex<Vec<WebGraphEntry>>>,
 }
 
-impl WebGraphManager for InMemoryLinkNetManager {
+impl WebGraphManager for TestLinkNetManager {
     async fn add(&self, link_net_entry: WebGraphEntry) -> Result<(), LinkNetError> {
         self.link_net.lock().await.push(link_net_entry);
         Ok(())
@@ -382,12 +466,12 @@ impl WebGraphManager for InMemoryLinkNetManager {
 }
 
 #[derive(Debug, Clone)]
-pub struct InMemoryLinkQueue {
-    links_queue: Arc<Mutex<VecDeque<UrlQueueElement>>>,
+pub struct TestUrlQueue {
+    links_queue: Arc<Mutex<VecDeque<UrlQueueElement<UrlWithDepth>>>>,
     broadcast: tokio::sync::broadcast::Sender<EnqueueCalled>,
 }
 
-impl Default for InMemoryLinkQueue {
+impl Default for TestUrlQueue {
     fn default() -> Self {
         Self {
             links_queue: Arc::default(),
@@ -396,13 +480,13 @@ impl Default for InMemoryLinkQueue {
     }
 }
 
-impl UrlQueue for InMemoryLinkQueue {
+impl UrlQueue for TestUrlQueue {
     async fn enqueue_seed(&self, url: &str) -> Result<(), QueueError> {
-        self.enqueue(UrlQueueElementWeak::new(
+        self.enqueue(UrlQueueElement::new(
             true,
             0,
             false,
-            &UrlWithDepth::from_seed(url).unwrap(),
+            UrlWithDepth::from_seed(url)?,
         ))
         .await
     }
@@ -424,7 +508,7 @@ impl UrlQueue for InMemoryLinkQueue {
         .await
     }
 
-    async fn enqueue<'a>(&self, entry: UrlQueueElementWeak<'a>) -> Result<(), QueueError> {
+    async fn enqueue(&self, entry: UrlQueueElement) -> Result<(), QueueError> {
         let mut lock = self.links_queue.lock().await;
         lock.push_back(UrlQueueElement::new(
             entry.is_seed,
@@ -435,9 +519,17 @@ impl UrlQueue for InMemoryLinkQueue {
         Ok(())
     }
 
-    async fn enqueue_all<E: Into<UrlQueueElement>>(
+    #[cfg(test)]
+    async fn enqueue_borrowed<'a>(
         &self,
-        entries: impl IntoIterator<Item = E> + Clone,
+        entry: UrlQueueElement<&'a UrlWithDepth>,
+    ) -> Result<(), QueueError> {
+        self.enqueue(entry.map(|value| value.clone())).await
+    }
+
+    async fn enqueue_all(
+        &self,
+        entries: impl IntoIterator<Item = UrlQueueElement<UrlWithDepth>>,
     ) -> Result<(), QueueError> {
         let mut lock = self.links_queue.lock().await;
         lock.extend(entries.into_iter().map(|value| value.into()));
@@ -449,6 +541,7 @@ impl UrlQueue for InMemoryLinkQueue {
         Ok(lock.pop_front())
     }
 
+    #[cfg(test)]
     async fn dequeue_n(&self, n: usize) -> Result<Vec<UrlQueueElement>, QueueError> {
         let mut lock = self.links_queue.lock().await;
         let len = lock.len();
@@ -467,5 +560,73 @@ impl UrlQueue for InMemoryLinkQueue {
 
     fn subscribe_to_change(&self) -> Receiver<EnqueueCalled> {
         self.broadcast.subscribe()
+    }
+}
+
+#[derive(Debug)]
+pub struct InMemoryLinkStateManager {
+    state: std::sync::RwLock<HashMap<AtraUri, LinkState>>,
+}
+
+impl InMemoryLinkStateManager {
+    pub fn new() -> Self {
+        Self {
+            state: Default::default(),
+        }
+    }
+}
+
+impl LinkStateManager for InMemoryLinkStateManager {
+    type Error = LinkStateDBError;
+
+    fn crawled_websites(&self) -> Result<u64, LinkStateDBError> {
+        Ok(self.state.read().unwrap().len() as u64)
+    }
+
+    async fn update_link_state(
+        &self,
+        url: &UrlWithDepth,
+        state: LinkStateKind,
+    ) -> Result<(), LinkStateDBError> {
+        let mut lock = self.state.write().unwrap();
+        let raw_url = url.url();
+        if let Some(target) = lock.get_mut(raw_url) {
+            target.update_in_place(state.into_update(url, None));
+        } else {
+            lock.insert(raw_url.clone(), state.into_update(url, None));
+        }
+        Ok(())
+    }
+
+    async fn update_link_state_with_payload(
+        &self,
+        url: &UrlWithDepth,
+        state: LinkStateKind,
+        payload: Vec<u8>,
+    ) -> Result<(), LinkStateDBError> {
+        let mut lock = self.state.write().unwrap();
+        let raw_url = url.url();
+        if let Some(target) = lock.get_mut(raw_url) {
+            target.update_in_place(state.into_update(url, Some(payload)));
+        } else {
+            lock.insert(raw_url.clone(), state.into_update(url, Some(payload)));
+        }
+        Ok(())
+    }
+
+    async fn get_link_state(
+        &self,
+        url: &UrlWithDepth,
+    ) -> Result<Option<LinkState>, LinkStateDBError> {
+        let lock = self.state.read().unwrap();
+        Ok(lock.get(url.url()).map(|value| value.clone()))
+    }
+
+    async fn check_if_there_are_any_crawlable_links(&self, max_age: std::time::Duration) -> bool {
+        let lock = self.state.read().unwrap();
+        lock.iter().any(|value| {
+            value.1.kind < LinkStateKind::ProcessedAndStored
+                || OffsetDateTime::now_utc() - value.1.timestamp > max_age
+        })
     }
 }

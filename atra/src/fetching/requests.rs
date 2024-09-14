@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use crate::data::RawVecData;
-use log;
 use reqwest::header::HeaderMap;
 use reqwest::StatusCode;
 use std::net::SocketAddr;

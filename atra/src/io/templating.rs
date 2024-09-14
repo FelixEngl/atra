@@ -188,6 +188,7 @@ impl From<Vec<FileNameTemplateElement>> for FileNameTemplate {
 #[repr(transparent)]
 pub struct FileNameTemplateArgs(HashMap<String, Cow<'static, str>>);
 
+#[allow(dead_code)]
 impl FileNameTemplateArgs {
     pub fn new() -> Self {
         Self(HashMap::new())
@@ -256,6 +257,7 @@ pub enum TemplateError {
 }
 
 impl FileNameTemplateElement {
+    #[allow(dead_code)]
     pub fn formatted_timestamp(
         format: impl AsRef<str>,
     ) -> Result<Self, time::error::InvalidFormatDescription> {

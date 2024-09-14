@@ -12,19 +12,40 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::io::{Read, Seek, Write};
-use std::num::IntErrorKind;
-use reqwest::header::{CONTENT_LENGTH, CONTENT_TYPE};
-use reqwest::IntoUrl;
-use reqwest_middleware::{ClientWithMiddleware};
-use tempfile::NamedTempFile;
-use tokio_stream::StreamExt;
-use ubyte::ToByteUnit;
-use crate::client::traits::{AtraClient};
+use crate::client::traits::{AtraClient, AtraResponse};
 use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
 use crate::data::RawData;
 use crate::fetching::FetchedRequestData;
 use crate::io::fs::AtraFS;
+use bytes::Bytes;
+use reqwest::header::{CONTENT_LENGTH, CONTENT_TYPE};
+use reqwest::{IntoUrl, StatusCode};
+use reqwest_middleware::ClientWithMiddleware;
+use std::io::{Read, Seek, Write};
+use std::num::IntErrorKind;
+use tempfile::NamedTempFile;
+use tokio_stream::StreamExt;
+use ubyte::ToByteUnit;
+
+impl AtraResponse for reqwest::Response {
+    type Error = reqwest_middleware::Error;
+    type Bytes = Bytes;
+
+    #[inline(always)]
+    fn status(&self) -> StatusCode {
+        reqwest::Response::status(self)
+    }
+
+    #[inline(always)]
+    async fn text(self) -> Result<String, Self::Error> {
+        Ok(reqwest::Response::text(self).await?)
+    }
+
+    #[inline(always)]
+    async fn bytes(self) -> Result<Self::Bytes, Self::Error> {
+        Ok(reqwest::Response::bytes(self).await?)
+    }
+}
 
 pub struct ClientWithUserAgent {
     user_agent: String,
@@ -39,9 +60,17 @@ impl ClientWithUserAgent {
 
 impl AtraClient for ClientWithUserAgent {
     type Error = reqwest_middleware::Error;
+    type Response = reqwest::Response;
 
     fn user_agent(&self) -> &str {
         &self.user_agent
+    }
+
+    async fn get<U>(&self, url: U) -> Result<Self::Response, Self::Error>
+    where
+        U: IntoUrl,
+    {
+        self.inner.get(url).send().await
     }
 
     async fn retrieve<C, U>(&self, context: &C, url: U) -> Result<FetchedRequestData, Self::Error>
@@ -49,10 +78,11 @@ impl AtraClient for ClientWithUserAgent {
         C: SupportsConfigs + SupportsFileSystemAccess,
         U: IntoUrl,
     {
+        let target_url_str = url.as_str();
         match self.inner.get(url.as_str()).send().await {
             Ok(res) => {
                 let u = res.url().as_str();
-                let rd = if url.as_str() != u {
+                let rd = if target_url_str != u {
                     Some(u.into())
                 } else {
                     None
@@ -72,18 +102,19 @@ impl AtraClient for ClientWithUserAgent {
                                         match err.kind() {
                                             IntErrorKind::Empty => {
                                                 log::warn!(
-                                                "{target_url_str}: The content-length of is empty."
-                                            )
+                                                    "{}: The content-length of is empty.",
+                                                    url.as_str()
+                                                )
                                             }
                                             IntErrorKind::InvalidDigit => {
-                                                log::warn!("{target_url_str}: The content-length has invalid digits: {length}")
+                                                log::warn!("{}: The content-length has invalid digits: {length}", url.as_str())
                                             }
                                             IntErrorKind::PosOverflow => {
                                                 can_download = false;
-                                                log::warn!("{target_url_str}: The content-length indicates a size greater than {}. Atra can not handle this.", u64::MAX.pebibytes())
+                                                log::warn!("{}: The content-length indicates a size greater than {}. Atra can not handle this.", target_url_str, u64::MAX.pebibytes())
                                             }
                                             IntErrorKind::NegOverflow => {
-                                                log::warn!("{target_url_str}: The content-length indicates a size of {length}, which is smaller than 0 bytes.")
+                                                log::warn!("{}: The content-length indicates a size of {length}, which is smaller than 0 bytes.", url.as_str())
                                             }
                                             IntErrorKind::Zero => unreachable!(),
                                             _ => {}
@@ -102,11 +133,11 @@ impl AtraClient for ClientWithUserAgent {
                 };
 
                 if let Some(found) = content_length_in_bytes {
-                    if let Some(max_size) = context.configs().crawl().max_file_size {
+                    if let Some(max_size) = context.configs().crawl.max_file_size {
                         can_download = found <= max_size.get();
                     }
                     can_download_in_memory =
-                        found <= context.configs().system().max_file_size_in_memory;
+                        found <= context.configs().system.max_file_size_in_memory;
                 } else {
                     // todo: make something better???
                     match headers.get(CONTENT_TYPE) {
@@ -124,19 +155,17 @@ impl AtraClient for ClientWithUserAgent {
                 let status_code = res.status();
                 let address = res.remote_addr();
 
-
-                fn persist_temp<T>(temp: NamedTempFile, context: impl SupportsFileSystemAccess, target_url_str: &str) -> std::result::Result<RawData<T>, RawData<T>> {
-                    let path = context
-                        .fs()
-                        .create_unique_path_for_dat_file(target_url_str);
-                    let result = RawData::from_external(path);
+                fn persist_temp<T>(
+                    temp: NamedTempFile,
+                    context: &impl SupportsFileSystemAccess,
+                    target_url_str: &str,
+                ) -> std::result::Result<RawData<T>, RawData<T>> {
+                    let path = context.fs().create_unique_path_for_dat_file(target_url_str);
                     match temp.persist(&path) {
-                        Ok(_) => {
-                            Ok(result)
-                        }
+                        Ok(_) => Ok(RawData::from_external(path)),
                         Err(err) => {
                             log::error!("{target_url_str}: Had problems persisting the downloaded data as file: {err}");
-                            Err(result)
+                            Err(RawData::from_external(path))
                         }
                     }
                 }
@@ -183,11 +212,13 @@ impl AtraClient for ClientWithUserAgent {
                                         defect = true;
                                         log::warn!("{target_url_str}: Number of bytes downloaded {bytes_downloaded} differs from bytes written to tempfile {}", meta.len());
                                     }
-                                    if meta.len() <= context.configs().system().max_file_size_in_memory
+                                    if meta.len()
+                                        <= context.configs().system.max_file_size_in_memory
                                     {
                                         match temp.rewind() {
                                             Ok(_) => {
-                                                let mut buf = Vec::with_capacity(meta.len() as usize);
+                                                let mut buf =
+                                                    Vec::with_capacity(meta.len() as usize);
                                                 match temp.read_to_end(&mut buf) {
                                                     Ok(read) => {
                                                         if read != meta.len() as usize {
@@ -205,7 +236,7 @@ impl AtraClient for ClientWithUserAgent {
                                                         let path = context
                                                             .fs()
                                                             .create_unique_path_for_dat_file(
-                                                                url.as_str(),
+                                                                target_url_str,
                                                             );
                                                         match temp.persist(&path) {
                                                             Ok(_) => {}
@@ -219,9 +250,9 @@ impl AtraClient for ClientWithUserAgent {
                                             }
                                             Err(err) => {
                                                 log::error!(
-                                                "Failed to work with temp file {:?}: {err}",
-                                                temp
-                                            );
+                                                    "Failed to work with temp file {:?}: {err}",
+                                                    temp
+                                                );
                                                 RawData::None
                                             }
                                         }
@@ -265,7 +296,7 @@ impl AtraClient for ClientWithUserAgent {
                 })
             }
             Err(error) => {
-                log::debug!("error fetching {} - {}", url.as_str(), error);
+                log::debug!("error fetching {} - {}", target_url_str, error);
                 Err(error)
             }
         }

@@ -40,24 +40,16 @@ impl Default for PathsConfig {
     }
 }
 
-impl PathsConfig {
-    pub fn new(root: impl AsRef<Utf8Path>, directories: Directories, files: Files) -> Self {
-        Self {
-            root: root.as_ref().to_path_buf(),
-            directories,
-            files,
-        }
-    }
-}
-
 macro_rules! path_constructors {
     ($self: ident.($($root: ident => $name: ident = $path1: ident.$path2: ident;)+)) => {
         $(
+            #[allow(dead_code)]
             pub fn $name(&$self) -> Utf8PathBuf {
                 $self.$root.join(&$self.$path1.$path2)
             }
 
             paste::paste! {
+                #[allow(dead_code)]
                 pub fn [<$name _name>](&$self) -> Option<&str> {
                     $self.$path1.$path2.file_name()
                 }
@@ -93,6 +85,7 @@ pub struct Directories {
 }
 
 impl Directories {
+    #[cfg(test)]
     pub fn new(database: impl AsRef<Utf8Path>, big_files: impl AsRef<Utf8Path>) -> Self {
         Self {
             database: database.as_ref().to_path_buf(),
@@ -131,6 +124,7 @@ pub struct Files {
 }
 
 impl Files {
+    #[cfg(test)]
     pub fn new(
         queue: impl AsRef<Utf8Path>,
         blacklist: impl AsRef<Utf8Path>,

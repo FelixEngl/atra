@@ -18,7 +18,7 @@ use crate::format::supported::InterpretedProcessibleFileFormat;
 use crate::toolkit::digest::labeled_xxh128_digest;
 use crate::warc_ext::errors::WriterError;
 use crate::warc_ext::instructions::WarcSkipInstruction;
-use crate::warc_ext::skip_pointer::{WarcSkipPointerWithPath};
+use crate::warc_ext::skip_pointer::WarcSkipPointerWithPath;
 use crate::warc_ext::special_writer::SpecialWarcWriter;
 use data_encoding::BASE64;
 use itertools::{Itertools, Position};

@@ -17,9 +17,8 @@ use crate::io::templating::{file_name_template, FileNameTemplate, FileNameTempla
 use crate::io::unique_path_provider::{UniquePathProvider, UniquePathProviderWithTemplate};
 use crate::stores::warc::WarcFilePathProvider;
 use camino::{Utf8Path, Utf8PathBuf};
-use data_encoding::BASE64URL_NOPAD;
 use std::fmt::Debug;
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 use std::io;
 use std::io::ErrorKind;
 use tokio::sync::Mutex;
@@ -69,9 +68,8 @@ impl FileSystemAccess {
             std::fs::create_dir_all(&big_file_folder).to_error_with_path(&collection_root)?;
         }
 
-        let path_provider_big_file = UniquePathProvider::new(big_file_folder).with_template(
-            file_name_template!(arg!@"url" _ timestamp64 _ serial ".dat").unwrap(),
-        );
+        let path_provider_big_file = UniquePathProvider::new(big_file_folder)
+            .with_template(file_name_template!(arg!@"url" _ timestamp64 _ serial ".dat").unwrap());
 
         Ok(Self {
             collection_root,

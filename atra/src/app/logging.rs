@@ -47,7 +47,7 @@ pub fn configure_logging(configs: &Configs) {
     };
 
     let config = config
-        .logger(Logger::builder().build("atra", configs.system().log_level))
+        .logger(Logger::builder().build("atra", configs.system.log_level))
         .build(Root::builder().appender("out").build(LevelFilter::Warn))
         .unwrap();
 

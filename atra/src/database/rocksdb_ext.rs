@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::link_state::{LinkState, LinkStateType};
+use crate::link_state::{LinkState, LinkStateKind};
 use rocksdb::{BlockBasedOptions, DBCompressionType, MergeOperands, Options, SliceTransform, DB};
 use std::fmt::Debug;
 use std::path::Path;
@@ -174,9 +174,9 @@ fn merge_linkstate(
 
         if upsert_time < new_time {
             let mut last_significant = merge_result[LinkState::LAST_SIGNIFICANT_TYP_POS];
-            let old = merge_result[LinkState::TYP_POS];
-            if LinkStateType::is_significant_raw(old) && old > last_significant {
-                last_significant = merge_result[LinkState::TYP_POS];
+            let old = merge_result[LinkState::KIND_POS];
+            if LinkStateKind::is_significant_raw(old) && old > last_significant {
+                last_significant = merge_result[LinkState::KIND_POS];
             }
             merge_result.clear();
             merge_result.extend_from_slice(operand);

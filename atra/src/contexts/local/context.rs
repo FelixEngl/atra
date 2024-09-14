@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::blacklist::{BlacklistManager, PolyBlackList};
+use crate::blacklist::{InMemoryBlacklistManager, PolyBlackList};
+use crate::client::{build_classic_client, ClientWithUserAgent};
 use crate::config::configs::Configs;
 use crate::contexts::local::errors::LinkHandlingError;
 use crate::contexts::traits::*;
@@ -25,52 +26,41 @@ use crate::extraction::ExtractedLink;
 use crate::gdbr::identifier::{GdbrIdentifierRegistry, InitHelper};
 use crate::io::fs::FileSystemAccess;
 use crate::link_state::{
-    LinkState, LinkStateDB, LinkStateDBError, LinkStateManager, LinkStateType,
+    DatabaseLinkStateManager, LinkStateKind, LinkStateManager, LinkStateRockDB,
 };
-use crate::queue::RawAgingQueueFile;
-use crate::robots::{OffMemoryRobotsManager, ShareableRobotsManager};
+use crate::queue::{RawAgingQueueFile, UrlQueue, UrlQueueElement, UrlQueueWrapper};
+use crate::robots::OffMemoryRobotsManager;
 use crate::runtime::RuntimeContext;
 use crate::runtime::UnsafeShutdownGuard;
 use crate::seed::BasicSeed;
 use crate::url::guard::InMemoryUrlGuardian;
-use crate::url::queue::{UrlQueue, UrlQueueElement, UrlQueueWrapper};
 use crate::url::{AtraOriginProvider, UrlWithDepth};
 use crate::web_graph::{QueuingWebGraphManager, WebGraphEntry, WebGraphManager};
 use liblinear::solver::L2R_L2LOSS_SVR;
-use rocksdb::DB;
-use std::collections::HashSet;
-use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
-use std::sync::Arc;
 use rand::distributions::Alphanumeric;
 use rand::Rng;
-use reqwest::header::HeaderMap;
-use reqwest::redirect::Attempt;
-use reqwest_middleware::ClientWithMiddleware;
+use rocksdb::DB;
+use std::collections::HashSet;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use text_processing::stopword_registry::StopWordRegistry;
 use text_processing::tf_idf::{Idf, Tf};
-use time::{Duration, OffsetDateTime};
-use tokio::sync::RwLock;
-use crate::client::{build_classic_client, ClientWithUserAgent};
-use crate::config::crawl::RedirectPolicy;
-use crate::toolkit::domains::domain_name;
+use time::OffsetDateTime;
 
 /// The state of the app
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct LocalContext {
     started_at: OffsetDateTime,
     _db: Arc<DB>,
     file_provider: Arc<FileSystemAccess>,
     url_queue: UrlQueueWrapper<RawAgingQueueFile>,
-    link_states: LinkStateDB,
-    blacklist: BlacklistManager,
-    robots: ShareableRobotsManager,
+    link_state_manager: DatabaseLinkStateManager<LinkStateRockDB>,
+    blacklist: InMemoryBlacklistManager<PolyBlackList>,
+    robots: OffMemoryRobotsManager,
     crawled_data: CrawlDB,
     host_manager: InMemoryUrlGuardian,
     configs: Configs,
     links_net_manager: Arc<QueuingWebGraphManager>,
-    // Internal states
-    last_scan_over_link_states: RwLock<Option<(bool, OffsetDateTime)>>,
     ct_discovered_websites: AtomicUsize,
     stop_word_registry: Option<StopWordRegistry>,
     gdbr_filer_registry: Option<GdbrIdentifierRegistry<Tf, Idf, L2R_L2LOSS_SVR>>,
@@ -80,7 +70,7 @@ pub struct LocalContext {
 impl LocalContext {
     /// Creates the state for Atra.
     pub async fn new(configs: Configs, runtime_context: RuntimeContext) -> anyhow::Result<Self> {
-        let output_path = configs.paths().root_path();
+        let output_path = configs.paths.root_path();
         if !output_path.exists() {
             std::fs::create_dir_all(output_path)?;
         }
@@ -95,19 +85,18 @@ impl LocalContext {
         )?);
 
         log::info!("Init internal database.");
-        let db = Arc::new(open_db(configs.paths().dir_database())?);
+        let db = Arc::new(open_db(configs.paths.dir_database())?);
 
         log::info!("Init link states database.");
-        let link_states = LinkStateDB::new(db.clone())?;
+        let link_state_manager = DatabaseLinkStateManager::new(db.clone());
         log::info!("Init crawled information database.");
         let crawled_data = CrawlDB::new(db.clone(), &configs)?;
         log::info!("Init robots manager.");
-        let robots =
-            OffMemoryRobotsManager::new(db.clone(), configs.system().robots_cache_size)?.into();
+        let robots = OffMemoryRobotsManager::new(db.clone(), configs.system.robots_cache_size);
         log::info!("Init web graph writer.");
         let web_graph_manager = QueuingWebGraphManager::new(
-            configs.system().web_graph_cache_size,
-            configs.paths().file_web_graph(),
+            configs.system.web_graph_cache_size,
+            configs.paths.file_web_graph(),
             &runtime_context,
         )?;
         log::info!("Init stopword registry.");
@@ -118,18 +107,16 @@ impl LocalContext {
             .map(StopWordRegistry::initialize)
             .transpose()?;
         log::info!("Init url queue.");
-        let url_queue = UrlQueueWrapper::open(configs.paths().file_queue())?;
+        let url_queue = UrlQueueWrapper::open(configs.paths.file_queue())?;
         log::info!("Init blacklist manager.");
-        let blacklist = BlacklistManager::open(
-            configs.paths().file_blacklist(),
+        let blacklist = InMemoryBlacklistManager::open(
+            configs.paths.file_blacklist(),
             runtime_context.shutdown_guard().clone(),
         )?;
-
 
         let gdbr_filer_registry = if let Some(ref cfg) = configs.crawl.gbdr {
             let helper = InitHelper {
                 gdbr_config: Some(cfg),
-                root: Some(&configs.paths.root_path()),
                 stop_word_registry: stop_word_registry.as_ref(),
             };
             log::info!("Init gdbr identifier.");
@@ -142,7 +129,7 @@ impl LocalContext {
         Ok(LocalContext {
             _db: db,
             url_queue,
-            link_states,
+            link_state_manager,
             blacklist,
             file_provider,
             crawled_data,
@@ -150,7 +137,6 @@ impl LocalContext {
             configs,
             host_manager: InMemoryUrlGuardian::default(),
             started_at: OffsetDateTime::now_utc(),
-            last_scan_over_link_states: RwLock::new(None),
             ct_discovered_websites: AtomicUsize::new(0),
             links_net_manager: Arc::new(web_graph_manager),
             stop_word_registry,
@@ -206,13 +192,14 @@ impl SupportsLinkSeeding for LocalContext {
                     self.links_net_manager
                         .add(WebGraphEntry::create_link(from, url))
                         .await?;
-                    if self.get_link_state(url).await?.is_none() {
-                        self.update_link_state(url, LinkStateType::Discovered)
+                    if self.link_state_manager.get_link_state(url).await?.is_none() {
+                        self.link_state_manager
+                            .update_link_state(url, LinkStateKind::Discovered)
                             .await?;
                         if let Some(origin) = url.atra_origin() {
                             if self
                                 .configs
-                                .crawl()
+                                .crawl
                                 .budget
                                 .get_budget_for(&origin)
                                 .is_in_budget(url)
@@ -238,76 +225,11 @@ impl SupportsLinkSeeding for LocalContext {
 }
 
 impl SupportsLinkState for LocalContext {
-    type Error = LinkStateDBError;
+    type LinkStateManager = DatabaseLinkStateManager<LinkStateRockDB>;
 
-    fn crawled_websites(&self) -> Result<u64, LinkStateDBError> {
-        self.link_states
-            .count_state(LinkStateType::ProcessedAndStored)
-    }
-
-    /// Sets the state of the link
-    async fn update_link_state(
-        &self,
-        url: &UrlWithDepth,
-        state: LinkStateType,
-    ) -> Result<(), LinkStateDBError> {
-        match self.link_states.update_state(url, state) {
-            Err(LinkStateDBError::Database(DatabaseError::RecoverableFailure { .. })) => {
-                self.link_states.update_state(url, state)
-            }
-            escalate => escalate,
-        }
-    }
-
-    /// Sets the state of the link with a payload
-    async fn update_link_state_with_payload(
-        &self,
-        url: &UrlWithDepth,
-        state: LinkStateType,
-        payload: Vec<u8>,
-    ) -> Result<(), LinkStateDBError> {
-        let linkstate = state.into_update(url, Some(payload));
-        match self.link_states.upsert_state(url, &linkstate) {
-            Err(LinkStateDBError::Database(DatabaseError::RecoverableFailure { .. })) => {
-                self.link_states.upsert_state(url, &linkstate)
-            }
-            escalate => escalate,
-        }
-    }
-
-    /// Gets the state of the current url
-    async fn get_link_state(
-        &self,
-        url: &UrlWithDepth,
-    ) -> Result<Option<LinkState>, LinkStateDBError> {
-        match self.link_states.get_state(url) {
-            Err(LinkStateDBError::Database(DatabaseError::RecoverableFailure { .. })) => {
-                self.link_states.get_state(url)
-            }
-            escalate => escalate,
-        }
-    }
-
-    async fn check_if_there_are_any_crawlable_links(&self, max_age: std::time::Duration) -> bool {
-        let lock = self.last_scan_over_link_states.read().await;
-        if let Some(value) = lock.as_ref() {
-            if OffsetDateTime::now_utc() - value.1 <= max_age {
-                return value.0;
-            }
-        }
-        drop(lock);
-        let mut lock = self.last_scan_over_link_states.write().await;
-        if let Some(value) = lock.as_ref() {
-            if OffsetDateTime::now_utc() - value.1 <= max_age {
-                return value.0;
-            }
-        }
-        let found = self
-            .link_states
-            .scan_for_any_link_state(LinkStateType::Discovered..=LinkStateType::Crawled)
-            .await;
-        lock.replace((found, OffsetDateTime::now_utc()));
-        found
+    #[inline]
+    fn get_link_state_manager(&self) -> &Self::LinkStateManager {
+        &self.link_state_manager
     }
 }
 impl SupportsUrlGuarding for LocalContext {
@@ -339,13 +261,10 @@ impl SupportsWebGraph for LocalContext {
     }
 }
 impl SupportsBlackList for LocalContext {
-    type BlackList = PolyBlackList;
+    type BlacklistManager = InMemoryBlacklistManager<PolyBlackList>;
 
-    async fn get_blacklist(&self) -> PolyBlackList {
-        self.blacklist
-            .create_current_blacklist()
-            .await
-            .unwrap_or_default()
+    fn get_blacklist_manager(&self) -> &Self::BlacklistManager {
+        &self.blacklist
     }
 }
 impl SupportsUrlQueue for LocalContext {
@@ -369,10 +288,10 @@ impl SupportsGdbrRegistry for LocalContext {
 }
 
 impl SupportsRobotsManager for LocalContext {
-    type RobotsManager = ShareableRobotsManager;
+    type RobotsManager = OffMemoryRobotsManager;
 
-    async fn get_robots_instance(&self) -> ShareableRobotsManager {
-        self.robots.clone()
+    fn get_robots_manager(&self) -> &OffMemoryRobotsManager {
+        &self.robots
     }
 }
 
@@ -404,20 +323,17 @@ impl SupportsSlimCrawlResults for LocalContext {
     }
 }
 
-
 impl SupportsCrawling for LocalContext {
     type Client = ClientWithUserAgent;
     type Error = reqwest::Error;
 
-    fn create_crawl_task<T>(&self, seed: T) -> Result<CrawlTask<T, Self::Client>, Self::Error>
+    fn create_crawl_task<S>(&self, seed: S) -> Result<CrawlTask<S, Self::Client>, Self::Error>
     where
-        T: BasicSeed
+        S: BasicSeed,
     {
-        let client = build_classic_client(self, &seed)?;
-        let client = ClientWithUserAgent::new(
-            self.configs.crawl.user_agent.get_user_agent().to_string(),
-            client,
-        );
+        let useragent = self.configs.crawl.user_agent.get_user_agent().to_string();
+        let client = build_classic_client(self, &seed, &useragent)?;
+        let client = ClientWithUserAgent::new(useragent, client);
         Ok(CrawlTask::new(seed, client))
     }
 
@@ -426,8 +342,11 @@ impl SupportsCrawling for LocalContext {
         result.reserve(15 + 2 + 22);
         result.push('-');
         result.push_str(
-            &data_encoding::BASE64URL_NOPAD
-                .encode(&OffsetDateTime::now_utc().unix_timestamp_nanos().to_be_bytes()),
+            &data_encoding::BASE64URL_NOPAD.encode(
+                &OffsetDateTime::now_utc()
+                    .unix_timestamp_nanos()
+                    .to_be_bytes(),
+            ),
         );
         result.push('-');
         result.push_str(

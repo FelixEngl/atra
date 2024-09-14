@@ -70,14 +70,18 @@ pub struct GracefulShutdownGuard {
 
 impl GracefulShutdownGuard {
     pub fn to_unsafe(self) -> UnsafeShutdownGuard {
-        UnsafeShutdownGuard::Guarded(self)
+        UnsafeShutdownGuard::Guarded { _guard: self }
     }
 }
 
 /// Acts as a unsafe guard for a [GracefulShutdownBarrier]
 #[derive(Debug, Clone)]
+#[cfg_attr(not(test), repr(transparent))]
 pub enum UnsafeShutdownGuard {
-    Guarded(GracefulShutdownGuard),
+    Guarded {
+        _guard: GracefulShutdownGuard,
+    },
+    #[cfg(test)]
     Unguarded,
 }
 

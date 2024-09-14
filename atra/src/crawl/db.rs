@@ -80,42 +80,4 @@ impl CrawlDB {
             Ok(None)
         }
     }
-
-    // pub fn contains(&self, url: &UrlWithDepth) -> Result<bool, DatabaseError> {
-    //     let handle = self.cf_handle();
-    //     let key = url.as_str().as_bytes();
-    //     if self.db.key_may_exist_cf(&handle, key) {
-    //         let mut options = ReadOptions::default();
-    //         options.set_iterate_range(rocksdb::PrefixRange(&key[..15]));
-    //         options.fill_cache(false);
-    //         Ok(
-    //             self.db
-    //                 .get_pinned_cf_opt(&handle, key, &options)
-    //                 .enrich_without_entry(Self::CRAWL_DB_CF, Read, key)?
-    //                 .is_some()
-    //         )
-    //     } else {
-    //         Ok(false)
-    //     }
-    // }
-
-    // pub fn iter(&self) -> impl Iterator<Item=Result<SlimCrawlResult, DatabaseError>> + '_ {
-    //     let handle = self.cf_handle();
-    //     let _ = self.db.flush_cf(&handle).enrich_no_key(Self::CRAWL_DB_CF, DBActionType::Flush);
-    //     self.db.iterator_cf(&handle, IteratorMode::Start).map(|value| {
-    //         match value {
-    //             Ok(found) => {
-    //                 match bincode::deserialize::<SlimCrawlResult>(&found.1) {
-    //                     Ok(header) => {
-    //                         Ok(header)
-    //                     }
-    //                     Err(err) => {
-    //                         Err(err.enrich_de(Self::CRAWL_DB_CF, found.0, found.1.to_vec()))
-    //                     }
-    //                 }
-    //             }
-    //             Err(err) => {Err(err.enrich_no_key(Self::CRAWL_DB_CF, DBActionType::Iterate))}
-    //         }
-    //     })
-    // }
 }

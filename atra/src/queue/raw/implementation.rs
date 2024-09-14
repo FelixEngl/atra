@@ -1,4 +1,4 @@
-// Copyright 2024 Felix Engl
+// Copyright 2024. Felix Engl
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,10 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::queue::traits::RawAgingQueue;
-use crate::queue::{AgingQueueElement, QueueError};
-use crate::url::queue::EnqueueCalled;
-use log::log_enabled;
+use crate::queue::raw::errors::QueueError;
+use crate::queue::raw::{AgingQueueElement, EnqueueCalled, RawAgingQueue};
 use queue_file::QueueFile;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -60,29 +58,18 @@ impl RawAgingQueue for RawAgingQueueFile {
         Ok(())
     }
 
-    async unsafe fn enqueue_any_all<E: Into<V>, V: AgingQueueElement + Serialize + Debug>(
+    async unsafe fn enqueue_any_all<V>(
         &self,
-        entries: impl IntoIterator<Item = E> + Clone,
-    ) -> Result<(), QueueError> {
-        log::trace!("Acquire lock.");
+        entries: impl IntoIterator<Item = V>,
+    ) -> Result<(), QueueError>
+    where
+        V: AgingQueueElement + Serialize + Debug,
+    {
         let mut lock = self.queue.lock().await;
-        log::trace!("Enqueue multiple.");
-
-        let urls: Result<Vec<Vec<u8>>, QueueError> = if log_enabled!(log::Level::Trace) {
-            let urls: Vec<_> = entries.into_iter().map(|value| value.into()).collect();
-            log::trace!("Enqueue: {:?}", &urls);
-            urls.into_iter()
-                .map(|mut entry| {
-                    entry.age_by_one();
-                    bincode::serialize(&entry).map_err(QueueError::EncodingError)
-                })
-                .collect()
-        } else {
-            entries
-                .into_iter()
-                .map(|entry| bincode::serialize(&entry.into()).map_err(QueueError::EncodingError))
-                .collect()
-        };
+        let urls: Result<Vec<Vec<u8>>, QueueError> = entries
+            .into_iter()
+            .map(|entry| bincode::serialize(&entry).map_err(QueueError::EncodingError))
+            .collect();
 
         lock.add_n(urls?).map_err(QueueError::QueueFileError)?;
         let _ = self.broadcast.send(EnqueueCalled);

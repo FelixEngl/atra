@@ -12,20 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::error::Error;
 use crate::database::DatabaseError;
 use thiserror::Error;
 use url::ParseError;
 
 /// Errors while working with robots.txt
 #[derive(Error, Debug)]
-pub enum RobotsError<ClientError: Error> {
+pub enum RobotsError<ClientError: std::error::Error> {
     #[error("Some kind of parsing error happened for the url.")]
     InvalidUrl(#[from] ParseError),
     #[error("The robots.txt parser had some problems.")]
     InvalidRobotsTxt(#[source] anyhow::Error),
     #[error("The client failed to send the request: {0}")]
-    ClientWasNotAbleToSend(#[from] ClientError),
+    ClientWasNotAbleToSend(ClientError),
     #[error("The url had no domain.")]
     NoDomainForUrl,
     #[error("The database had some kind of issue")]

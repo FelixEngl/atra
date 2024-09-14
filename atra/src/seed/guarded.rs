@@ -26,6 +26,7 @@ pub struct GuardedSeed<'a, 'guard: 'a, T: UrlGuardian> {
     url: &'a UrlWithDepth,
 }
 
+#[allow(dead_code)]
 impl<'a, 'guard: 'a, T: UrlGuardian> GuardedSeed<'a, 'guard, T> {
     /// Creates a guarded seed from a guard and a url
     pub fn new(

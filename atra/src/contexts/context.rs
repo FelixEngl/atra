@@ -1,4 +1,4 @@
-// Copyright 2024 Felix Engl
+// Copyright 2024. Felix Engl
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -48,28 +48,26 @@ create_context_trait! {
 }
 
 pub mod traits {
-    use crate::blacklist::lists::BlackList;
+    use crate::blacklist::BlacklistManager;
+    use crate::client::traits::AtraClient;
     use crate::config::Configs;
     use crate::contexts::BaseContext;
-    use crate::crawl::{CrawlResult, CrawlTask};
     use crate::crawl::SlimCrawlResult;
+    use crate::crawl::{CrawlResult, CrawlTask};
     use crate::extraction::ExtractedLink;
     use crate::gdbr::identifier::GdbrRegistry;
     use crate::io::fs::AtraFS;
-    use crate::link_state::{LinkState, LinkStateType};
-    use crate::queue::polling::UrlQueuePollResult;
+    use crate::link_state::LinkStateManager;
+    use crate::queue::{UrlQueue, UrlQueuePollResult};
     use crate::robots::RobotsManager;
     use crate::runtime::ShutdownReceiver;
     use crate::seed::BasicSeed;
     use crate::url::guard::UrlGuardian;
-    use crate::url::queue::UrlQueue;
     use crate::url::{UrlWithDepth, UrlWithGuard};
     use crate::web_graph::WebGraphManager;
     use std::collections::HashSet;
     use std::error::Error;
-    use std::time::Duration;
     use text_processing::stopword_registry::StopWordRegistry;
-    use crate::client::traits::{AtraClient};
 
     /// A marker interface for applying the context trait iff appropriate
     pub trait ContextDelegate {}
@@ -82,7 +80,7 @@ pub mod traits {
     pub trait AsyncContext: BaseContext + Send + Sync + 'static {}
 
     pub trait SupportsLinkSeeding: BaseContext {
-        type Error: std::error::Error + Send + Sync;
+        type Error: Error + Send + Sync;
 
         /// Registers a seed in the context as beeing crawled.
         async fn register_seed<S: BasicSeed>(&self, seed: &S) -> Result<(), Self::Error>;
@@ -98,35 +96,9 @@ pub mod traits {
 
     /// Used when some kind of link management happens
     pub trait SupportsLinkState: BaseContext {
-        type Error: std::error::Error + Send + Sync;
+        type LinkStateManager: LinkStateManager;
 
-        /// The number of crawled websites
-        fn crawled_websites(&self) -> Result<u64, Self::Error>;
-
-        /// Sets the state of the link
-        async fn update_link_state(
-            &self,
-            url: &UrlWithDepth,
-            state: LinkStateType,
-        ) -> Result<(), Self::Error>;
-
-        /// Sets the state of the link with a payload
-        async fn update_link_state_with_payload(
-            &self,
-            url: &UrlWithDepth,
-            state: LinkStateType,
-            payload: Vec<u8>,
-        ) -> Result<(), Self::Error>;
-
-        /// Gets the state of the current url
-        async fn get_link_state(
-            &self,
-            url: &UrlWithDepth,
-        ) -> Result<Option<LinkState>, Self::Error>;
-
-        /// Checks if there are any crawable links. [max_age] denotes the maximum amount of time since
-        /// the last search
-        async fn check_if_there_are_any_crawlable_links(&self, max_age: Duration) -> bool;
+        fn get_link_state_manager(&self) -> &Self::LinkStateManager;
     }
 
     /// Used when a host manager is provided
@@ -142,15 +114,14 @@ pub mod traits {
         /// The used robots manager
         type RobotsManager: RobotsManager;
 
-        /// Get an instance of the robots manager.
-        async fn get_robots_instance(&self) -> Self::RobotsManager;
+        /// Get a reference to the robots manager.
+        fn get_robots_manager(&self) -> &Self::RobotsManager;
     }
 
     pub trait SupportsBlackList: BaseContext {
-        type BlackList: BlackList;
+        type BlacklistManager: BlacklistManager;
 
-        /// Get some kind of blacklist
-        async fn get_blacklist(&self) -> Self::BlackList;
+        fn get_blacklist_manager(&self) -> &Self::BlacklistManager;
     }
 
     pub trait SupportsMetaInfo: BaseContext {
@@ -169,8 +140,6 @@ pub mod traits {
     pub trait SupportsUrlQueue: BaseContext {
         /// The url queue used by this
         type UrlQueue: UrlQueue;
-
-        // type Error: Error;
 
         /// Returns true if poll possible
         async fn can_poll(&self) -> bool;
@@ -227,6 +196,7 @@ pub mod traits {
         ) -> Result<(), Self::Error>;
     }
 
+    #[allow(dead_code)]
     pub trait SupportsCrawlResults: BaseContext {
         type Error: std::error::Error + Send + Sync;
 
@@ -267,9 +237,9 @@ pub mod traits {
         type Error: Error + Send + Sync;
 
         /// Creates the crawl task for a seed.
-        fn create_crawl_task<T>(&self, seed: T) -> Result<CrawlTask<T, Self::Client>, Self::Error>
+        fn create_crawl_task<S>(&self, seed: S) -> Result<CrawlTask<S, Self::Client>, Self::Error>
         where
-            T: BasicSeed;
+            S: BasicSeed;
 
         /// Provides an unique id for this crawl instance.
         fn create_crawl_id(&self) -> String;

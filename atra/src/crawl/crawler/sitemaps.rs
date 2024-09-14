@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::client::traits::{AtraClient, AtraResponse};
 use crate::crawl::crawler::intervals::InvervalManager;
 use crate::robots::information::RobotsInformation;
 use crate::url::UrlWithDepth;
@@ -21,7 +22,6 @@ use sitemap::structs::{SiteMapEntry, UrlEntry};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::Cursor;
-use crate::client::traits::{AtraClient, AtraResponse};
 
 /// Holds the parsed side maps
 #[derive(Debug)]

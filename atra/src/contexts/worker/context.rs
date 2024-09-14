@@ -15,20 +15,18 @@
 use crate::config::Configs;
 use crate::contexts::traits::*;
 use crate::contexts::worker::error::CrawlWriteError;
+use crate::crawl::StoredDataHint;
 use crate::crawl::{CrawlResult, CrawlTask, SlimCrawlResult};
-use crate::crawl::{StoredDataHint};
 use crate::data::RawVecData;
 use crate::extraction::ExtractedLink;
 use crate::io::errors::ErrorWithPath;
 use crate::io::fs::{AtraFS, WorkerFileSystemAccess};
-use crate::link_state::{LinkState, LinkStateType};
 use crate::seed::BasicSeed;
 use crate::stores::warc::ThreadsafeMultiFileWarcWriter;
 use crate::url::UrlWithDepth;
 use crate::warc_ext::write_warc;
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::time::Duration;
 use text_processing::stopword_registry::StopWordRegistry;
 
 /// A context for a specific worker
@@ -105,19 +103,11 @@ impl<T> SupportsLinkState for WorkerContext<T>
 where
     T: SupportsLinkState,
 {
-    type Error = T::Error;
+    type LinkStateManager = T::LinkStateManager;
 
     delegate::delegate! {
         to self.inner {
-            fn crawled_websites(&self) -> Result<u64, Self::Error>;
-
-            async fn update_link_state(&self, url: &UrlWithDepth, state: LinkStateType) -> Result<(), Self::Error>;
-
-            async fn update_link_state_with_payload(&self, url: &UrlWithDepth, state: LinkStateType, payload: Vec<u8>) -> Result<(), Self::Error>;
-
-            async fn get_link_state(&self, url: &UrlWithDepth) -> Result<Option<LinkState>, Self::Error>;
-
-            async fn check_if_there_are_any_crawlable_links(&self, max_age: Duration) -> bool;
+            fn get_link_state_manager(&self) -> &Self::LinkStateManager;
         }
     }
 }
@@ -143,7 +133,7 @@ where
 
     delegate::delegate! {
         to self.inner {
-            async fn get_robots_instance(&self) -> Self::RobotsManager;
+            fn get_robots_manager(&self) -> &Self::RobotsManager;
         }
     }
 }
@@ -152,11 +142,11 @@ impl<T> SupportsBlackList for WorkerContext<T>
 where
     T: SupportsBlackList,
 {
-    type BlackList = T::BlackList;
+    type BlacklistManager = T::BlacklistManager;
 
     delegate::delegate! {
         to self.inner {
-            async fn get_blacklist(&self) -> Self::BlackList;
+            fn get_blacklist_manager(&self) -> &Self::BlacklistManager;
         }
     }
 }
@@ -286,11 +276,9 @@ where
             RawVecData::ExternalFile { file } => {
                 log::debug!("Store external");
                 if self.configs().crawl.store_big_file_hints_in_warc {
-                    self.worker_warc_writer.execute_on_writer(
-                        |value| {
-                            write_warc(value, result)
-                        }
-                    ).await?;
+                    self.worker_warc_writer
+                        .execute_on_writer(|value| write_warc(value, result))
+                        .await?;
                 }
                 StoredDataHint::External(file.clone())
             }
@@ -337,9 +325,9 @@ where
 
     delegate::delegate! {
         to self.inner {
-            fn create_crawl_task<T>(&self, seed: T) -> Result<CrawlTask<T, Self::Client>, Self::Error>
+            fn create_crawl_task<S>(&self, seed: S) -> Result<CrawlTask<S, Self::Client>, Self::Error>
             where
-                T: BasicSeed;
+                S: BasicSeed;
 
             fn create_crawl_id(&self) -> String;
         }
@@ -387,43 +375,43 @@ pub mod test {
             uri_ct += 1;
             x
         }))
-            .unwrap();
+        .unwrap();
         data.concurrent_to(create_uri_num(id_base, {
             let x = uri_ct;
             uri_ct += 1;
             x
         }))
-            .unwrap();
+        .unwrap();
         data.refers_to(create_uri_num(id_base, {
             let x = uri_ct;
             uri_ct += 1;
             x
         }))
-            .unwrap();
+        .unwrap();
         data.refers_to_target(create_uri_num(id_base, {
             let x = uri_ct;
             uri_ct += 1;
             x
         }))
-            .unwrap();
+        .unwrap();
         data.target_uri(create_uri_num(id_base, {
             let x = uri_ct;
             uri_ct += 1;
             x
         }))
-            .unwrap();
+        .unwrap();
         data.info_id(create_uri_num(id_base, {
             let x = uri_ct;
             uri_ct += 1;
             x
         }))
-            .unwrap();
+        .unwrap();
         data.profile(create_uri_num(id_base, {
             let x = uri_ct;
             uri_ct += 1;
             x
         }))
-            .unwrap();
+        .unwrap();
         data.segment_origin_id(create_uri_num(id_base, uri_ct))
             .unwrap();
 
@@ -443,7 +431,7 @@ pub mod test {
                 .unwrap()
                 .1,
         )
-            .unwrap();
+        .unwrap();
         data.indentified_payload_type(parse_media_type::<true>(b"text/xml").unwrap().1)
             .unwrap();
 
@@ -473,12 +461,12 @@ pub mod test {
             Utf8PathBuf::from("test\\data"),
             Utf8PathBuf::from("test\\data\\blobs"),
         )
-            .unwrap();
+        .unwrap();
 
         let wwr = ThreadsafeMultiFileWarcWriter::new_for_worker(Arc::new(
             fs.create_worker_file_provider(0).await.unwrap(),
         ))
-            .unwrap();
+        .unwrap();
 
         (fs, wwr)
     }
@@ -503,8 +491,8 @@ pub mod test {
             writer.write_body_complete(&DATA3)?;
             Ok(())
         })
-            .await
-            .unwrap();
+        .await
+        .unwrap();
     }
 
     #[tokio::test]

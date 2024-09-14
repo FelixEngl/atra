@@ -12,31 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::blacklist::traits::{Blacklist, BlacklistType};
+use crate::blacklist::ManageableBlacklist;
 use regex::RegexSet;
-use std::error::Error;
 use std::str::FromStr;
 use thiserror::Error;
-
-/// A blacklist helps to check if an url is valid or not.
-pub trait BlackList: Clone + Default {
-    /// The current version of the blacklist, if it returns None the blacklist was constructed without any manager
-    /// backing.
-    fn version(&self) -> Option<u64>;
-
-    /// Checks the [url] and returns true if this blacklist has a match for it.
-    fn has_match_for(&self, url: &str) -> bool;
-}
-
-/// A simple type for a blacklist to initialize it.
-pub trait BlackListType<SelfT = Self>: BlackList {
-    type Error: Error;
-
-    /// Creates a new blacklist from some kind of iterator over strings
-    fn new<S, I>(version: u64, src: I) -> Result<SelfT, Self::Error>
-    where
-        S: AsRef<str>,
-        I: IntoIterator<Item = S>;
-}
 
 /// The poly version for all default blacklists.
 #[derive(Clone, Debug)]
@@ -48,7 +28,7 @@ pub enum PolyBlackList {
 #[derive(Debug, Error)]
 pub enum PolyBlackListError {
     #[error("An error during the regex blacklist creation occured.")]
-    Regex(#[from] <RegexBlackList as BlackListType>::Error),
+    Regex(#[from] <RegexBlackList as BlacklistType>::Error),
 }
 
 impl Default for PolyBlackList {
@@ -57,13 +37,15 @@ impl Default for PolyBlackList {
     }
 }
 
-impl BlackList for PolyBlackList {
+impl ManageableBlacklist for PolyBlackList {}
+
+impl Blacklist for PolyBlackList {
     delegate::delegate! {
         to match &self {
             Self::Regex(a) => a,
             Self::Empty(a) => a,
         } {
-            fn version(&self) -> Option<u64>;
+            fn version(&self) -> u64;
             fn has_match_for(&self, url: &str) -> bool;
         }
     }
@@ -81,7 +63,7 @@ impl From<EmptyBlackList> for PolyBlackList {
     }
 }
 
-impl BlackListType for PolyBlackList {
+impl BlacklistType for PolyBlackList {
     type Error = PolyBlackListError;
 
     fn new<S, I>(version: u64, src: I) -> Result<Self, Self::Error>
@@ -91,7 +73,7 @@ impl BlackListType for PolyBlackList {
     {
         let mut peekable = src.into_iter().peekable();
         Ok(if peekable.peek().is_none() {
-            Self::Empty(EmptyBlackList(Some(version)))
+            Self::Empty(EmptyBlackList(version))
         } else {
             Self::Regex(RegexBlackList::new(version, peekable)?)
         })
@@ -100,10 +82,12 @@ impl BlackListType for PolyBlackList {
 
 /// An empty blacklist that never matches anything
 #[derive(Debug, Clone, Copy, Default)]
-pub struct EmptyBlackList(Option<u64>);
+pub struct EmptyBlackList(u64);
 
-impl BlackList for EmptyBlackList {
-    fn version(&self) -> Option<u64> {
+impl ManageableBlacklist for EmptyBlackList {}
+
+impl Blacklist for EmptyBlackList {
+    fn version(&self) -> u64 {
         self.0
     }
 
@@ -113,7 +97,7 @@ impl BlackList for EmptyBlackList {
     }
 }
 
-impl BlackListType for EmptyBlackList {
+impl BlacklistType for EmptyBlackList {
     type Error = std::convert::Infallible;
 
     fn new<S, I>(version: u64, _: I) -> Result<Self, Self::Error>
@@ -121,19 +105,21 @@ impl BlackListType for EmptyBlackList {
         S: AsRef<str>,
         I: IntoIterator<Item = S>,
     {
-        Ok(EmptyBlackList(Some(version)))
+        Ok(EmptyBlackList(version))
     }
 }
 
 /// A regex based blacklist, may match something
 #[derive(Debug, Clone)]
 pub struct RegexBlackList {
-    version: Option<u64>,
+    version: u64,
     inner: RegexSet,
 }
 
-impl BlackList for RegexBlackList {
-    fn version(&self) -> Option<u64> {
+impl ManageableBlacklist for RegexBlackList {}
+
+impl Blacklist for RegexBlackList {
+    fn version(&self) -> u64 {
         self.version
     }
 
@@ -142,7 +128,7 @@ impl BlackList for RegexBlackList {
     }
 }
 
-impl BlackListType for RegexBlackList {
+impl BlacklistType for RegexBlackList {
     type Error = regex::Error;
 
     fn new<S, I>(version: u64, src: I) -> Result<Self, Self::Error>
@@ -151,7 +137,7 @@ impl BlackListType for RegexBlackList {
         I: IntoIterator<Item = S>,
     {
         Ok(Self {
-            version: Some(version),
+            version,
             inner: RegexSet::new(src)?,
         })
     }
@@ -162,7 +148,7 @@ impl FromStr for RegexBlackList {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(Self {
-            version: None,
+            version: 0,
             inner: RegexSet::new(std::iter::once(s))?,
         })
     }
@@ -171,7 +157,7 @@ impl FromStr for RegexBlackList {
 impl Default for RegexBlackList {
     fn default() -> Self {
         Self {
-            version: None,
+            version: 0,
             inner: RegexSet::empty(),
         }
     }

@@ -77,6 +77,7 @@ impl<W: Write + RawWriter, P: WarcFilePathProvider> TryFrom<Arc<P>>
     }
 }
 
+#[allow(dead_code)]
 impl<W: Write + RawWriter, P: WarcFilePathProvider> ThreadsafeMultiFileWarcWriter<W, P> {
     pub fn new(writer: W, provider: P, path: Utf8PathBuf) -> Self {
         Self {
@@ -155,6 +156,7 @@ pub struct RawMultifileWarcWriter<W: Write + RawWriter, P: WarcFilePathProvider>
     path: Utf8PathBuf,
 }
 
+#[allow(dead_code)]
 impl<W: Write + RawWriter, P: WarcFilePathProvider> RawMultifileWarcWriter<W, P> {
     pub fn new(fp: Arc<P>, writer: WarcWriter<BufWriter<W>>, path: Utf8PathBuf) -> Self {
         Self { fp, writer, path }

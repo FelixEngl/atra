@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use clap::{Parser, Subcommand};
 use std::fs::File;
-use std::io::{BufWriter};
+use std::io::BufWriter;
 use std::num::NonZeroUsize;
 use std::str::FromStr;
-use camino::Utf8PathBuf;
-use clap::{Parser, Subcommand};
 use time::Duration;
 
 use crate::app::atra::ApplicationMode;
@@ -61,7 +60,7 @@ pub enum RunMode {
         #[arg(short, long)]
         timeout: Option<f64>,
         /// The delay in milliseconds.
-        #[arg(short = 'w',long)]
+        #[arg(short = 'w', long)]
         delay: Option<u64>,
         /// The log level of Atra
         #[arg(long, default_value_t = log::LevelFilter::Info)]
@@ -116,7 +115,7 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
                 timeout,
                 log_level,
                 log_to_file,
-                delay
+                delay,
             } => {
                 let mut configs =
                     Configs::discover_or_default().expect("Expected some kind of config!");
@@ -153,8 +152,9 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
                     }
                 };
 
-
-                configs.crawl.delay = delay.map(|value| std::time::Duration::from_millis(value).try_into().ok()).flatten();
+                configs.crawl.delay = delay
+                    .map(|value| std::time::Duration::from_millis(value).try_into().ok())
+                    .flatten();
 
                 configs.system.log_level = log_level;
 
@@ -174,9 +174,14 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
                     None => Configs::discover(),
                     Some(path) => Configs::load_from(path),
                 }
-                    .expect("No config found!");
+                .expect("No config found!");
 
-                println!("Session Info: {} - {} - {}", configs.session.service, configs.session.collection, configs.session.crawl_job_id);
+                println!(
+                    "Session Info: {} - {} - {}",
+                    configs.session.service,
+                    configs.session.collection,
+                    configs.session.crawl_job_id
+                );
 
                 configs.paths.root = configs.paths.root_path().join(format!(
                     "multi_{}_{}",
@@ -215,12 +220,14 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
                     println!("The default config already exists in {path}.\nDelete is before regenerating.")
                 } else {
                     match File::options().create(true).write(true).open(&path) {
-                        Ok(file) => match serde_json::to_writer_pretty(BufWriter::new(file), &cfg) {
-                            Ok(_) => {}
-                            Err(err) => {
-                                println!("Failed to create the example file: {err}")
+                        Ok(file) => {
+                            match serde_json::to_writer_pretty(BufWriter::new(file), &cfg) {
+                                Ok(_) => {}
+                                Err(err) => {
+                                    println!("Failed to create the example file: {err}")
+                                }
                             }
-                        },
+                        }
                         Err(err) => {
                             println!("Failed to create the example file: {err}")
                         }
@@ -236,7 +243,11 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
             let cfg = create_example_config();
             let root = cfg.paths.root_path();
             std::fs::create_dir_all(root).unwrap();
-            match File::options().create(true).write(true).open(root.join("example_config.json")) {
+            match File::options()
+                .create(true)
+                .write(true)
+                .open(root.join("example_config.json"))
+            {
                 Ok(file) => match serde_json::to_writer_pretty(BufWriter::new(file), &cfg) {
                     Ok(_) => {}
                     Err(err) => {

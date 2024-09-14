@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::client::traits::AtraClient;
 use crate::config::CrawlConfig;
 use crate::robots::information::RobotsInformation;
 use crate::url::{AtraOriginProvider, AtraUrlOrigin, UrlWithDepth};
@@ -19,7 +20,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use time::Duration;
 use tokio::time::Interval;
-use crate::client::traits::AtraClient;
 
 /// Manages the interval
 pub struct InvervalManager<'a, Client: AtraClient, R: RobotsInformation> {
@@ -30,7 +30,10 @@ pub struct InvervalManager<'a, Client: AtraClient, R: RobotsInformation> {
     no_domain_default: Interval,
 }
 
-impl<'a, Client, R: RobotsInformation> InvervalManager<'a, Client, R> where Client: AtraClient {
+impl<'a, Client, R: RobotsInformation> InvervalManager<'a, Client, R>
+where
+    Client: AtraClient,
+{
     pub fn new(client: &'a Client, config: &CrawlConfig, configured_robots: Arc<R>) -> Self {
         Self {
             client,
@@ -57,7 +60,7 @@ impl<'a, Client, R: RobotsInformation> InvervalManager<'a, Client, R> where Clie
             } else {
                 let target_duration = if let Some(found) = self
                     .configured_robots
-                    .get_or_retrieve_delay(&self.client, url)
+                    .get_or_retrieve_delay(self.client, url)
                     .await
                 {
                     log::trace!("Wait found {found}");

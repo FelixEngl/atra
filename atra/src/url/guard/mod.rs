@@ -49,6 +49,7 @@ pub struct InMemoryUrlGuardian {
 }
 
 impl InMemoryUrlGuardian {
+    #[cfg(test)]
     pub fn new() -> Self {
         Self {
             data_holder: Default::default(),

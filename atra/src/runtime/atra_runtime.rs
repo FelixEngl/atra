@@ -72,14 +72,6 @@ impl AtraHandle {
         Self { main: general, io }
     }
 
-    pub fn some(general: Handle, io: Option<Handle>) -> OptionalAtraHandle {
-        Some(Self::new(general, io))
-    }
-
-    pub fn none() -> OptionalAtraHandle {
-        None
-    }
-
     /// Returns a reference to a special handle used for io tasks
     #[inline]
     pub fn io(&self) -> Option<&Handle> {

@@ -191,7 +191,6 @@ where
         training.stemmer.clone(),
     );
 
-
     let vectorizer = match &training.tf_idf_data {
         None => {
             let reader = read_train_data(&training.train_data)?;

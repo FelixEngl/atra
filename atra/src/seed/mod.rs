@@ -17,12 +17,19 @@ mod guarded;
 mod input;
 mod unguarded;
 
+use cfg_if::cfg_if;
 use crate::url::{AtraUrlOrigin, UrlWithDepth};
-pub use error::SeedCreationError;
-pub use guarded::GuardedSeed;
+
 pub use input::lines::read_seeds;
 pub use input::seed_data::SeedDefinition;
 pub use unguarded::UnguardedSeed;
+
+cfg_if! {
+    if #[cfg(test)] {
+        pub use guarded::GuardedSeed;
+        pub use error::SeedCreationError;
+    }
+}
 
 /// The seed of a crawl task
 pub trait BasicSeed {

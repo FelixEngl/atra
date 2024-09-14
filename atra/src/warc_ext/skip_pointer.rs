@@ -55,6 +55,7 @@ pub struct WarcSkipPointerWithPath {
     skip_pointer: WarcSkipPointer,
 }
 
+#[allow(dead_code)]
 impl WarcSkipPointerWithPath {
     /// The file with the associated WARC entry
     pub fn path(&self) -> &Utf8Path {

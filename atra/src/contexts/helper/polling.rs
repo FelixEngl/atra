@@ -15,11 +15,12 @@
 use crate::contexts::traits::{
     SupportsConfigs, SupportsLinkState, SupportsPolling, SupportsUrlGuarding, SupportsUrlQueue,
 };
-use crate::link_state::{LinkState, LinkStateType};
-use crate::queue::polling::{AbortCause, QueueExtractionError, UrlQueuePollResult};
+use crate::link_state::{LinkState, LinkStateKind, LinkStateManager};
+use crate::queue::{
+    AbortCause, QueueExtractionError, UrlQueue, UrlQueueElement, UrlQueuePollResult,
+};
 use crate::runtime::ShutdownReceiver;
 use crate::url::guard::{GuardianError, UrlGuardian};
-use crate::url::queue::{UrlQueue, UrlQueueElement};
 use crate::url::{AtraOriginProvider, UrlWithGuard};
 use smallvec::SmallVec;
 
@@ -29,7 +30,7 @@ where
 {
     type Guardian = C::Guardian;
 
-    type Error = <C as SupportsLinkState>::Error;
+    type Error = <<C as SupportsLinkState>::LinkStateManager as LinkStateManager>::Error;
 
     async fn poll_next_free_url<'a>(
         &'a self,
@@ -41,7 +42,7 @@ where
         } else {
             const MISSED_KEEPER_CACHE: usize = 8;
 
-            let max_age = self.configs().crawl().max_queue_age;
+            let max_age = self.configs().crawl.max_queue_age;
             let manager = self.get_guardian();
             let mut missed_hosts = 0;
             let mut missed_host_cache = SmallVec::<[UrlQueueElement; MISSED_KEEPER_CACHE]>::new();
@@ -67,7 +68,11 @@ where
                             log::debug!("Drop {:?} from queue due to age.", entry);
                             continue;
                         }
-                        match self.get_link_state(&entry.target).await {
+                        match self
+                            .get_link_state_manager()
+                            .get_link_state(&entry.target)
+                            .await
+                        {
                             Ok(found) => {
                                 if let Some(found) = found {
                                     if drop_from_queue(self, &entry, &found).await {
@@ -75,7 +80,7 @@ where
                                         log::debug!("Drop {:?} from queue.", entry);
                                         continue;
                                     }
-                                    if !found.typ.is_discovered() {
+                                    if !found.kind.is_discovered() {
                                         missed_host_cache.push(entry);
                                         missed_hosts += 1;
                                         match push_logic_1(
@@ -168,9 +173,9 @@ async fn drop_from_queue<C: SupportsConfigs>(
     entry: &UrlQueueElement,
     state: &LinkState,
 ) -> bool {
-    match state.typ {
-        LinkStateType::Discovered => false,
-        LinkStateType::ProcessedAndStored => {
+    match state.kind {
+        LinkStateKind::Discovered => false,
+        LinkStateKind::ProcessedAndStored => {
             let budget = if let Some(origin) = entry.target.atra_origin() {
                 context.configs().crawl.budget.get_budget_for(&origin)
             } else {
@@ -178,11 +183,11 @@ async fn drop_from_queue<C: SupportsConfigs>(
             };
             budget.get_recrawl_interval().is_none()
         }
-        LinkStateType::InternalError
-        | LinkStateType::Unset
-        | LinkStateType::Crawled
-        | LinkStateType::ReservedForCrawl => true,
-        LinkStateType::Unknown(id) => {
+        LinkStateKind::InternalError
+        | LinkStateKind::Unset
+        | LinkStateKind::Crawled
+        | LinkStateKind::ReservedForCrawl => true,
+        LinkStateKind::Unknown(id) => {
             log::debug!("Some unknown link state of type {id} was found!");
             true
         }
@@ -229,4 +234,59 @@ async fn push_logic_2<C: SupportsUrlQueue, T: PartialOrd, E: std::error::Error, 
         };
     }
     UrlQueuePollResult::Ok(missed_host_cache)
+}
+
+#[cfg(test)]
+mod test {
+    use crate::config::Configs;
+    use crate::contexts::traits::{
+        SupportsConfigs, SupportsLinkState, SupportsUrlGuarding, SupportsUrlQueue,
+    };
+    use crate::contexts::BaseContext;
+    use crate::queue::UrlQueue;
+    use crate::test_impls::InMemoryLinkStateManager;
+    use crate::url::guard::InMemoryUrlGuardian;
+
+    struct Fake {
+        queue: crate::test_impls::TestUrlQueue,
+        configs: Configs,
+        guard: InMemoryUrlGuardian,
+    }
+    impl BaseContext for Fake {}
+
+    impl SupportsUrlQueue for Fake {
+        type UrlQueue = crate::test_impls::TestUrlQueue;
+
+        async fn can_poll(&self) -> bool {
+            !self.queue.is_empty().await
+        }
+
+        fn url_queue(&self) -> &Self::UrlQueue {
+            &self.queue
+        }
+    }
+
+    impl SupportsConfigs for Fake {
+        fn configs(&self) -> &Configs {
+            &self.configs
+        }
+    }
+
+    impl SupportsUrlGuarding for Fake {
+        type Guardian = InMemoryUrlGuardian;
+
+        fn get_guardian(&self) -> &Self::Guardian {
+            &self.guard
+        }
+    }
+
+    impl SupportsLinkState for Fake {
+        type LinkStateManager = InMemoryLinkStateManager;
+        fn get_link_state_manager(&self) -> &Self::LinkStateManager {
+            todo!()
+        }
+    }
+
+    #[tokio::test]
+    async fn polling_works() {}
 }
