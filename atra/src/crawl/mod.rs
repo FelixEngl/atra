@@ -143,12 +143,12 @@ where
             }
             UrlQueuePollResult::Err(err) => {
                 match err {
-                    QueueExtractionError::HostManager(err) => match err {
+                    QueueExtractionError::GuardianError(err) => match err {
                         GuardianError::NoOriginError(url) => {
-                            log::error!("The url {url} does not result in a domain.")
+                            log::error!("The url {url} does not result in a domain!")
                         }
                         GuardianError::AlreadyOccupied(info) => {
-                            log::debug!("The domain {info:?} is already occupied.")
+                            log::debug!("The domain {info:?} is already in use.")
                         }
                     },
                     QueueExtractionError::LinkState(err) => {

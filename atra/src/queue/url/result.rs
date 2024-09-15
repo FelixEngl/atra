@@ -22,10 +22,56 @@ use thiserror::Error;
 
 /// The result of the GuardedSeedUrlProvider extraction.
 /// Helps to interpret what happened
+#[derive(Debug, strum::EnumIs)]
 pub enum UrlQueuePollResult<T, E: Error> {
     Ok(T),
     Abort(AbortCause),
     Err(QueueExtractionError<E>),
+}
+
+impl<T, E: Error>  UrlQueuePollResult<T, E> {
+    pub fn unwrap(self) -> T {
+        match self {
+            UrlQueuePollResult::Ok(value) => {
+                value
+            }
+            UrlQueuePollResult::Abort(_) => {
+                panic!("Can not unwrap an abort!")
+            }
+            UrlQueuePollResult::Err(_) => {
+                panic!("Can not unwrap an error!")
+            }
+        }
+    }
+
+    pub fn unwrap_abort(self) -> AbortCause {
+        match self {
+            UrlQueuePollResult::Abort(value) => {
+                value
+            }
+            UrlQueuePollResult::Ok(_) => {
+                panic!("Can not unwrap_abort an ok!")
+            }
+            UrlQueuePollResult::Err(_) => {
+                panic!("Can not unwrap_abort an error!")
+            }
+        }
+    }
+
+    pub fn unwrap_err(self) -> QueueExtractionError<E> {
+        match self {
+            UrlQueuePollResult::Err(e) => {
+                e
+            }
+            UrlQueuePollResult::Ok(value) => {
+                panic!("Can not unwrap_err an ok!")
+            }
+            UrlQueuePollResult::Abort(_) => {
+                panic!("Can not unwrap_err an abort!")
+            }
+
+        }
+    }
 }
 
 /// The abort cause for something. Can be used as error, but it can also be used for simple fallthrough.
@@ -47,7 +93,7 @@ pub enum AbortCause {
 #[derive(Debug, Error)]
 pub enum QueueExtractionError<E: Error> {
     #[error(transparent)]
-    HostManager(#[from] GuardianError),
+    GuardianError(#[from] GuardianError),
     #[error(transparent)]
     LinkState(E),
     #[error(transparent)]

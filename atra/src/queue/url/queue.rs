@@ -20,22 +20,28 @@ use crate::queue::EnqueueCalled;
 use crate::url::UrlWithDepth;
 use std::path::Path;
 use tokio::sync::broadcast::Receiver;
+use crate::queue::url::poll::{PollWaiter, PollWaiterRef};
 
-#[derive(Debug, Clone)]
-#[repr(transparent)]
-pub struct UrlQueueWrapper<T: RawAgingQueue>(T);
+#[derive(Debug)]
+pub struct UrlQueueWrapper<T: RawAgingQueue> {
+    inner: T,
+    sender: PollWaiter
+}
 
 impl UrlQueueWrapper<RawAgingQueueFile> {
     /// Opens as a raw file
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, queue_file::Error> {
-        Ok(Self(RawAgingQueueFile::open(path)?))
+        Ok(Self {
+            inner: RawAgingQueueFile::open(path)?,
+            sender: PollWaiter::new()
+        })
     }
 }
 
 impl<T: RawAgingQueue> UrlQueueWrapper<T> {
     #[allow(dead_code)]
     pub fn into_inner(self) -> T {
-        self.0
+        self.inner
     }
 }
 
@@ -43,7 +49,7 @@ impl<T: RawAgingQueue> UrlQueueWrapper<T> {
 impl<T: RawAgingQueue> UrlQueue for UrlQueueWrapper<T> {
     #[inline]
     async fn enqueue(&self, entry: UrlQueueElement<UrlWithDepth>) -> Result<(), QueueError> {
-        unsafe { self.0.enqueue_any(entry).await }
+        unsafe { self.inner.enqueue_any(entry).await }
     }
 
     #[cfg(test)]
@@ -51,7 +57,7 @@ impl<T: RawAgingQueue> UrlQueue for UrlQueueWrapper<T> {
         &self,
         entry: UrlQueueElement<&'a UrlWithDepth>,
     ) -> Result<(), QueueError> {
-        unsafe { self.0.enqueue_any(entry).await }
+        unsafe { self.inner.enqueue_any(entry).await }
     }
 
     #[inline]
@@ -59,39 +65,43 @@ impl<T: RawAgingQueue> UrlQueue for UrlQueueWrapper<T> {
         &self,
         entries: impl IntoIterator<Item = UrlQueueElement<UrlWithDepth>>,
     ) -> Result<(), QueueError> {
-        unsafe { self.0.enqueue_any_all(entries).await }
+        unsafe { self.inner.enqueue_any_all(entries).await }
     }
 
     #[inline]
     async fn dequeue(&self) -> Result<Option<UrlQueueElement<UrlWithDepth>>, QueueError> {
-        unsafe { self.0.dequeue_any().await }
+        unsafe { self.inner.dequeue_any().await }
     }
 
     #[cfg(test)]
     async fn dequeue_n(&self, n: usize) -> Result<Vec<UrlQueueElement<UrlWithDepth>>, QueueError> {
-        unsafe { self.0.dequeue_any_n(n).await }
+        unsafe { self.inner.dequeue_any_n(n).await }
     }
 
     /// Number of elements in the queue
     #[inline]
     async fn len(&self) -> usize {
-        self.0.len().await
+        self.inner.len().await
     }
 
     /// Returns true if the queue is empty.
     #[inline]
     async fn is_empty(&self) -> bool {
-        self.0.is_empty().await
+        self.inner.is_empty().await
     }
 
     fn subscribe_to_change(&self) -> Receiver<EnqueueCalled> {
-        self.0.subscribe_to_change()
+        self.inner.subscribe_to_change()
+    }
+
+    fn start_polling(&self) -> PollWaiterRef {
+        self.sender.create_ref()
     }
 }
 
 impl<T: RawAgingQueue> From<T> for UrlQueueWrapper<T> {
     fn from(value: T) -> Self {
-        Self(value)
+        Self{inner: value, sender: PollWaiter::new()}
     }
 }
 
@@ -149,6 +159,37 @@ mod test {
         assert_eq!("https://www.test1.de/", values[0].as_ref().as_str());
         assert_eq!("https://www.test2.de/", values[1].as_ref().as_str());
         assert_eq!("https://www.test3.de/", values[2].as_ref().as_str());
+        q.enqueue(
+            UrlQueueElement::new(
+                true,
+                0,
+                false,
+                UrlWithDepth::from_seed("https://www.test4.de").unwrap(),
+            )
+        ).await.unwrap();
+
+        q.enqueue(
+            UrlQueueElement::new(
+                true,
+                0,
+                false,
+                UrlWithDepth::from_seed("https://www.test5.de").unwrap(),
+            )
+        ).await.unwrap();
+
+        assert_eq!("https://www.test4.de/", q.dequeue().await.unwrap().unwrap().as_ref().as_str());
+        assert_eq!("https://www.test5.de/", q.dequeue().await.unwrap().unwrap().as_ref().as_str());
+
+        q.enqueue(
+            UrlQueueElement::new(
+                true,
+                0,
+                false,
+                UrlWithDepth::from_seed("https://www.test6.de").unwrap(),
+            )
+        ).await.unwrap();
+
+        assert_eq!("https://www.test6.de/", q.dequeue().await.unwrap().unwrap().as_ref().as_str());
     }
 
     #[tokio::test]

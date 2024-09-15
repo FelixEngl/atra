@@ -19,8 +19,10 @@ mod traits;
 
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use std::sync::Arc;
+use std::sync::{Arc, LockResult, RwLockReadGuard, RwLockWriteGuard, TryLockError, TryLockResult};
 use std::time::SystemTime;
+use tokio::sync::broadcast::Receiver;
+use tokio::task::yield_now;
 pub use traits::*;
 
 pub use errors::*;
@@ -43,33 +45,30 @@ pub use guard::UrlGuard;
 // limitations under the License.
 
 /// Manages the crawl state of the domains in the current crawl
-#[derive(Debug, Default)]
+#[derive(Debug)]
+#[repr(transparent)]
 pub struct InMemoryUrlGuardian {
-    data_holder: Arc<tokio::sync::RwLock<HashMap<AtraUrlOrigin, GuardEntry>>>,
+    inner: Arc<InMemoryUrlGuardianState>
 }
 
 impl InMemoryUrlGuardian {
-    #[cfg(test)]
     pub fn new() -> Self {
         Self {
-            data_holder: Default::default(),
+            inner: Arc::new(InMemoryUrlGuardianState::new())
         }
     }
 }
 
 unsafe impl UnsafeUrlGuardian for InMemoryUrlGuardian {
     unsafe fn release(&self, origin: AtraUrlOrigin) {
-        // This makes sure, that we never fail with our spawned task.
-        let shared = self.data_holder.clone();
-        tokio::spawn(async move {
-            let mut holder = shared.write().await;
-            if let Some(value) = holder.get_mut(&origin) {
-                value.is_in_use = false;
-                value.last_modification = Some(SystemTime::now());
-            } else {
-                unreachable!();
-            }
-        });
+        let mut holder = self.inner.write_blocking().unwrap();
+        let _ = self.inner.broadcast.send(GuardianChangedEvent);
+        if let Some(value) = holder.get_mut(&origin) {
+            value.is_in_use = false;
+            value.last_modification = Some(SystemTime::now());
+        } else {
+            unreachable!();
+        }
     }
 }
 
@@ -81,7 +80,7 @@ impl UrlGuardian for InMemoryUrlGuardian {
         let origin = url
             .atra_origin()
             .ok_or_else(|| GuardianError::NoOriginError(url.clone()))?;
-        let mut holder = self.data_holder.write().await;
+        let mut holder = self.inner.write().await;
         if let Some(found) = holder.get_mut(&origin) {
             if found.is_in_use {
                 return Err(GuardianError::AlreadyOccupied(origin));
@@ -119,7 +118,7 @@ impl UrlGuardian for InMemoryUrlGuardian {
         match url.atra_origin() {
             None => false,
             Some(ref value) => {
-                let holder = self.data_holder.read().await;
+                let holder = self.inner.read().await;
                 match holder.get(value) {
                     None => true,
                     Some(value) => url.depth() < &value.depth,
@@ -130,18 +129,18 @@ impl UrlGuardian for InMemoryUrlGuardian {
 
     async fn knows_origin(&self, url: &UrlWithDepth) -> Option<bool> {
         let host = url.atra_origin()?;
-        let holder = self.data_holder.read().await;
+        let holder = self.inner.read().await;
         Some(holder.contains_key(&host))
     }
 
     async fn current_origin_state(&self, url: &UrlWithDepth) -> Option<GuardEntry> {
         let host = url.atra_origin()?;
-        let holder = self.data_holder.read().await;
+        let holder = self.inner.read().await;
         holder.get(&host).cloned()
     }
 
     async fn currently_reserved_origins(&self) -> Vec<AtraUrlOrigin> {
-        let read = self.data_holder.read().await;
+        let read = self.inner.read().await;
         read.iter()
             .filter_map(|(host, state)| {
                 if state.is_in_use {
@@ -157,7 +156,7 @@ impl UrlGuardian for InMemoryUrlGuardian {
         &self,
         guard: &UrlGuard<'a, Self>,
     ) -> Result<(), GuardPoisonedError> {
-        let read = self.data_holder.read().await;
+        let read = self.inner.read().await;
         if let Some(found) = read.get(&guard.origin) {
             if found.is_in_use {
                 if let Some(ref modification) = found.last_modification {
@@ -180,15 +179,89 @@ impl UrlGuardian for InMemoryUrlGuardian {
             Err(GuardPoisonedError::OriginMissing(guard.origin.clone()))
         }
     }
+
+    fn subscribe(&self) -> Receiver<GuardianChangedEvent> {
+        self.inner.broadcast.subscribe()
+    }
 }
 
 impl Clone for InMemoryUrlGuardian {
     fn clone(&self) -> Self {
         Self {
-            data_holder: self.data_holder.clone(),
+            inner: self.inner.clone(),
         }
     }
 }
+
+
+impl Default for InMemoryUrlGuardian {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Debug)]
+struct InMemoryUrlGuardianState {
+    data_holder: std::sync::RwLock<HashMap<AtraUrlOrigin, GuardEntry>>,
+    broadcast: tokio::sync::broadcast::Sender<GuardianChangedEvent>,
+}
+
+type ReadResult<'a> = LockResult<RwLockReadGuard<'a, HashMap<AtraUrlOrigin, GuardEntry>>>;
+type WriteResult<'a> = LockResult<RwLockWriteGuard<'a, HashMap<AtraUrlOrigin, GuardEntry>>>;
+
+impl InMemoryUrlGuardianState {
+    pub fn new() -> Self {
+        Self {
+            data_holder: Default::default(),
+            broadcast: tokio::sync::broadcast::Sender::new(1)
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn read_blocking(&self) -> ReadResult {
+        self.data_holder.read()
+    }
+
+    pub fn write_blocking(&self) -> WriteResult {
+        self.data_holder.write()
+    }
+
+    pub async fn read(&self) -> RwLockReadGuard<HashMap<AtraUrlOrigin, GuardEntry>> {
+        loop {
+            match self.data_holder.try_read() {
+                Ok(result) => return result,
+                Err(err) => {
+                    match err {
+                        TryLockError::WouldBlock => {}
+                        TryLockError::Poisoned(err) => {
+                            panic!("Poisoned Guardian: {err}")
+                        }
+                    }
+                }
+            }
+            yield_now().await;
+        }
+    }
+
+    pub async fn write(&self) -> RwLockWriteGuard<HashMap<AtraUrlOrigin, GuardEntry>> {
+        loop {
+            match self.data_holder.try_write() {
+                Ok(result) => return result,
+                Err(err) => {
+                    match err {
+                        TryLockError::WouldBlock => {}
+                        TryLockError::Poisoned(err) => {
+                            panic!("Poisoned Guardian: {err}")
+                        }
+                    }
+                }
+            }
+            yield_now().await;
+        }
+    }
+}
+
+
 
 #[cfg(test)]
 mod test {

@@ -282,7 +282,7 @@ mod test {
     async fn can_extract_data() {
         let page = ResponseData::new(
             FetchedRequestData::new(
-                RawData::from_vec(include_bytes!("../samples/HTML attribute reference - HTML_ HyperText Markup Language _ MDN.html").to_vec()),
+                RawData::from_vec(include_bytes!("../../testdata/samples/HTML attribute reference - HTML_ HyperText Markup Language _ MDN.html").to_vec()),
                 None,
                 reqwest::StatusCode::OK,
                 None,

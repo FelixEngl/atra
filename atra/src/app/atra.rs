@@ -390,8 +390,8 @@ mod test {
         let configs = Configs::new(
             Default::default(),
             Default::default(),
-            config,
             Default::default(),
+            config,
         );
 
         app.run_without_logger(

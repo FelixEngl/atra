@@ -28,7 +28,7 @@ use crate::extraction::ExtractedLink;
 use crate::gdbr::identifier::GdbrIdentifierRegistry;
 use crate::io::fs::FileSystemAccess;
 use crate::link_state::{LinkState, LinkStateDBError, LinkStateKind, LinkStateManager};
-use crate::queue::QueueError;
+use crate::queue::{PollWaiter, QueueError};
 use crate::queue::{EnqueueCalled, UrlQueue, UrlQueueElement};
 use crate::robots::InMemoryRobotsManager;
 use crate::seed::BasicSeed;
@@ -469,6 +469,7 @@ impl WebGraphManager for TestLinkNetManager {
 pub struct TestUrlQueue {
     links_queue: Arc<Mutex<VecDeque<UrlQueueElement<UrlWithDepth>>>>,
     broadcast: tokio::sync::broadcast::Sender<EnqueueCalled>,
+    poll_waiter: PollWaiter
 }
 
 impl Default for TestUrlQueue {
@@ -476,6 +477,7 @@ impl Default for TestUrlQueue {
         Self {
             links_queue: Arc::default(),
             broadcast: tokio::sync::broadcast::Sender::new(1),
+            poll_waiter: PollWaiter::new()
         }
     }
 }
@@ -560,6 +562,10 @@ impl UrlQueue for TestUrlQueue {
 
     fn subscribe_to_change(&self) -> Receiver<EnqueueCalled> {
         self.broadcast.subscribe()
+    }
+
+    fn start_polling(&self) -> crate::queue::PollWaiterRef {
+        self.poll_waiter.create_ref()
     }
 }
 

@@ -22,26 +22,38 @@ use tokio::sync::{broadcast, mpsc};
 // Inspired by https://github.com/tokio-rs/mini-redis/blob/master/src/shutdown.rs
 // But we work wit an atomic to make is a little easier
 
-/// A struct to help with satisfying the value for an object
-#[derive(Debug, Copy, Clone, Error)]
-pub struct ShutdownPhantom;
-impl Display for ShutdownPhantom {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ShutdownPhantom")
+#[cfg(test)]
+mod phantom {
+    use std::fmt::{Display, Formatter};
+    use thiserror::Error;
+    use crate::runtime::{ShutdownHandle, ShutdownReceiver};
+
+    /// A struct to help with satisfying the value for an object
+    #[derive(Debug, Copy, Clone, Error)]
+    pub struct ShutdownPhantom;
+    impl Display for ShutdownPhantom {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            write!(f, "ShutdownPhantom")
+        }
+    }
+
+    #[allow(refining_impl_trait)]
+    impl ShutdownReceiver for ShutdownPhantom {
+        #[inline]
+        fn is_shutdown(&self) -> bool {
+            false
+        }
+
+        fn weak_handle<'a>(&'a self) -> ShutdownHandle<'a, ShutdownPhantom> {
+            ShutdownHandle { shutdown: &self }
+        }
     }
 }
 
-#[allow(refining_impl_trait)]
-impl ShutdownReceiver for ShutdownPhantom {
-    #[inline]
-    fn is_shutdown(&self) -> bool {
-        false
-    }
+#[cfg(test)]
+pub use phantom::*;
 
-    fn weak_handle<'a>(&'a self) -> ShutdownHandle<'a, ShutdownPhantom> {
-        ShutdownHandle { shutdown: &self }
-    }
-}
+
 
 /// A simple trait for receiving a shutdown command
 #[allow(refining_impl_trait)]

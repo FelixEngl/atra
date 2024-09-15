@@ -701,7 +701,7 @@ mod test {
 
     #[test]
     fn test_might() {
-        const DATA: &'static str = include_str!("../samples/Amazon.html");
+        const DATA: &'static str = include_str!("../../testdata/samples/Amazon.html");
 
         let identifier =
             GdbrIdentifier::new(create_german_gdbr_svm(), 0.1, 0.5, FilterMode::OnMaxScore);

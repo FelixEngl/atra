@@ -21,6 +21,11 @@ use tokio::sync::broadcast::Receiver;
 pub mod element;
 pub mod queue;
 pub mod result;
+mod poll;
+
+pub use poll::*;
+
+
 
 /// A traif for an url queue
 pub trait UrlQueue {
@@ -77,4 +82,8 @@ pub trait UrlQueue {
 
     /// Broadcasts if enqueue is called
     fn subscribe_to_change(&self) -> Receiver<EnqueueCalled>;
+
+    /// Allows to subscribe to a stream when polling.
+    fn start_polling(&self) -> PollWaiterRef;
+
 }

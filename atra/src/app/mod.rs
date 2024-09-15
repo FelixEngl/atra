@@ -120,8 +120,8 @@ mod test {
             Configs::new(
                 Default::default(),
                 Default::default(),
-                config,
                 Default::default(),
+                config,
             ),
         )
     }

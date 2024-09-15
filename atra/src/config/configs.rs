@@ -36,8 +36,8 @@ impl Configs {
     pub fn new(
         system: SystemConfig,
         paths: PathsConfig,
-        crawl: CrawlConfig,
         session: SessionConfig,
+        crawl: CrawlConfig,
     ) -> Self {
         Self {
             system,

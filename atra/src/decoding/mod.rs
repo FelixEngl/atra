@@ -376,7 +376,7 @@ mod test {
     }
 
     fn website_old(encoding: &'static Encoding) -> (ResponseData, &'static str) {
-        const DATA: &'static str = include_str!("../samples/sample_1.html");
+        const DATA: &'static str = include_str!("../../testdata/samples/sample_1.html");
         let (content, used_enc, _) = encode(encoding, DATA);
         assert_eq!(
             encoding,
@@ -403,7 +403,7 @@ mod test {
     }
 
     fn website_modern1(encoding: &'static Encoding) -> (ResponseData, &'static str) {
-        const DATA: &'static str = include_str!("../samples/sample_1.html");
+        const DATA: &'static str = include_str!("../../testdata/samples/sample_1.html");
         let (content, used_enc, _) = encode(encoding, DATA);
         assert_eq!(
             encoding,
@@ -435,7 +435,7 @@ mod test {
     }
 
     fn website_modern2(encoding: &'static Encoding) -> (ResponseData, String) {
-        const DATA: &'static str = include_str!("../samples/sample_2.html");
+        const DATA: &'static str = include_str!("../../testdata/samples/sample_2.html");
         let replaces = DATA.replace("UTF-8", encoding.name());
         let (content, used_enc, _) = encode(encoding, &replaces);
         assert_eq!(
@@ -463,7 +463,7 @@ mod test {
     }
 
     fn website_modern3(encoding: &'static Encoding) -> (ResponseData, String) {
-        const DATA: &'static str = include_str!("../samples/sample_3.html");
+        const DATA: &'static str = include_str!("../../testdata/samples/sample_3.html");
         let replaces = DATA.replace("UTF-8", encoding.name());
         let (content, used_enc, _) = encode(encoding, &replaces);
         assert_eq!(
@@ -491,7 +491,7 @@ mod test {
     }
 
     fn website_modern4(encoding: &'static Encoding) -> (ResponseData, String) {
-        const DATA: &'static str = include_str!("../samples/sample_4.html");
+        const DATA: &'static str = include_str!("../../testdata/samples/sample_4.html");
         let replaces = DATA.replace("UTF-8", encoding.name());
         let (content, used_enc, _) = encode(encoding, &replaces);
         assert_eq!(

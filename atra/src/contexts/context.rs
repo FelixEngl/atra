@@ -60,7 +60,7 @@ pub mod traits {
     use crate::link_state::LinkStateManager;
     use crate::queue::{UrlQueue, UrlQueuePollResult};
     use crate::robots::RobotsManager;
-    use crate::runtime::ShutdownReceiver;
+    use crate::runtime::{ShutdownPhantom, ShutdownReceiver};
     use crate::seed::BasicSeed;
     use crate::url::guard::UrlGuardian;
     use crate::url::{UrlWithDepth, UrlWithGuard};
@@ -216,6 +216,15 @@ pub mod traits {
         type Guardian: UrlGuardian;
 
         type Error: Error;
+
+        /// Tries to poll the next free url. Does not react to shudown.
+        #[cfg(test)]
+        async fn poll_next_free_url_no_shutdown<'a>(
+            &'a self,
+            max_miss: Option<u64>,
+        ) -> UrlQueuePollResult<UrlWithGuard<'a, Self::Guardian>, Self::Error> {
+            self.poll_next_free_url(ShutdownPhantom, max_miss).await
+        }
 
         /// Tries to poll the next free url.
         async fn poll_next_free_url<'a>(

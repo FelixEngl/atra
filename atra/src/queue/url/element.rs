@@ -23,8 +23,11 @@ use std::hash::{Hash, Hasher};
 pub struct UrlQueueElement<T = UrlWithDepth> {
     /// The distance between this url and the origin.
     pub is_seed: bool,
+    /// The age of the url
     pub age: u32,
+    /// Marks if the target was is use.
     pub host_was_in_use: bool,
+    /// The target
     pub target: T,
 }
 

@@ -95,13 +95,16 @@ impl RawAgingQueue for RawAgingQueueFile {
         n: usize,
     ) -> Result<Vec<E>, QueueError> {
         let mut lock = self.queue.lock().await;
-        lock.iter()
+
+        let result = lock.iter()
             .take(n)
             .map(|value| match bincode::deserialize(value.as_ref()) {
                 Ok(value) => Ok(value),
                 Err(err) => Err(QueueError::EncodingError(err)),
             })
-            .collect()
+            .collect::<Result<Vec<_>, _>>()?;
+        lock.remove_n(n)?;
+        Ok(result)
     }
 
     async fn len(&self) -> usize {
