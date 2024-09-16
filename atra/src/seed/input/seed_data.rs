@@ -14,6 +14,7 @@
 
 use crate::queue::{SupportsSeeding, UrlQueue};
 use crate::seed::read_seeds;
+use crate::url::UrlWithDepth;
 use camino::Utf8PathBuf;
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take_while1};
@@ -27,7 +28,6 @@ use nom::IResult;
 use nom::Parser;
 use std::convert::Infallible;
 use std::str::FromStr;
-use crate::url::UrlWithDepth;
 
 /// Defines what kind of seed is used
 /// CLI Syntax:

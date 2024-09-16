@@ -14,13 +14,13 @@
 
 pub mod digest;
 pub mod domains;
+pub mod dropping;
 pub mod header_map_extensions;
 pub mod isolang_ext;
 mod language_detection;
 pub mod selectors;
 pub mod serde_ext;
 pub mod utf8;
-pub mod dropping;
 
 pub use language_detection::*;
 

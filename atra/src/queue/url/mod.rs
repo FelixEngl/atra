@@ -12,38 +12,41 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt::Debug;
-use std::mem::{ManuallyDrop, MaybeUninit};
-use std::ops::Deref;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
-use smallvec::SmallVec;
 use crate::queue::errors::{QueueError, RawQueueError};
 use crate::queue::url::element::UrlQueueElement;
 use crate::queue::EnqueueCalled;
 use crate::url::UrlWithDepth;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+use smallvec::SmallVec;
+use std::fmt::Debug;
+use std::mem::{ManuallyDrop, MaybeUninit};
+use std::ops::Deref;
 use tokio::sync::watch::Receiver;
 
 pub mod element;
 pub mod queue;
-pub mod result;
 mod refs;
+pub mod result;
 
 pub use refs::*;
 
-pub trait SupportsForcedQueueElement<T> where T: Serialize + DeserializeOwned + 'static {
+pub trait SupportsForcedQueueElement<T>
+where
+    T: Serialize + DeserializeOwned + 'static,
+{
     fn force_enqueue(&self, entry: UrlQueueElement<T>) -> Result<(), QueueError>;
 }
 
 /// A traif for an url queue
-pub trait UrlQueue<T> where T: Serialize + DeserializeOwned + Sized + 'static {
+pub trait UrlQueue<T>
+where
+    T: Serialize + DeserializeOwned + Sized + 'static,
+{
     async fn enqueue(&self, entry: UrlQueueElement<T>) -> Result<(), QueueError>;
 
     #[cfg(test)]
-    async fn enqueue_borrowed<'a>(
-        &self,
-        entry: UrlQueueElement<&'a T>,
-    ) -> Result<(), QueueError>;
+    async fn enqueue_borrowed<'a>(&self, entry: UrlQueueElement<&'a T>) -> Result<(), QueueError>;
 
     async fn enqueue_all(
         &self,
@@ -53,7 +56,10 @@ pub trait UrlQueue<T> where T: Serialize + DeserializeOwned + Sized + 'static {
     async fn dequeue<'a>(&'a self) -> Result<Option<UrlQueueElementRef<'a, T>>, QueueError>;
 
     #[cfg(test)]
-    async fn dequeue_n<'a>(&'a self, n: usize) -> Result<Vec<UrlQueueElementRef<'a, T>>, QueueError>;
+    async fn dequeue_n<'a>(
+        &'a self,
+        n: usize,
+    ) -> Result<Vec<UrlQueueElementRef<'a, T>>, QueueError>;
 
     /// Number of elements in the queue
     async fn len(&self) -> usize;
@@ -70,7 +76,6 @@ pub trait UrlQueue<T> where T: Serialize + DeserializeOwned + Sized + 'static {
 }
 
 pub trait SupportsSeeding {
-
     /// Enqueues an [url] at distance 0
     async fn enqueue_seed(&self, target: &str) -> Result<(), QueueError>;
 
@@ -81,17 +86,24 @@ pub trait SupportsSeeding {
     ) -> Result<(), QueueError>;
 }
 
-impl<T> SupportsSeeding for T where T: UrlQueue<UrlWithDepth> {
-    async fn enqueue_seed(&self, target: &str) -> Result<(), QueueError>  {
+impl<T> SupportsSeeding for T
+where
+    T: UrlQueue<UrlWithDepth>,
+{
+    async fn enqueue_seed(&self, target: &str) -> Result<(), QueueError> {
         self.enqueue(UrlQueueElement::new(
             true,
             0,
             false,
-            UrlWithDepth::from_seed(target)?
-        )).await
+            UrlWithDepth::from_seed(target)?,
+        ))
+        .await
     }
 
-    async fn enqueue_seeds(&self, urls: impl IntoIterator<Item=impl AsRef<str>>) -> Result<(), QueueError>  {
+    async fn enqueue_seeds(
+        &self,
+        urls: impl IntoIterator<Item = impl AsRef<str>>,
+    ) -> Result<(), QueueError> {
         self.enqueue_all(
             urls.into_iter()
                 .map(|s| {
@@ -99,6 +111,7 @@ impl<T> SupportsSeeding for T where T: UrlQueue<UrlWithDepth> {
                         .map(|value| UrlQueueElement::new(true, 0, false, value))
                 })
                 .collect::<Result<Vec<_>, _>>()?,
-        ).await
+        )
+        .await
     }
 }

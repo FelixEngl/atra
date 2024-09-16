@@ -17,8 +17,8 @@ mod guarded;
 mod input;
 mod unguarded;
 
-use cfg_if::cfg_if;
 use crate::url::{AtraUrlOrigin, UrlWithDepth};
+use cfg_if::cfg_if;
 
 pub use input::lines::read_seeds;
 pub use input::seed_data::SeedDefinition;

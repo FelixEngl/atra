@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub mod errors;
 mod raw;
 mod url;
-pub mod errors;
 
 pub use errors::QueueError;
 pub use raw::implementation::RawAgingQueueFile;
@@ -22,11 +22,11 @@ pub use raw::AgingQueueElement;
 pub use raw::EnqueueCalled;
 pub use raw::RawSupportsForcedQueueElement;
 
-pub use url::SupportsForcedQueueElement;
 pub use url::element::UrlQueueElement;
 pub use url::queue::UrlQueueWrapper;
 pub use url::result::*;
-pub use url::UrlQueue;
-pub use url::UrlQueueElementRefCounter;
-pub use url::UrlQueueElementRef;
+pub use url::SupportsForcedQueueElement;
 pub use url::SupportsSeeding;
+pub use url::UrlQueue;
+pub use url::UrlQueueElementRef;
+pub use url::UrlQueueElementRefCounter;

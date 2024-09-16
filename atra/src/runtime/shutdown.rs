@@ -26,9 +26,9 @@ use tokio::sync::{broadcast, mpsc};
 
 #[cfg(test)]
 mod phantom {
+    use crate::runtime::{ShutdownHandle, ShutdownReceiver, ShutdownReceiverWithWait};
     use std::fmt::{Display, Formatter};
     use thiserror::Error;
-    use crate::runtime::{ShutdownHandle, ShutdownReceiver, ShutdownReceiverWithWait};
 
     /// A struct to help with satisfying the value for an object
     #[derive(Debug, Copy, Clone, Error)]
@@ -62,8 +62,6 @@ mod phantom {
 
 #[cfg(test)]
 pub use phantom::*;
-
-
 
 /// A simple trait for receiving a shutdown command
 #[allow(refining_impl_trait)]
@@ -362,7 +360,10 @@ impl<T: ShutdownReceiver> Clone for ShutdownHandle<'_, T> {
 }
 
 #[allow(refining_impl_trait)]
-impl<T> ShutdownReceiver for ShutdownHandle<'_, T> where T: ShutdownReceiver {
+impl<T> ShutdownReceiver for ShutdownHandle<'_, T>
+where
+    T: ShutdownReceiver,
+{
     delegate::delegate! {
         to self.shutdown {
             fn is_shutdown(&self) -> bool;
@@ -375,4 +376,3 @@ impl<T> ShutdownReceiver for ShutdownHandle<'_, T> where T: ShutdownReceiver {
         }
     }
 }
-

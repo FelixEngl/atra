@@ -15,12 +15,12 @@
 pub mod implementation;
 
 use crate::queue::errors::RawQueueError;
+use crate::queue::QueueError;
+use itertools::Either;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::fmt::Debug;
-use itertools::Either;
 use tokio::sync::watch::Receiver;
-use crate::queue::QueueError;
 
 /// A signal sent when enqueue is called on a [RawAgingQueue]
 #[derive(Debug, Copy, Clone)]
@@ -31,7 +31,6 @@ pub trait AgingQueueElement {
     fn age_by_one(&mut self);
 }
 
-
 pub trait RawSupportsForcedQueueElement {
     unsafe fn force_enqueue<T>(&self, entry: T) -> Result<(), QueueError>
     where
@@ -41,7 +40,10 @@ pub trait RawSupportsForcedQueueElement {
 /// An unsafe aging queue
 pub trait RawAgingQueue: Send + Sync + RawSupportsForcedQueueElement {
     /// Enqueue a value of type [E].
-    unsafe fn enqueue_any<T>(&self, entry: Either<T, Vec<u8>>) -> Result<(), RawQueueError<Vec<u8>>>
+    unsafe fn enqueue_any<T>(
+        &self,
+        entry: Either<T, Vec<u8>>,
+    ) -> Result<(), RawQueueError<Vec<u8>>>
     where
         T: AgingQueueElement + Serialize + Debug;
 

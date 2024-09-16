@@ -12,22 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::error::Error;
-use std::future::Future;
-use std::time::Duration;
 use crate::contexts::traits::{
     SupportsConfigs, SupportsLinkState, SupportsPolling, SupportsUrlGuarding, SupportsUrlQueue,
 };
 use crate::link_state::{LinkState, LinkStateKind, LinkStateManager};
-use crate::queue::{AbortCause, EnqueueCalled, QueueError, QueueExtractionError, UrlQueue, UrlQueueElement, UrlQueueElementRef, UrlQueuePollResult};
+use crate::queue::{
+    AbortCause, EnqueueCalled, QueueError, QueueExtractionError, UrlQueue, UrlQueueElement,
+    UrlQueueElementRef, UrlQueuePollResult,
+};
 use crate::runtime::{ShutdownReceiver, ShutdownReceiverWithWait};
+use crate::sync::barrier::ContinueOrStop;
 use crate::url::guard::{GuardianError, UrlGuard, UrlGuardian};
 use crate::url::{AtraOriginProvider, UrlWithDepth, UrlWithGuard};
 use smallvec::SmallVec;
+use std::error::Error;
+use std::future::Future;
+use std::time::Duration;
 use tokio::select;
 use tokio::sync::watch::Receiver;
 use tokio::time::Instant;
-use crate::sync::barrier::ContinueOrStop;
 
 impl<C> SupportsPolling for C
 where
@@ -46,7 +49,8 @@ where
         let guardian = self.get_guardian();
         let manager = self.get_link_state_manager();
         const MISSED_KEEPER_CACHE: usize = 32;
-        let mut missed_host_cache: Vec<UrlQueueElementRef<UrlWithDepth>> = Vec::with_capacity(MISSED_KEEPER_CACHE);
+        let mut missed_host_cache: Vec<UrlQueueElementRef<UrlWithDepth>> =
+            Vec::with_capacity(MISSED_KEEPER_CACHE);
         let max_age = self.configs().crawl.max_queue_age;
         let mut waiter: Option<Receiver<EnqueueCalled>> = None;
         let mut missed = 0;
@@ -55,31 +59,25 @@ where
 
         async fn process_entries<'a, G, E>(
             guardian: &'a G,
-            missed_host_cache: &mut Vec<UrlQueueElementRef<'a, UrlWithDepth>>
+            missed_host_cache: &mut Vec<UrlQueueElementRef<'a, UrlWithDepth>>,
         ) -> Option<UrlQueuePollResult<UrlWithGuard<'a, G>, E>>
         where
             G: UrlGuardian,
-            E: Error
+            E: Error,
         {
             for entry in missed_host_cache.drain(..) {
                 match guardian.try_reserve(&entry.target).await {
                     Ok(guard) => {
                         let result = unsafe {
                             let entry = entry.take();
-                            UrlWithGuard::new_unchecked(
-                                guard,
-                                entry.target,
-                                entry.is_seed
-                            )
+                            UrlWithGuard::new_unchecked(guard, entry.target, entry.is_seed)
                         };
                         return Some(UrlQueuePollResult::Ok(result));
                     }
                     Err(GuardianError::NoOriginError(_)) => {
                         return Some(UrlQueuePollResult::Abort(AbortCause::NoHost(entry.take())))
                     }
-                    Err(GuardianError::AlreadyOccupied(_)) => {
-                        drop(entry)
-                    }
+                    Err(GuardianError::AlreadyOccupied(_)) => drop(entry),
                 }
             }
             None
@@ -94,7 +92,7 @@ where
             }
             if missed_host_cache.len() == missed_host_cache.capacity() || force_clean_cache {
                 if let Some(result) = process_entries(guardian, &mut missed_host_cache).await {
-                    break result
+                    break result;
                 }
                 force_clean_cache = false;
             }
@@ -126,11 +124,7 @@ where
                         Ok(guard) => {
                             let result = unsafe {
                                 let entry = entry.take();
-                                UrlWithGuard::new_unchecked(
-                                    guard,
-                                    entry.target,
-                                    entry.is_seed
-                                )
+                                UrlWithGuard::new_unchecked(guard, entry.target, entry.is_seed)
                             };
                             break UrlQueuePollResult::Ok(result);
                         }
@@ -144,7 +138,8 @@ where
                 }
                 Ok(None) => {
                     if queue.has_floating_urls() {
-                        let guard_changes = waiter.get_or_insert_with(|| queue.subscribe_to_change());
+                        let guard_changes =
+                            waiter.get_or_insert_with(|| queue.subscribe_to_change());
 
                         let result = select! {
                             _ = guard_changes.changed() => {
@@ -160,15 +155,11 @@ where
                             }
                         };
                         match result {
-                            ContinueOrStop::Cancelled(err) => {
-                                break err
-                            }
-                            ContinueOrStop::Continue(fd) => {
-                                force_clean_cache = fd
-                            }
+                            ContinueOrStop::Cancelled(err) => break err,
+                            ContinueOrStop::Continue(fd) => force_clean_cache = fd,
                         }
                     }
-                    continue
+                    continue;
                 }
                 Err(err) => {
                     break UrlQueuePollResult::Err(QueueExtractionError::QueueError(err));
@@ -179,14 +170,13 @@ where
         if !result.is_ok() && !missed_host_cache.is_empty() {
             if let Some(result2) = process_entries(guardian, &mut missed_host_cache).await {
                 if result2.is_ok() {
-                    return result2
+                    return result2;
                 }
             }
         }
         return result;
     }
 }
-
 
 async fn drop_from_queue<C: SupportsConfigs>(
     context: &C,
@@ -214,19 +204,22 @@ async fn drop_from_queue<C: SupportsConfigs>(
     }
 }
 
-
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
-    use std::time::Duration;
-    use crate::config::{Configs, CrawlConfig, PathsConfig, SessionConfig, SystemConfig};
     use crate::config::crawl::CrawlBudget;
-    use crate::contexts::traits::{SupportsConfigs, SupportsLinkState, SupportsPolling, SupportsUrlGuarding, SupportsUrlQueue};
+    use crate::config::{Configs, CrawlConfig, PathsConfig, SessionConfig, SystemConfig};
+    use crate::contexts::traits::{
+        SupportsConfigs, SupportsLinkState, SupportsPolling, SupportsUrlGuarding, SupportsUrlQueue,
+    };
     use crate::contexts::BaseContext;
-    use crate::queue::{AbortCause, QueueExtractionError, UrlQueue, UrlQueueElement, UrlQueuePollResult};
+    use crate::queue::{
+        AbortCause, QueueExtractionError, UrlQueue, UrlQueueElement, UrlQueuePollResult,
+    };
     use crate::test_impls::{InMemoryLinkStateManager, TestUrlQueue};
     use crate::url::guard::{GuardianError, InMemoryUrlGuardian, UrlGuardian};
-    use crate::url::{UrlWithDepth};
+    use crate::url::UrlWithDepth;
+    use std::sync::Arc;
+    use std::time::Duration;
 
     struct Fake {
         queue: TestUrlQueue,
@@ -281,10 +274,7 @@ mod test {
         }
     }
 
-    fn create_configs(
-        max_queue_age: Option<u32>,
-        budget_setting: Option<CrawlBudget>,
-    ) -> Configs {
+    fn create_configs(max_queue_age: Option<u32>, budget_setting: Option<CrawlBudget>) -> Configs {
         let mut cfg = CrawlConfig::default();
         if let Some(max_queue_age) = max_queue_age {
             cfg.max_queue_age = max_queue_age;
@@ -306,8 +296,8 @@ mod test {
     async fn polling_works() {
         let cfg = create_configs(None, None);
         let fake = Arc::new(Fake::new(cfg));
-        fake.queue.enqueue_all(
-            [
+        fake.queue
+            .enqueue_all([
                 UrlQueueElement::new(
                     true,
                     0,
@@ -344,9 +334,9 @@ mod test {
                 //     false,
                 //     UrlWithDepth::from_seed("https://www.test4.de/").unwrap(),
                 // ),
-            ]
-        ).await.unwrap();
-
+            ])
+            .await
+            .unwrap();
 
         let next1 = fake.poll_next_free_url_no_shutdown(None).await.unwrap();
         let next2 = fake.poll_next_free_url_no_shutdown(None).await.unwrap();
@@ -365,21 +355,18 @@ mod test {
                 UrlQueuePollResult::Ok(ok) => {
                     assert_eq!("https://www.test3.de/katze", ok.seed_url().as_str());
                     println!("Process: {}", ok.seed_url().as_str());
-
                 }
                 UrlQueuePollResult::Abort(ab) => {
                     panic!("Abort for {}", ab)
                 }
-                UrlQueuePollResult::Err(err) => {
-                    match err {
-                        QueueExtractionError::LinkState(err) => {
-                            panic!("{err}")
-                        }
-                        QueueExtractionError::QueueError(err) => {
-                            panic!("{err}")
-                        }
+                UrlQueuePollResult::Err(err) => match err {
+                    QueueExtractionError::LinkState(err) => {
+                        panic!("{err}")
                     }
-                }
+                    QueueExtractionError::QueueError(err) => {
+                        panic!("{err}")
+                    }
+                },
             }
             inp.changed().await.unwrap();
             match fake2.poll_next_free_url_no_shutdown(None).await {
@@ -390,19 +377,15 @@ mod test {
                 UrlQueuePollResult::Abort(ab) => {
                     panic!("Abort for {}", ab)
                 }
-                UrlQueuePollResult::Err(err) => {
-                    match err {
-                        QueueExtractionError::LinkState(err) => {
-                            panic!("{err}")
-                        }
-                        QueueExtractionError::QueueError(err) => {
-                            panic!("{err}")
-                        }
+                UrlQueuePollResult::Err(err) => match err {
+                    QueueExtractionError::LinkState(err) => {
+                        panic!("{err}")
                     }
-                }
+                    QueueExtractionError::QueueError(err) => {
+                        panic!("{err}")
+                    }
+                },
             }
-
-
         });
 
         println!("Drop {}", next1.seed_url().as_str());

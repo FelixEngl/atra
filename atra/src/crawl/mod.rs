@@ -91,9 +91,7 @@ where
         }
 
         // todo: keep all alive as long as there is the possebility to encounter a new url with a different url.
-        let provider = context
-            .poll_next_free_url(shutdown.clone(), None)
-            .await;
+        let provider = context.poll_next_free_url(shutdown.clone(), None).await;
 
         // with_seed_provider_context! {let provider = from context.as_ref();}
         match provider {

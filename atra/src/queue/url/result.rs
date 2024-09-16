@@ -29,12 +29,10 @@ pub enum UrlQueuePollResult<T, E: Error> {
     Err(QueueExtractionError<E>),
 }
 
-impl<T, E: Error>  UrlQueuePollResult<T, E> {
+impl<T, E: Error> UrlQueuePollResult<T, E> {
     pub fn unwrap(self) -> T {
         match self {
-            UrlQueuePollResult::Ok(value) => {
-                value
-            }
+            UrlQueuePollResult::Ok(value) => value,
             UrlQueuePollResult::Abort(cause) => {
                 panic!("Can not unwrap an abort! {cause}")
             }
@@ -46,9 +44,7 @@ impl<T, E: Error>  UrlQueuePollResult<T, E> {
 
     pub fn unwrap_abort(self) -> AbortCause {
         match self {
-            UrlQueuePollResult::Abort(value) => {
-                value
-            }
+            UrlQueuePollResult::Abort(value) => value,
             UrlQueuePollResult::Ok(_) => {
                 panic!("Can not unwrap_abort an ok!")
             }
@@ -60,16 +56,13 @@ impl<T, E: Error>  UrlQueuePollResult<T, E> {
 
     pub fn unwrap_err(self) -> QueueExtractionError<E> {
         match self {
-            UrlQueuePollResult::Err(e) => {
-                e
-            }
+            UrlQueuePollResult::Err(e) => e,
             UrlQueuePollResult::Ok(_) => {
                 panic!("Can not unwrap_err an ok!")
             }
             UrlQueuePollResult::Abort(_) => {
                 panic!("Can not unwrap_err an abort!")
             }
-
         }
     }
 }

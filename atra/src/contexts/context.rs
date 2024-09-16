@@ -223,7 +223,8 @@ pub mod traits {
             &'a self,
             max_miss: Option<u64>,
         ) -> UrlQueuePollResult<UrlWithGuard<'a, Self::Guardian>, Self::Error> {
-            self.poll_next_free_url(ShutdownPhantom::<true>, max_miss).await
+            self.poll_next_free_url(ShutdownPhantom::<true>, max_miss)
+                .await
         }
 
         /// Tries to poll the next free url.

@@ -12,25 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::future::Future;
-use std::ops::ControlFlow;
 use crate::queue::errors::{QueueError, RawQueueError};
 use crate::queue::raw::implementation::RawAgingQueueFile;
 use crate::queue::raw::RawAgingQueue;
-use crate::queue::url::{SupportsForcedQueueElement, UrlQueue, UrlQueueElement, UrlQueueElementRef, UrlQueueElementRefCounter};
+use crate::queue::url::{
+    SupportsForcedQueueElement, UrlQueue, UrlQueueElement, UrlQueueElementRef,
+    UrlQueueElementRefCounter,
+};
 use crate::queue::{EnqueueCalled, RawSupportsForcedQueueElement};
 use crate::url::UrlWithDepth;
-use std::path::Path;
 use clap::builder::TypedValueParser;
 use itertools::{Either, Itertools};
 use nom::Parser;
+use std::future::Future;
+use std::ops::ControlFlow;
+use std::path::Path;
 use tokio::sync::watch::Receiver;
 use tokio::task::yield_now;
 
 #[derive(Debug)]
 pub struct UrlQueueWrapper<T: RawAgingQueue> {
     inner: T,
-    counter: UrlQueueElementRefCounter
+    counter: UrlQueueElementRefCounter,
 }
 
 impl UrlQueueWrapper<RawAgingQueueFile> {
@@ -40,49 +43,47 @@ impl UrlQueueWrapper<RawAgingQueueFile> {
     }
 }
 
-impl<T> UrlQueueWrapper<T> where T: RawAgingQueue + RawSupportsForcedQueueElement {
-
-
-
+impl<T> UrlQueueWrapper<T>
+where
+    T: RawAgingQueue + RawSupportsForcedQueueElement,
+{
     #[allow(dead_code)]
     pub fn into_inner(self) -> T {
         self.inner
     }
 
-
     #[inline]
     fn wrap(&self, result: UrlQueueElement<UrlWithDepth>) -> UrlQueueElementRef<UrlWithDepth> {
         let drop = self.counter.create_drop_notifyer();
-        UrlQueueElementRef::new(
-            result,
-            self,
-            drop
-        )
+        UrlQueueElementRef::new(result, self, drop)
     }
 
-    fn convert_result<V, U>(result: Result<V, RawQueueError<U>>) -> ControlFlow<Result<V, QueueError>, U> {
+    fn convert_result<V, U>(
+        result: Result<V, RawQueueError<U>>,
+    ) -> ControlFlow<Result<V, QueueError>, U> {
         match result {
-            Ok(value) => {
-                ControlFlow::Break(Ok(value))
-            }
-            Err(err) => {
-                match err.try_into() {
-                    Ok(err) => ControlFlow::Break(Err(err)),
-                    Err(v) => ControlFlow::Continue(v)
-                }
-            }
+            Ok(value) => ControlFlow::Break(Ok(value)),
+            Err(err) => match err.try_into() {
+                Ok(err) => ControlFlow::Break(Err(err)),
+                Err(v) => ControlFlow::Continue(v),
+            },
         }
-
     }
 
     pub fn new(inner: T) -> Self {
-        Self { inner, counter: UrlQueueElementRefCounter::new() }
+        Self {
+            inner,
+            counter: UrlQueueElementRefCounter::new(),
+        }
     }
 }
 
-impl<T> SupportsForcedQueueElement<UrlWithDepth> for UrlQueueWrapper<T> where T: RawAgingQueue + RawSupportsForcedQueueElement {
+impl<T> SupportsForcedQueueElement<UrlWithDepth> for UrlQueueWrapper<T>
+where
+    T: RawAgingQueue + RawSupportsForcedQueueElement,
+{
     fn force_enqueue(&self, entry: UrlQueueElement<UrlWithDepth>) -> Result<(), QueueError> {
-        unsafe{ self.inner.force_enqueue(entry) }
+        unsafe { self.inner.force_enqueue(entry) }
     }
 }
 
@@ -98,7 +99,7 @@ impl<T: RawAgingQueue> UrlQueue<UrlWithDepth> for UrlQueueWrapper<T> {
                     ControlFlow::Continue(v) => {
                         entry = Either::Right(v);
                         yield_now().await
-                    },
+                    }
                 }
             }
         }
@@ -117,7 +118,7 @@ impl<T: RawAgingQueue> UrlQueue<UrlWithDepth> for UrlQueueWrapper<T> {
                     ControlFlow::Continue(v) => {
                         entry = Either::Right(v);
                         yield_now().await
-                    },
+                    }
                 }
             }
         }
@@ -136,15 +137,17 @@ impl<T: RawAgingQueue> UrlQueue<UrlWithDepth> for UrlQueueWrapper<T> {
                     ControlFlow::Continue(v) => {
                         entries = Either::Right(v);
                         yield_now().await
-                    },
+                    }
                 }
             }
         }
     }
 
-    async fn dequeue<'a>(&'a self) -> Result<Option<UrlQueueElementRef<'a, UrlWithDepth>>, QueueError> {
+    async fn dequeue<'a>(
+        &'a self,
+    ) -> Result<Option<UrlQueueElementRef<'a, UrlWithDepth>>, QueueError> {
         loop {
-            match Self::convert_result(unsafe{self.inner.dequeue_any()}) {
+            match Self::convert_result(unsafe { self.inner.dequeue_any() }) {
                 ControlFlow::Break(Ok(Some(value))) => return Ok(Some(self.wrap(value))),
                 ControlFlow::Break(Ok(None)) => return Ok(None),
                 ControlFlow::Break(Err(err)) => return Err(err),
@@ -153,13 +156,19 @@ impl<T: RawAgingQueue> UrlQueue<UrlWithDepth> for UrlQueueWrapper<T> {
         }
     }
 
-    async fn dequeue_n<'a>(&'a self, n: usize) -> Result<Vec<UrlQueueElementRef<'a, UrlWithDepth>>, QueueError> {
+    async fn dequeue_n<'a>(
+        &'a self,
+        n: usize,
+    ) -> Result<Vec<UrlQueueElementRef<'a, UrlWithDepth>>, QueueError> {
         loop {
-            match Self::convert_result(unsafe{self.inner.dequeue_any_n(n)}) {
-                ControlFlow::Break(Ok(value)) =>
-                    return Ok(value.into_iter().map(|value| self.wrap(value)).collect_vec()),
-                ControlFlow::Break(Err(err)) =>
-                    return Err(err),
+            match Self::convert_result(unsafe { self.inner.dequeue_any_n(n) }) {
+                ControlFlow::Break(Ok(value)) => {
+                    return Ok(value
+                        .into_iter()
+                        .map(|value| self.wrap(value))
+                        .collect_vec())
+                }
+                ControlFlow::Break(Err(err)) => return Err(err),
                 ControlFlow::Continue(_) => yield_now().await,
             }
         }
@@ -170,10 +179,8 @@ impl<T: RawAgingQueue> UrlQueue<UrlWithDepth> for UrlQueueWrapper<T> {
     async fn len(&self) -> usize {
         loop {
             match Self::convert_result(self.inner.len_nonblocking()) {
-                ControlFlow::Break(Ok(size)) => {
-                    return size + self.counter.get_count()
-                }
-                _ => yield_now().await
+                ControlFlow::Break(Ok(size)) => return size + self.counter.get_count(),
+                _ => yield_now().await,
             }
         }
     }
@@ -183,13 +190,11 @@ impl<T: RawAgingQueue> UrlQueue<UrlWithDepth> for UrlQueueWrapper<T> {
     async fn is_empty(&self) -> bool {
         loop {
             match Self::convert_result(self.inner.is_empty_nonblocking()) {
-                ControlFlow::Break(Ok(empty)) => {
-                    return empty && self.counter.get_count() == 0
-                }
+                ControlFlow::Break(Ok(empty)) => return empty && self.counter.get_count() == 0,
                 ControlFlow::Break(Err(err)) => {
                     panic!("The queue had an error that is unrecoverable! {}", err)
                 }
-                _ => yield_now().await
+                _ => yield_now().await,
             }
         }
     }
@@ -201,7 +206,6 @@ impl<T: RawAgingQueue> UrlQueue<UrlWithDepth> for UrlQueueWrapper<T> {
     fn floating_url_count(&self) -> usize {
         self.counter.get_count()
     }
-
 
     fn subscribe_to_change(&self) -> Receiver<EnqueueCalled> {
         self.inner.subscribe_to_change()
@@ -216,12 +220,12 @@ impl<T: RawAgingQueue> From<T> for UrlQueueWrapper<T> {
 
 #[cfg(test)]
 mod test {
-    use itertools::Itertools;
     use crate::queue::url::element::UrlQueueElement;
     use crate::queue::url::queue::{UrlQueue, UrlQueueWrapper};
-    use crate::url::UrlWithDepth;
-    use scopeguard::defer;
     use crate::queue::SupportsSeeding;
+    use crate::url::UrlWithDepth;
+    use itertools::Itertools;
+    use scopeguard::defer;
 
     pub async fn test_queue1(q: impl UrlQueue<UrlWithDepth>) {
         q.enqueue_seed("https://www.test1.de").await.unwrap();
@@ -263,54 +267,62 @@ mod test {
                 UrlWithDepth::from_seed("https://www.test3.de").unwrap(),
             ),
         ])
+        .await
+        .unwrap();
+        let values = q
+            .dequeue_n(3)
             .await
-            .unwrap();
-        let values =
-            q
-                .dequeue_n(3)
-                .await
-                .unwrap()
-                .into_iter()
-                .map(|value| value.take())
-                .collect_vec();
+            .unwrap()
+            .into_iter()
+            .map(|value| value.take())
+            .collect_vec();
 
         assert_eq!("https://www.test1.de/", values[0].as_ref().as_str());
         assert_eq!("https://www.test2.de/", values[1].as_ref().as_str());
         assert_eq!("https://www.test3.de/", values[2].as_ref().as_str());
-        q.enqueue(
-            UrlQueueElement::new(
-                true,
-                0,
-                false,
-                UrlWithDepth::from_seed("https://www.test4.de").unwrap(),
-            )
-        ).await.unwrap();
+        q.enqueue(UrlQueueElement::new(
+            true,
+            0,
+            false,
+            UrlWithDepth::from_seed("https://www.test4.de").unwrap(),
+        ))
+        .await
+        .unwrap();
 
-        q.enqueue(
-            UrlQueueElement::new(
-                true,
-                0,
-                false,
-                UrlWithDepth::from_seed("https://www.test5.de").unwrap(),
-            )
-        ).await.unwrap();
+        q.enqueue(UrlQueueElement::new(
+            true,
+            0,
+            false,
+            UrlWithDepth::from_seed("https://www.test5.de").unwrap(),
+        ))
+        .await
+        .unwrap();
 
-        assert_eq!("https://www.test4.de/", q.dequeue().await.unwrap().unwrap().take().as_ref().as_str());
-        assert_eq!("https://www.test5.de/", q.dequeue().await.unwrap().unwrap().take().as_ref().as_str());
+        assert_eq!(
+            "https://www.test4.de/",
+            q.dequeue().await.unwrap().unwrap().take().as_ref().as_str()
+        );
+        assert_eq!(
+            "https://www.test5.de/",
+            q.dequeue().await.unwrap().unwrap().take().as_ref().as_str()
+        );
 
-        q.enqueue(
-            UrlQueueElement::new(
-                true,
-                0,
-                false,
-                UrlWithDepth::from_seed("https://www.test6.de").unwrap(),
-            )
-        ).await.unwrap();
+        q.enqueue(UrlQueueElement::new(
+            true,
+            0,
+            false,
+            UrlWithDepth::from_seed("https://www.test6.de").unwrap(),
+        ))
+        .await
+        .unwrap();
 
-        assert_eq!("https://www.test6.de/", q.dequeue().await.unwrap().unwrap().take().as_ref().as_str());
+        assert_eq!(
+            "https://www.test6.de/",
+            q.dequeue().await.unwrap().unwrap().take().as_ref().as_str()
+        );
     }
 
-    async fn test_queue3(q: impl UrlQueue<UrlWithDepth>){
+    async fn test_queue3(q: impl UrlQueue<UrlWithDepth>) {
         q.enqueue_all([
             UrlQueueElement::new(
                 true,
@@ -331,8 +343,8 @@ mod test {
                 UrlWithDepth::from_seed("https://www.test3.de").unwrap(),
             ),
         ])
-            .await
-            .unwrap();
+        .await
+        .unwrap();
 
         let value1 = q.dequeue().await.unwrap().unwrap();
         let value2 = q.dequeue().await.unwrap().unwrap();

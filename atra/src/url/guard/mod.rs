@@ -48,13 +48,13 @@ pub use guard::UrlGuard;
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct InMemoryUrlGuardian {
-    inner: Arc<InMemoryUrlGuardianState>
+    inner: Arc<InMemoryUrlGuardianState>,
 }
 
 impl InMemoryUrlGuardian {
     pub fn new() -> Self {
         Self {
-            inner: Arc::new(InMemoryUrlGuardianState::new())
+            inner: Arc::new(InMemoryUrlGuardianState::new()),
         }
     }
 }
@@ -193,7 +193,6 @@ impl Clone for InMemoryUrlGuardian {
     }
 }
 
-
 impl Default for InMemoryUrlGuardian {
     fn default() -> Self {
         Self::new()
@@ -213,7 +212,7 @@ impl InMemoryUrlGuardianState {
     pub fn new() -> Self {
         Self {
             data_holder: Default::default(),
-            broadcast: tokio::sync::watch::Sender::new(GuardianChangedEvent)
+            broadcast: tokio::sync::watch::Sender::new(GuardianChangedEvent),
         }
     }
 
@@ -230,14 +229,12 @@ impl InMemoryUrlGuardianState {
         loop {
             match self.data_holder.try_read() {
                 Ok(result) => return result,
-                Err(err) => {
-                    match err {
-                        TryLockError::WouldBlock => {}
-                        TryLockError::Poisoned(err) => {
-                            panic!("Poisoned Guardian: {err}")
-                        }
+                Err(err) => match err {
+                    TryLockError::WouldBlock => {}
+                    TryLockError::Poisoned(err) => {
+                        panic!("Poisoned Guardian: {err}")
                     }
-                }
+                },
             }
             yield_now().await;
         }
@@ -247,21 +244,17 @@ impl InMemoryUrlGuardianState {
         loop {
             match self.data_holder.try_write() {
                 Ok(result) => return result,
-                Err(err) => {
-                    match err {
-                        TryLockError::WouldBlock => {}
-                        TryLockError::Poisoned(err) => {
-                            panic!("Poisoned Guardian: {err}")
-                        }
+                Err(err) => match err {
+                    TryLockError::WouldBlock => {}
+                    TryLockError::Poisoned(err) => {
+                        panic!("Poisoned Guardian: {err}")
                     }
-                }
+                },
             }
             yield_now().await;
         }
     }
 }
-
-
 
 #[cfg(test)]
 mod test {

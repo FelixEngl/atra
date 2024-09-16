@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::{MutexGuard, TryLockError};
 use crate::url::ParseError;
+use std::sync::{MutexGuard, TryLockError};
 use thiserror::Error;
 
 /// Error of an url queue file
@@ -26,7 +26,7 @@ pub enum QueueError {
     #[error(transparent)]
     UrlError(#[from] ParseError),
     #[error("Locks Poisoned")]
-    LockPoisoned
+    LockPoisoned,
 }
 
 impl<T> TryFrom<RawQueueError<T>> for QueueError {
@@ -34,26 +34,14 @@ impl<T> TryFrom<RawQueueError<T>> for QueueError {
 
     fn try_from(value: RawQueueError<T>) -> Result<Self, Self::Error> {
         match value {
-            RawQueueError::QueueFileError(err) => {
-                Ok(err.into())
-            }
-            RawQueueError::EncodingError(err) => {
-                Ok(err.into())
-            }
-            RawQueueError::UrlError(err) => {
-                Ok(err.into())
-            }
-            RawQueueError::Blocked(v) => {
-                Err(v)
-            }
-            RawQueueError::LockPoisoned => {
-                Ok(Self::LockPoisoned)
-            }
+            RawQueueError::QueueFileError(err) => Ok(err.into()),
+            RawQueueError::EncodingError(err) => Ok(err.into()),
+            RawQueueError::UrlError(err) => Ok(err.into()),
+            RawQueueError::Blocked(v) => Err(v),
+            RawQueueError::LockPoisoned => Ok(Self::LockPoisoned),
         }
     }
 }
-
-
 
 /// Error of an url queue file
 #[derive(Debug, Error)]
@@ -67,7 +55,7 @@ pub enum RawQueueError<T> {
     #[error("The queue is blocked.")]
     Blocked(T),
     #[error("Poisoned")]
-    LockPoisoned
+    LockPoisoned,
 }
 
 impl<T> RawQueueError<T> {

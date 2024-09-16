@@ -28,8 +28,8 @@ use crate::extraction::ExtractedLink;
 use crate::gdbr::identifier::GdbrIdentifierRegistry;
 use crate::io::fs::FileSystemAccess;
 use crate::link_state::{LinkState, LinkStateDBError, LinkStateKind, LinkStateManager};
-use crate::queue::{QueueError, SupportsForcedQueueElement, UrlQueueElementRef};
 use crate::queue::{EnqueueCalled, UrlQueue, UrlQueueElement};
+use crate::queue::{QueueError, SupportsForcedQueueElement, UrlQueueElementRef};
 use crate::robots::InMemoryRobotsManager;
 use crate::seed::BasicSeed;
 use crate::url::guard::InMemoryUrlGuardian;
@@ -470,17 +470,13 @@ impl WebGraphManager for TestLinkNetManager {
 pub struct TestUrlQueue {
     links_queue: Arc<std::sync::Mutex<VecDeque<UrlQueueElement<UrlWithDepth>>>>,
     broadcast: tokio::sync::watch::Sender<EnqueueCalled>,
-    counter: crate::queue::UrlQueueElementRefCounter
+    counter: crate::queue::UrlQueueElementRefCounter,
 }
 
 impl TestUrlQueue {
     fn wrap(&self, value: UrlQueueElement<UrlWithDepth>) -> UrlQueueElementRef<UrlWithDepth> {
         let no = self.counter.create_drop_notifyer();
-        UrlQueueElementRef::new(
-            value,
-            self,
-            no
-        )
+        UrlQueueElementRef::new(value, self, no)
     }
 }
 
@@ -495,7 +491,7 @@ impl Default for TestUrlQueue {
         Self {
             links_queue: Default::default(),
             broadcast: tokio::sync::watch::Sender::new(EnqueueCalled),
-            counter: crate::queue::UrlQueueElementRefCounter::new()
+            counter: crate::queue::UrlQueueElementRefCounter::new(),
         }
     }
 }
@@ -529,16 +525,24 @@ impl UrlQueue<UrlWithDepth> for TestUrlQueue {
         Ok(())
     }
 
-    async fn dequeue<'a>(&'a self) -> Result<Option<UrlQueueElementRef<'a, UrlWithDepth>>, QueueError> {
+    async fn dequeue<'a>(
+        &'a self,
+    ) -> Result<Option<UrlQueueElementRef<'a, UrlWithDepth>>, QueueError> {
         let mut lock = self.links_queue.lock().unwrap();
         Ok(lock.pop_front().map(|value| self.wrap(value)))
     }
 
     #[cfg(test)]
-    async fn dequeue_n<'a>(&'a self, n: usize) -> Result<Vec<UrlQueueElementRef<'a, UrlWithDepth>>, QueueError> {
+    async fn dequeue_n<'a>(
+        &'a self,
+        n: usize,
+    ) -> Result<Vec<UrlQueueElementRef<'a, UrlWithDepth>>, QueueError> {
         let mut lock = self.links_queue.lock().unwrap();
         let len = lock.len();
-        Ok(lock.drain(0..min(len, n)).map(|value| self.wrap(value)).collect_vec())
+        Ok(lock
+            .drain(0..min(len, n))
+            .map(|value| self.wrap(value))
+            .collect_vec())
     }
 
     async fn len(&self) -> usize {

@@ -13,7 +13,11 @@
 // limitations under the License.
 
 use crate::queue::errors::RawQueueError;
-use crate::queue::raw::{AgingQueueElement, EnqueueCalled, RawAgingQueue, RawSupportsForcedQueueElement};
+use crate::queue::raw::{
+    AgingQueueElement, EnqueueCalled, RawAgingQueue, RawSupportsForcedQueueElement,
+};
+use crate::queue::QueueError;
+use itertools::{Either, Itertools};
 use queue_file::QueueFile;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -21,8 +25,6 @@ use std::fmt::Debug;
 use std::path::Path;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard, TryLockError, TryLockResult};
 use tokio::sync::watch::Receiver;
-use itertools::{Either, Itertools};
-use crate::queue::QueueError;
 
 /// A mutexed queue for urls that are supported by spider.
 #[derive(Debug, Clone)]
@@ -47,7 +49,7 @@ impl RawAgingQueueFile {
 impl RawSupportsForcedQueueElement for RawAgingQueueFile {
     unsafe fn force_enqueue<T>(&self, mut entry: T) -> Result<(), QueueError>
     where
-        T: AgingQueueElement + Serialize + Debug
+        T: AgingQueueElement + Serialize + Debug,
     {
         log::trace!("Encode {:?}", entry);
         entry.age_by_one();
@@ -74,9 +76,7 @@ impl RawAgingQueue for RawAgingQueueFile {
                 entry.age_by_one();
                 bincode::serialize(&entry).map_err(RawQueueError::EncodingError)?
             }
-            Either::Right(encoded) => {
-                encoded
-            }
+            Either::Right(encoded) => encoded,
         };
 
         match self.queue.try_write() {
@@ -84,14 +84,10 @@ impl RawAgingQueue for RawAgingQueueFile {
                 lock.add(&encoded).map_err(RawQueueError::QueueFileError)?;
                 drop(lock);
             }
-            Err(err) => {
-                match err {
-                    TryLockError::Poisoned(_) => {}
-                    TryLockError::WouldBlock => {
-                        return Err(RawQueueError::Blocked(encoded))
-                    }
-                }
-            }
+            Err(err) => match err {
+                TryLockError::Poisoned(_) => {}
+                TryLockError::WouldBlock => return Err(RawQueueError::Blocked(encoded)),
+            },
         }
 
         let _ = self.broadcast.send(EnqueueCalled);
@@ -104,35 +100,27 @@ impl RawAgingQueue for RawAgingQueueFile {
     ) -> Result<(), RawQueueError<Vec<Vec<u8>>>>
     where
         V: AgingQueueElement + Serialize + Debug,
-        I: IntoIterator<Item = V>
+        I: IntoIterator<Item = V>,
     {
         let urls: Vec<Vec<u8>> = match entries {
-            Either::Left(entries) => {
-                entries
-                    .into_iter()
-                    .map(|mut entry| {
-                        entry.age_by_one();
-                        bincode::serialize(&entry).map_err(RawQueueError::EncodingError)
-                    })
-                    .collect::<Result<_, _>>()?
-            }
-            Either::Right(urls) => {
-                urls
-            }
+            Either::Left(entries) => entries
+                .into_iter()
+                .map(|mut entry| {
+                    entry.age_by_one();
+                    bincode::serialize(&entry).map_err(RawQueueError::EncodingError)
+                })
+                .collect::<Result<_, _>>()?,
+            Either::Right(urls) => urls,
         };
         match self.queue.try_write() {
             Ok(mut lock) => {
                 lock.add_n(urls).map_err(RawQueueError::QueueFileError)?;
                 drop(lock);
             }
-            Err(err) => {
-                match err {
-                    TryLockError::Poisoned(_) => {}
-                    TryLockError::WouldBlock => {
-                        return Err(RawQueueError::Blocked(urls))
-                    }
-                }
-            }
+            Err(err) => match err {
+                TryLockError::Poisoned(_) => {}
+                TryLockError::WouldBlock => return Err(RawQueueError::Blocked(urls)),
+            },
         }
 
         let _ = self.broadcast.send(EnqueueCalled);
@@ -143,17 +131,11 @@ impl RawAgingQueue for RawAgingQueueFile {
         &self,
     ) -> Result<Option<E>, RawQueueError<()>> {
         let mut lock = match self.queue.try_write() {
-            Ok(lock) => {lock}
-            Err(err) => {
-                match err {
-                    TryLockError::Poisoned(_) => {
-                        return Err(RawQueueError::LockPoisoned)
-                    }
-                    TryLockError::WouldBlock => {
-                        return Err(RawQueueError::Blocked(()))
-                    }
-                }
-            }
+            Ok(lock) => lock,
+            Err(err) => match err {
+                TryLockError::Poisoned(_) => return Err(RawQueueError::LockPoisoned),
+                TryLockError::WouldBlock => return Err(RawQueueError::Blocked(())),
+            },
         };
         let extracted = lock.peek()?;
         if let Some(extracted) = extracted {
@@ -171,25 +153,22 @@ impl RawAgingQueue for RawAgingQueueFile {
         n: usize,
     ) -> Result<Vec<E>, RawQueueError<()>> {
         let mut lock = match self.queue.try_write() {
-            Ok(lock) => {lock}
-            Err(err) => {
-                match err {
-                    TryLockError::Poisoned(_) => {
-                        return Err(RawQueueError::LockPoisoned)
-                    }
-                    TryLockError::WouldBlock => {
-                        return Err(RawQueueError::Blocked(()))
-                    }
-                }
-            }
+            Ok(lock) => lock,
+            Err(err) => match err {
+                TryLockError::Poisoned(_) => return Err(RawQueueError::LockPoisoned),
+                TryLockError::WouldBlock => return Err(RawQueueError::Blocked(())),
+            },
         };
         let found = lock.iter().take(n).collect_vec();
         lock.remove_n(n)?;
         drop(lock);
-        found.into_iter().map(|value| match bincode::deserialize(value.as_ref()) {
-            Ok(value) => Ok(value),
-            Err(err) => Err(RawQueueError::EncodingError(err)),
-        }).collect::<Result<Vec<_>, _>>()
+        found
+            .into_iter()
+            .map(|value| match bincode::deserialize(value.as_ref()) {
+                Ok(value) => Ok(value),
+                Err(err) => Err(RawQueueError::EncodingError(err)),
+            })
+            .collect::<Result<Vec<_>, _>>()
     }
 
     fn len(&self) -> usize {
@@ -199,23 +178,13 @@ impl RawAgingQueue for RawAgingQueueFile {
 
     fn len_nonblocking(&self) -> Result<usize, RawQueueError<()>> {
         match self.queue.try_read() {
-            Ok(lock) => {
-                Ok(lock.size())
-            }
-            Err(err) => {
-                match err {
-                    TryLockError::Poisoned(_) => {
-                        Err(RawQueueError::LockPoisoned)
-                    }
-                    TryLockError::WouldBlock => {
-                        Err(RawQueueError::Blocked(()))
-                    }
-                }
-            }
+            Ok(lock) => Ok(lock.size()),
+            Err(err) => match err {
+                TryLockError::Poisoned(_) => Err(RawQueueError::LockPoisoned),
+                TryLockError::WouldBlock => Err(RawQueueError::Blocked(())),
+            },
         }
-
     }
-
 
     fn is_empty(&self) -> bool {
         let lock = self.queue.read().unwrap();
@@ -224,19 +193,11 @@ impl RawAgingQueue for RawAgingQueueFile {
 
     fn is_empty_nonblocking(&self) -> Result<bool, RawQueueError<()>> {
         match self.queue.try_read() {
-            Ok(lock) => {
-                Ok(lock.is_empty())
-            }
-            Err(err) => {
-                match err {
-                    TryLockError::Poisoned(_) => {
-                        Err(RawQueueError::LockPoisoned)
-                    }
-                    TryLockError::WouldBlock => {
-                        Err(RawQueueError::Blocked(()))
-                    }
-                }
-            }
+            Ok(lock) => Ok(lock.is_empty()),
+            Err(err) => match err {
+                TryLockError::Poisoned(_) => Err(RawQueueError::LockPoisoned),
+                TryLockError::WouldBlock => Err(RawQueueError::Blocked(())),
+            },
         }
     }
 

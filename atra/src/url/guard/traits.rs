@@ -33,7 +33,10 @@ pub unsafe trait UnsafeUrlGuardian {
 
 /// A class capable of managing origins
 #[allow(dead_code)]
-pub trait UrlGuardian: UnsafeUrlGuardian where Self: Sized {
+pub trait UrlGuardian: UnsafeUrlGuardian
+where
+    Self: Sized,
+{
     /// Returns a guard if the reserve was successful.
     /// Returns an error if there is the domain is already in use.
     async fn try_reserve<'a>(

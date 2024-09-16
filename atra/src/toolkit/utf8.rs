@@ -246,8 +246,6 @@ impl<'a, R> RobustUtf8Reader<'a, R> {
     }
 }
 
-
-
 impl<'a, R> RobustUtf8Reader<'a, R>
 where
     R: Read,

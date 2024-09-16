@@ -311,7 +311,9 @@ mod test {
                 10.try_into().unwrap(),
                 "./atra_data/example.ttl",
                 &RuntimeContext::new(
-                    UnsafeShutdownGuard::Guarded{_guard: b.into_inner().1},
+                    UnsafeShutdownGuard::Guarded {
+                        _guard: b.into_inner().1,
+                    },
                     OptionalAtraHandle::None,
                 ),
             )

@@ -27,13 +27,17 @@ cfg_if! {
 pub struct UrlWithGuard<'a, T: UrlGuardian> {
     guard: UrlGuard<'a, T>,
     seed_url: UrlWithDepth,
-    is_seed: bool
+    is_seed: bool,
 }
 
 impl<'a, T: UrlGuardian> UrlWithGuard<'a, T> {
     /// Creates a DomainGuardWithSeed but asserts that the seed creation can wor beforehand.
     #[cfg(test)]
-    pub fn new(guard: UrlGuard<'a, T>, seed_url: UrlWithDepth, is_seed: bool) -> Result<Self, SeedCreationError> {
+    pub fn new(
+        guard: UrlGuard<'a, T>,
+        seed_url: UrlWithDepth,
+        is_seed: bool,
+    ) -> Result<Self, SeedCreationError> {
         if let Some(host) = seed_url.atra_origin() {
             if guard.origin().eq(&host) {
                 Ok(unsafe { Self::new_unchecked(guard, seed_url, is_seed) })
@@ -49,8 +53,16 @@ impl<'a, T: UrlGuardian> UrlWithGuard<'a, T> {
     }
 
     /// Creates a DomainGuardWithSeed without doing any domain checks.
-    pub unsafe fn new_unchecked(guard: UrlGuard<'a, T>, seed_url: UrlWithDepth, is_seed: bool) -> Self {
-        Self { guard, seed_url, is_seed }
+    pub unsafe fn new_unchecked(
+        guard: UrlGuard<'a, T>,
+        seed_url: UrlWithDepth,
+        is_seed: bool,
+    ) -> Self {
+        Self {
+            guard,
+            seed_url,
+            is_seed,
+        }
     }
 
     /// Returns the domain guard

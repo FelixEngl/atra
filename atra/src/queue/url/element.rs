@@ -31,7 +31,10 @@ pub struct UrlQueueElement<T = UrlWithDepth> {
     pub target: T,
 }
 
-impl<T> Debug for UrlQueueElement<T> where T: Debug {
+impl<T> Debug for UrlQueueElement<T>
+where
+    T: Debug,
+{
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("UrlQueueElement")
             .field("is_seed", &self.is_seed)

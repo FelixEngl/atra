@@ -12,31 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt::{Debug, Formatter};
-use std::ops::Deref;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
-use tokio::sync::watch::{channel, Receiver, Sender};
 use crate::queue::url::element::UrlQueueElement;
 use crate::queue::url::SupportsForcedQueueElement;
 use crate::toolkit::dropping::{DropNotifyer, DropNotifyerEvent};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+use std::fmt::{Debug, Formatter};
+use std::ops::Deref;
+use tokio::sync::watch::{channel, Receiver, Sender};
 
 #[derive(Clone)]
 pub struct UrlQueueElementRefCounter {
     receiver: Receiver<UrlQueueElementRefCounterEvent>,
-    sender: Sender<UrlQueueElementRefCounterEvent>
+    sender: Sender<UrlQueueElementRefCounterEvent>,
 }
 
 impl UrlQueueElementRefCounter {
-
     pub fn new() -> Self {
-        let (sender, receiver) = channel(
-            UrlQueueElementRefCounterEvent::new(0)
-        );
-        Self {
-            sender,
-            receiver
-        }
+        let (sender, receiver) = channel(UrlQueueElementRefCounterEvent::new(0));
+        Self { sender, receiver }
     }
 
     pub fn get_count(&self) -> usize {
@@ -48,30 +42,26 @@ impl UrlQueueElementRefCounter {
     }
 
     pub fn create_drop_notifyer(&self) -> DropNotifyer<UrlQueueElementRefCounterEvent> {
-        let new = DropNotifyer::new(self.sender.clone());
         self.sender.send_modify(|value| value.inc());
+        let new = DropNotifyer::new(self.sender.clone());
         new
     }
 }
 
 impl Debug for UrlQueueElementRefCounter {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f
-            .debug_struct("UrlQueueElementRefCounter")
+        f.debug_struct("UrlQueueElementRefCounter")
             .field("count", &self.get_count())
             .finish()
     }
 }
 
-
 #[repr(transparent)]
 pub struct UrlQueueElementRefCounterEvent {
-    count: usize
+    count: usize,
 }
 
 impl UrlQueueElementRefCounterEvent {
-
-
     pub fn inc(&mut self) {
         self.count += 1;
     }
@@ -81,13 +71,14 @@ impl UrlQueueElementRefCounterEvent {
     }
 }
 
-
 impl DropNotifyerEvent for UrlQueueElementRefCounterEvent {
     fn on_drop(&mut self) -> bool {
-        #[cfg(not(test))] {
+        #[cfg(not(test))]
+        {
             self.count -= 1;
         }
-        #[cfg(test)] {
+        #[cfg(test)]
+        {
             let (new, overflow) = self.count.overflowing_sub(1);
             self.count = new;
             debug_assert!(!overflow, "Overflow when dropping!")
@@ -97,34 +88,40 @@ impl DropNotifyerEvent for UrlQueueElementRefCounterEvent {
     }
 }
 
-
 #[clippy::has_significant_drop]
-pub struct UrlQueueElementRef<'a, T> where T: 'static + Serialize + DeserializeOwned {
+pub struct UrlQueueElementRef<'a, T>
+where
+    T: 'static + Serialize + DeserializeOwned,
+{
     element: Option<UrlQueueElement<T>>,
     backend: &'a dyn SupportsForcedQueueElement<T>,
-    _drop_informer: DropNotifyer<UrlQueueElementRefCounterEvent>
+    _drop_informer: DropNotifyer<UrlQueueElementRefCounterEvent>,
 }
 
-unsafe impl<'a, T> Send for UrlQueueElementRef<'a, T> where T: 'static + Serialize + DeserializeOwned{}
-unsafe impl<'a, T> Sync for UrlQueueElementRef<'a, T> where T: 'static + Serialize + DeserializeOwned{}
+unsafe impl<'a, T> Send for UrlQueueElementRef<'a, T> where T: 'static + Serialize + DeserializeOwned
+{}
+unsafe impl<'a, T> Sync for UrlQueueElementRef<'a, T> where T: 'static + Serialize + DeserializeOwned
+{}
 
-
-impl<'a, T> UrlQueueElementRef<'a, T>  where T: 'static + Serialize + DeserializeOwned {
+impl<'a, T> UrlQueueElementRef<'a, T>
+where
+    T: 'static + Serialize + DeserializeOwned,
+{
     pub fn new(
         element: UrlQueueElement<T>,
         backend: &'a impl SupportsForcedQueueElement<T>,
-        notifyer: DropNotifyer<UrlQueueElementRefCounterEvent>
+        notifyer: DropNotifyer<UrlQueueElementRefCounterEvent>,
     ) -> Self {
         Self {
             element: Some(element),
             backend,
-            _drop_informer: notifyer
+            _drop_informer: notifyer,
         }
     }
 
     #[inline(always)]
     fn take_impl(mut self) -> UrlQueueElement<T> {
-        unsafe{self.element.take().unwrap_unchecked()}
+        unsafe { self.element.take().unwrap_unchecked() }
     }
 
     pub fn take(self) -> UrlQueueElement<T> {
@@ -136,15 +133,21 @@ impl<'a, T> UrlQueueElementRef<'a, T>  where T: 'static + Serialize + Deserializ
     }
 }
 
-impl<'a, T> Deref for UrlQueueElementRef<'a, T> where T: 'static + Serialize + DeserializeOwned {
+impl<'a, T> Deref for UrlQueueElementRef<'a, T>
+where
+    T: 'static + Serialize + DeserializeOwned,
+{
     type Target = UrlQueueElement<T>;
 
     fn deref(&self) -> &Self::Target {
-        unsafe{self.element.as_ref().unwrap_unchecked()}
+        unsafe { self.element.as_ref().unwrap_unchecked() }
     }
 }
 
-impl<'a, T> Drop for UrlQueueElementRef<'a, T> where T: 'static + Serialize + DeserializeOwned {
+impl<'a, T> Drop for UrlQueueElementRef<'a, T>
+where
+    T: 'static + Serialize + DeserializeOwned,
+{
     fn drop(&mut self) {
         if let Some(value) = self.element.take() {
             match self.backend.force_enqueue(value) {
@@ -156,4 +159,3 @@ impl<'a, T> Drop for UrlQueueElementRef<'a, T> where T: 'static + Serialize + De
         }
     }
 }
-

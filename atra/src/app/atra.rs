@@ -21,8 +21,7 @@ use crate::contexts::worker::WorkerContext;
 use crate::crawl::crawl;
 use crate::link_state::LinkStateManager;
 use crate::runtime::{
-    AtraRuntime, GracefulShutdown, OptionalAtraHandle, RuntimeContext,
-    ShutdownSignalSender,
+    AtraRuntime, GracefulShutdown, OptionalAtraHandle, RuntimeContext, ShutdownSignalSender,
 };
 use crate::seed::SeedDefinition;
 use crate::sync::barrier::WorkerBarrier;
