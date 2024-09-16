@@ -61,5 +61,5 @@ pub trait UrlGuardian: UnsafeUrlGuardian where Self: Sized {
     ) -> Result<(), GuardPoisonedError>;
 
     /// Provides a way to subscribe to an url guardian to receive changes.
-    fn subscribe(&self) -> tokio::sync::broadcast::Receiver<GuardianChangedEvent>;
+    fn subscribe(&self) -> tokio::sync::watch::Receiver<GuardianChangedEvent>;
 }

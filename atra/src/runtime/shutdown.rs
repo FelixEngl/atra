@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![allow(dead_code)]
+
 use log::info;
 use std::fmt::{Display, Formatter};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -26,26 +28,34 @@ use tokio::sync::{broadcast, mpsc};
 mod phantom {
     use std::fmt::{Display, Formatter};
     use thiserror::Error;
-    use crate::runtime::{ShutdownHandle, ShutdownReceiver};
+    use crate::runtime::{ShutdownHandle, ShutdownReceiver, ShutdownReceiverWithWait};
 
     /// A struct to help with satisfying the value for an object
     #[derive(Debug, Copy, Clone, Error)]
-    pub struct ShutdownPhantom;
-    impl Display for ShutdownPhantom {
+    pub struct ShutdownPhantom<const ENDLESS: bool = true>;
+    impl<const ENDLESS: bool> Display for ShutdownPhantom<ENDLESS> {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             write!(f, "ShutdownPhantom")
         }
     }
 
     #[allow(refining_impl_trait)]
-    impl ShutdownReceiver for ShutdownPhantom {
+    impl<const ENDLESS: bool> ShutdownReceiver for ShutdownPhantom<ENDLESS> {
         #[inline]
         fn is_shutdown(&self) -> bool {
             false
         }
 
-        fn weak_handle<'a>(&'a self) -> ShutdownHandle<'a, ShutdownPhantom> {
+        fn weak_handle<'a>(&'a self) -> ShutdownHandle<'a, ShutdownPhantom<ENDLESS>> {
             ShutdownHandle { shutdown: &self }
+        }
+    }
+
+    impl<const ENDLESS: bool> ShutdownReceiverWithWait for ShutdownPhantom<ENDLESS> {
+        async fn wait(&mut self) {
+            if ENDLESS {
+                tokio::sync::Notify::const_new().notified().await
+            }
         }
     }
 }
@@ -63,6 +73,10 @@ pub trait ShutdownReceiver: Clone {
 
     /// Returns a weak handle to the receiver
     fn weak_handle<'a>(&'a self) -> ShutdownHandle<'a, impl ShutdownReceiver>;
+}
+
+pub trait ShutdownReceiverWithWait: ShutdownReceiver {
+    async fn wait(&mut self);
 }
 
 /// A simple signal class for a shutdown sender
@@ -121,8 +135,7 @@ pub struct ShutdownSignalSender {
 
 impl ShutdownSignalSender {
     /// Tries to notify all receivers.
-    /// Returns an error if the shutdoen signal fails.
-    #[allow(dead_code)]
+    /// Returns an error if the shutdown signal fails.
     pub async fn notify(&self) -> Result<usize, SendError<ShutdownSignal>> {
         self.sender.send(ShutdownSignal)
     }
@@ -137,7 +150,6 @@ pub struct ShutdownSignalReceiver {
 
 impl ShutdownSignalReceiver {
     /// Waits for a shutdown signal or fails
-    #[allow(dead_code)]
     pub async fn recv(&mut self) -> Result<ShutdownSignal, RecvError> {
         self.receiver.recv().await
     }
@@ -193,36 +205,30 @@ impl GracefulShutdown {
 
     delegate::delegate! {
         to self.shutdown {
-            #[allow(dead_code)] pub async fn recv(&mut self);
+            #[allow(dead_code)] pub async fn wait(&mut self);
         }
     }
 
     /// Downgrades the [GracefulShutdown] to a [Shutdown]
-    #[allow(dead_code)]
     pub fn downgrade(self) -> Shutdown {
         self.shutdown
     }
 
     /// Returns a copy of the shutdown instance
-    #[allow(dead_code)]
     pub fn new_shutdown_instance(&self) -> Shutdown {
         self.shutdown.clone()
     }
 
     /// Returns a copy of the guard
-    #[allow(dead_code)]
     pub fn new_guard_instance(&self) -> GracefulShutdownGuard {
         self.guard.clone()
     }
 
     /// Returns the inner value
-    #[allow(dead_code)]
     pub fn into_inner(self) -> (Shutdown, GracefulShutdownGuard) {
         (self.shutdown, self.guard)
     }
 
-    #[allow(dead_code)]
-    #[inline]
     fn subscribe(&self) -> ShutdownHandle<'_, Shutdown> {
         self.shutdown.subscribe()
     }
@@ -238,6 +244,12 @@ impl ShutdownReceiver for GracefulShutdown {
 
     fn weak_handle<'a>(&'a self) -> ShutdownHandle<'a, Shutdown> {
         self.shutdown.weak_handle()
+    }
+}
+
+impl ShutdownReceiverWithWait for GracefulShutdown {
+    async fn wait(&mut self) {
+        self.shutdown.wait().await
     }
 }
 
@@ -275,30 +287,12 @@ impl Shutdown {
     }
 
     /// Upgrades a [Shutdown] to a[GracefulShutdown]
-    #[allow(dead_code)]
     pub fn upgrade(self, guard: GracefulShutdownGuard) -> GracefulShutdown {
         GracefulShutdown::new(self, guard)
     }
 
-    /// Receive the shutdown notice, waiting if necessary.
-    #[allow(dead_code)]
-    pub async fn recv(&mut self) {
-        // If the shutdown signal has already been received, then return
-        // immediately.
-        if self.is_shutdown() {
-            return;
-        }
-
-        // Cannot receive a "lag error" as only one value is ever sent.
-        let _ = self.notify.recv().await;
-
-        // Remember that the signal has been received.
-        self.is_shutdown.store(true, Ordering::Release);
-    }
-
     /// Returns a weak shutdown handle
-    #[allow(dead_code)]
-    fn subscribe<'a>(&'a self) -> ShutdownHandle<'a, Shutdown> {
+    fn subscribe(&self) -> ShutdownHandle<Shutdown> {
         ShutdownHandle { shutdown: self }
     }
 }
@@ -312,6 +306,22 @@ impl ShutdownReceiver for Shutdown {
 
     fn weak_handle<'a>(&'a self) -> ShutdownHandle<'a, Shutdown> {
         ShutdownHandle { shutdown: self }
+    }
+}
+
+impl ShutdownReceiverWithWait for Shutdown {
+    async fn wait(&mut self) {
+        // If the shutdown signal has already been received, then return
+        // immediately.
+        if self.is_shutdown() {
+            return;
+        }
+
+        // Cannot receive a "lag error" as only one value is ever sent.
+        let _ = self.notify.recv().await;
+
+        // Remember that the signal has been received.
+        self.is_shutdown.store(true, Ordering::Release);
     }
 }
 
@@ -352,7 +362,7 @@ impl<T: ShutdownReceiver> Clone for ShutdownHandle<'_, T> {
 }
 
 #[allow(refining_impl_trait)]
-impl<T: ShutdownReceiver> ShutdownReceiver for ShutdownHandle<'_, T> {
+impl<T> ShutdownReceiver for ShutdownHandle<'_, T> where T: ShutdownReceiver {
     delegate::delegate! {
         to self.shutdown {
             fn is_shutdown(&self) -> bool;
@@ -365,3 +375,4 @@ impl<T: ShutdownReceiver> ShutdownReceiver for ShutdownHandle<'_, T> {
         }
     }
 }
+

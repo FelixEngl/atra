@@ -30,7 +30,7 @@ use crate::contexts::traits::{
 use crate::contexts::Context;
 use crate::queue::QueueError;
 use crate::queue::{AbortCause, QueueExtractionError, UrlQueuePollResult};
-use crate::runtime::ShutdownReceiver;
+use crate::runtime::{ShutdownReceiver, ShutdownReceiverWithWait};
 use crate::sync::barrier::{ContinueOrStop, WorkerBarrier};
 use crate::url::guard::GuardianError;
 
@@ -64,7 +64,7 @@ pub async fn crawl<C, S, E, EC>(
 ) -> Result<ExitState, EC::Error>
 where
     C: Context,
-    S: ShutdownReceiver,
+    S: ShutdownReceiverWithWait,
     E: From<<C as SupportsSlimCrawlResults>::Error>
         + From<<C as SupportsLinkSeeding>::Error>
         + From<<C as SupportsCrawlResults>::Error>
@@ -92,7 +92,7 @@ where
 
         // todo: keep all alive as long as there is the possebility to encounter a new url with a different url.
         let provider = context
-            .poll_next_free_url(shutdown.weak_handle(), None)
+            .poll_next_free_url(shutdown.clone(), None)
             .await;
 
         // with_seed_provider_context! {let provider = from context.as_ref();}
@@ -123,9 +123,6 @@ where
                         AbortCause::TooManyMisses => {
                             patience -= 2;
                         }
-                        AbortCause::AllDomainsGuarded => {
-                            patience -= 1;
-                        }
                         AbortCause::QueueIsEmpty => {
                             patience -= 10;
                         }
@@ -143,14 +140,14 @@ where
             }
             UrlQueuePollResult::Err(err) => {
                 match err {
-                    QueueExtractionError::GuardianError(err) => match err {
-                        GuardianError::NoOriginError(url) => {
-                            log::error!("The url {url} does not result in a domain!")
-                        }
-                        GuardianError::AlreadyOccupied(info) => {
-                            log::debug!("The domain {info:?} is already in use.")
-                        }
-                    },
+                    // QueueExtractionError::GuardianError(err) => match err {
+                    //     GuardianError::NoOriginError(url) => {
+                    //         log::error!("The url {url} does not result in a domain!")
+                    //     }
+                    //     GuardianError::AlreadyOccupied(info) => {
+                    //         log::debug!("The domain {info:?} is already in use.")
+                    //     }
+                    // },
                     QueueExtractionError::LinkState(err) => {
                         consumer.consume_poll_error(err.into())?;
                     }

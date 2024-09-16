@@ -12,67 +12,48 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::queue::raw::errors::QueueError;
+use std::fmt::Debug;
+use std::mem::{ManuallyDrop, MaybeUninit};
+use std::ops::Deref;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+use smallvec::SmallVec;
+use crate::queue::errors::{QueueError, RawQueueError};
 use crate::queue::url::element::UrlQueueElement;
 use crate::queue::EnqueueCalled;
 use crate::url::UrlWithDepth;
-use tokio::sync::broadcast::Receiver;
+use tokio::sync::watch::Receiver;
 
 pub mod element;
 pub mod queue;
 pub mod result;
-mod poll;
+mod refs;
 
-pub use poll::*;
+pub use refs::*;
 
-
+pub trait SupportsForcedQueueElement<T> where T: Serialize + DeserializeOwned + 'static {
+    fn force_enqueue(&self, entry: UrlQueueElement<T>) -> Result<(), QueueError>;
+}
 
 /// A traif for an url queue
-pub trait UrlQueue {
-    /// Enqueues an [url] at distance 0
-    async fn enqueue_seed(&self, url: &str) -> Result<(), QueueError> {
-        self.enqueue(UrlQueueElement::new(
-            true,
-            0,
-            false,
-            UrlWithDepth::from_seed(url)?,
-        ))
-        .await
-    }
-
-    /// Enqueues all [urls] at distance 0
-    async fn enqueue_seeds(
-        &self,
-        urls: impl IntoIterator<Item = impl AsRef<str>> + Clone,
-    ) -> Result<(), QueueError> {
-        self.enqueue_all(
-            urls.into_iter()
-                .map(|s| {
-                    UrlWithDepth::from_seed(s.as_ref())
-                        .map(|value| UrlQueueElement::new(true, 0, false, value))
-                })
-                .collect::<Result<Vec<_>, _>>()?,
-        )
-        .await
-    }
-
-    async fn enqueue(&self, entry: UrlQueueElement<UrlWithDepth>) -> Result<(), QueueError>;
+pub trait UrlQueue<T> where T: Serialize + DeserializeOwned + Sized + 'static {
+    async fn enqueue(&self, entry: UrlQueueElement<T>) -> Result<(), QueueError>;
 
     #[cfg(test)]
     async fn enqueue_borrowed<'a>(
         &self,
-        entry: UrlQueueElement<&'a UrlWithDepth>,
+        entry: UrlQueueElement<&'a T>,
     ) -> Result<(), QueueError>;
 
     async fn enqueue_all(
         &self,
-        entries: impl IntoIterator<Item = UrlQueueElement<UrlWithDepth>>,
+        entries: impl IntoIterator<Item = UrlQueueElement<T>>,
     ) -> Result<(), QueueError>;
 
-    async fn dequeue(&self) -> Result<Option<UrlQueueElement<UrlWithDepth>>, QueueError>;
+    async fn dequeue<'a>(&'a self) -> Result<Option<UrlQueueElementRef<'a, T>>, QueueError>;
 
     #[cfg(test)]
-    async fn dequeue_n(&self, n: usize) -> Result<Vec<UrlQueueElement<UrlWithDepth>>, QueueError>;
+    async fn dequeue_n<'a>(&'a self, n: usize) -> Result<Vec<UrlQueueElementRef<'a, T>>, QueueError>;
 
     /// Number of elements in the queue
     async fn len(&self) -> usize;
@@ -80,10 +61,44 @@ pub trait UrlQueue {
     /// Returns true if the queue is empty.
     async fn is_empty(&self) -> bool;
 
+    fn has_floating_urls(&self) -> bool;
+
+    fn floating_url_count(&self) -> usize;
+
     /// Broadcasts if enqueue is called
     fn subscribe_to_change(&self) -> Receiver<EnqueueCalled>;
+}
 
-    /// Allows to subscribe to a stream when polling.
-    fn start_polling(&self) -> PollWaiter;
+pub trait SupportsSeeding {
 
+    /// Enqueues an [url] at distance 0
+    async fn enqueue_seed(&self, target: &str) -> Result<(), QueueError>;
+
+    /// Enqueues all [urls] at distance 0
+    async fn enqueue_seeds(
+        &self,
+        urls: impl IntoIterator<Item = impl AsRef<str>>,
+    ) -> Result<(), QueueError>;
+}
+
+impl<T> SupportsSeeding for T where T: UrlQueue<UrlWithDepth> {
+    async fn enqueue_seed(&self, target: &str) -> Result<(), QueueError>  {
+        self.enqueue(UrlQueueElement::new(
+            true,
+            0,
+            false,
+            UrlWithDepth::from_seed(target)?
+        )).await
+    }
+
+    async fn enqueue_seeds(&self, urls: impl IntoIterator<Item=impl AsRef<str>>) -> Result<(), QueueError>  {
+        self.enqueue_all(
+            urls.into_iter()
+                .map(|s| {
+                    UrlWithDepth::from_seed(s.as_ref())
+                        .map(|value| UrlQueueElement::new(true, 0, false, value))
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        ).await
+    }
 }

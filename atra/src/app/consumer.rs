@@ -147,6 +147,10 @@ impl ErrorConsumer<GlobalError> for GlobalErrorConsumer {
                     log::warn!("The url was not valid: {e}");
                     true
                 }
+                QueueError::LockPoisoned => {
+                    log::error!("The queue locks are poisoned!");
+                    false
+                }
             }
         }
 

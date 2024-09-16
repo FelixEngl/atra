@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::queue::raw::errors::QueueError;
+use crate::queue::errors::QueueError;
 use crate::queue::url::UrlQueueElement;
 use crate::url::guard::GuardianError;
 use crate::url::UrlWithDepth;
@@ -35,11 +35,11 @@ impl<T, E: Error>  UrlQueuePollResult<T, E> {
             UrlQueuePollResult::Ok(value) => {
                 value
             }
-            UrlQueuePollResult::Abort(_) => {
-                panic!("Can not unwrap an abort!")
+            UrlQueuePollResult::Abort(cause) => {
+                panic!("Can not unwrap an abort! {cause}")
             }
-            UrlQueuePollResult::Err(_) => {
-                panic!("Can not unwrap an error!")
+            UrlQueuePollResult::Err(cause) => {
+                panic!("Can not unwrap an error! {cause}")
             }
         }
     }
@@ -63,7 +63,7 @@ impl<T, E: Error>  UrlQueuePollResult<T, E> {
             UrlQueuePollResult::Err(e) => {
                 e
             }
-            UrlQueuePollResult::Ok(value) => {
+            UrlQueuePollResult::Ok(_) => {
                 panic!("Can not unwrap_err an ok!")
             }
             UrlQueuePollResult::Abort(_) => {
@@ -79,11 +79,9 @@ impl<T, E: Error>  UrlQueuePollResult<T, E> {
 pub enum AbortCause {
     #[error("The number of misses was higher than the maximum. Try again later.")]
     TooManyMisses,
-    #[error("All domains are guarded.")]
-    AllDomainsGuarded,
     #[error("The queue is empty.")]
     QueueIsEmpty,
-    #[error("The element does not have a host.")]
+    #[error("The element does not have a host and is therefore removed from the queue.")]
     NoHost(UrlQueueElement<UrlWithDepth>),
     #[error("Shutdown")]
     Shutdown,
@@ -92,8 +90,8 @@ pub enum AbortCause {
 /// All possible errors that can happen when retrieving a provider
 #[derive(Debug, Error)]
 pub enum QueueExtractionError<E: Error> {
-    #[error(transparent)]
-    GuardianError(#[from] GuardianError),
+    // #[error(transparent)]
+    // GuardianError(#[from] GuardianError),
     #[error(transparent)]
     LinkState(E),
     #[error(transparent)]

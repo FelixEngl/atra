@@ -21,7 +21,7 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::{Arc, LockResult, RwLockReadGuard, RwLockWriteGuard, TryLockError, TryLockResult};
 use std::time::SystemTime;
-use tokio::sync::broadcast::Receiver;
+use tokio::sync::watch::Receiver;
 use tokio::task::yield_now;
 pub use traits::*;
 
@@ -203,7 +203,7 @@ impl Default for InMemoryUrlGuardian {
 #[derive(Debug)]
 struct InMemoryUrlGuardianState {
     data_holder: std::sync::RwLock<HashMap<AtraUrlOrigin, GuardEntry>>,
-    broadcast: tokio::sync::broadcast::Sender<GuardianChangedEvent>,
+    broadcast: tokio::sync::watch::Sender<GuardianChangedEvent>,
 }
 
 type ReadResult<'a> = LockResult<RwLockReadGuard<'a, HashMap<AtraUrlOrigin, GuardEntry>>>;
@@ -213,7 +213,7 @@ impl InMemoryUrlGuardianState {
     pub fn new() -> Self {
         Self {
             data_holder: Default::default(),
-            broadcast: tokio::sync::broadcast::Sender::new(1)
+            broadcast: tokio::sync::watch::Sender::new(GuardianChangedEvent)
         }
     }
 

@@ -22,9 +22,9 @@ use crate::url::guard::UrlGuardian;
 
 /// The result of the [WorkerBarrier]
 #[derive(Debug)]
-pub enum ContinueOrStop<T> {
+pub enum ContinueOrStop<T, C = T> {
     Continue(T),
-    Cancelled(T),
+    Cancelled(C),
 }
 
 /// A barrier to help with the synchronisation of the workers.
@@ -126,14 +126,14 @@ impl WorkerBarrier {
 
 
         select! {
-            _ = queue_changed_subscription.recv() => {
+            _ = queue_changed_subscription.changed() => {
                 self.subscription_triggered(context, cause_provider, "queue")
             }
             _ = self.cancellation_token.cancelled() => {
                 log::info!("Worker {} stopping!.", context.worker_id());
                 ContinueOrStop::Cancelled(cause_provider())
             }
-            _ = guardian_changed_subscription.recv() => {
+            _ = guardian_changed_subscription.changed() => {
                 self.subscription_triggered(context, cause_provider, "guardian")
             }
         }

@@ -28,7 +28,7 @@ use crate::extraction::ExtractedLink;
 use crate::gdbr::identifier::GdbrIdentifierRegistry;
 use crate::io::fs::FileSystemAccess;
 use crate::link_state::{LinkState, LinkStateDBError, LinkStateKind, LinkStateManager};
-use crate::queue::{PollWaiter, PollWaiterFactory, QueueError};
+use crate::queue::{QueueError, SupportsForcedQueueElement, UrlQueueElementRef};
 use crate::queue::{EnqueueCalled, UrlQueue, UrlQueueElement};
 use crate::robots::InMemoryRobotsManager;
 use crate::seed::BasicSeed;
@@ -43,13 +43,14 @@ use rand::distributions::Alphanumeric;
 use rand::Rng;
 use std::cmp::min;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use text_processing::stopword_registry::StopWordRegistry;
 use text_processing::tf_idf::{Idf, Tf};
 use time::OffsetDateTime;
-use tokio::sync::broadcast::Receiver;
+use tokio::sync::watch::Receiver;
 use tokio::sync::Mutex;
 
 #[derive(Debug)]
@@ -467,51 +468,41 @@ impl WebGraphManager for TestLinkNetManager {
 
 #[derive(Debug, Clone)]
 pub struct TestUrlQueue {
-    links_queue: Arc<Mutex<VecDeque<UrlQueueElement<UrlWithDepth>>>>,
-    broadcast: tokio::sync::broadcast::Sender<EnqueueCalled>,
-    factory: PollWaiterFactory
+    links_queue: Arc<std::sync::Mutex<VecDeque<UrlQueueElement<UrlWithDepth>>>>,
+    broadcast: tokio::sync::watch::Sender<EnqueueCalled>,
+    counter: crate::queue::UrlQueueElementRefCounter
+}
+
+impl TestUrlQueue {
+    fn wrap(&self, value: UrlQueueElement<UrlWithDepth>) -> UrlQueueElementRef<UrlWithDepth> {
+        let no = self.counter.create_drop_notifyer();
+        UrlQueueElementRef::new(
+            value,
+            self,
+            no
+        )
+    }
+}
+
+impl SupportsForcedQueueElement<UrlWithDepth> for TestUrlQueue {
+    fn force_enqueue(&self, entry: UrlQueueElement<UrlWithDepth>) -> Result<(), QueueError> {
+        Ok(self.links_queue.lock().unwrap().push_back(entry))
+    }
 }
 
 impl Default for TestUrlQueue {
     fn default() -> Self {
         Self {
             links_queue: Default::default(),
-            broadcast: tokio::sync::broadcast::Sender::new(1),
-            factory: PollWaiterFactory::new()
+            broadcast: tokio::sync::watch::Sender::new(EnqueueCalled),
+            counter: crate::queue::UrlQueueElementRefCounter::new()
         }
     }
 }
 
-impl UrlQueue for TestUrlQueue {
-    async fn enqueue_seed(&self, url: &str) -> Result<(), QueueError> {
-        self.enqueue(UrlQueueElement::new(
-            true,
-            0,
-            false,
-            UrlWithDepth::from_seed(url)?,
-        ))
-        .await
-    }
-
-    /// Enqueues all [urls] at distance 0
-    async fn enqueue_seeds(
-        &self,
-        urls: impl IntoIterator<Item = impl AsRef<str>> + Clone,
-    ) -> Result<(), QueueError> {
-        self.enqueue_all(
-            urls.into_iter()
-                .map(|s| {
-                    UrlWithDepth::from_seed(s.as_ref())
-                        .map(|value| UrlQueueElement::new(true, 0, false, value))
-                })
-                .collect::<Result<Vec<_>, _>>()
-                .unwrap(),
-        )
-        .await
-    }
-
+impl UrlQueue<UrlWithDepth> for TestUrlQueue {
     async fn enqueue(&self, entry: UrlQueueElement) -> Result<(), QueueError> {
-        let mut lock = self.links_queue.lock().await;
+        let mut lock = self.links_queue.lock().unwrap();
         lock.push_back(UrlQueueElement::new(
             entry.is_seed,
             entry.age + 1,
@@ -526,46 +517,50 @@ impl UrlQueue for TestUrlQueue {
         &self,
         entry: UrlQueueElement<&'a UrlWithDepth>,
     ) -> Result<(), QueueError> {
-        self.enqueue(entry.map(|value| value.clone())).await
+        self.force_enqueue(entry.map(|value| value.clone()))
     }
 
     async fn enqueue_all(
         &self,
         entries: impl IntoIterator<Item = UrlQueueElement<UrlWithDepth>>,
     ) -> Result<(), QueueError> {
-        let mut lock = self.links_queue.lock().await;
+        let mut lock = self.links_queue.lock().unwrap();
         lock.extend(entries.into_iter().map(|value| value.into()));
         Ok(())
     }
 
-    async fn dequeue(&self) -> Result<Option<UrlQueueElement>, QueueError> {
-        let mut lock = self.links_queue.lock().await;
-        Ok(lock.pop_front())
+    async fn dequeue<'a>(&'a self) -> Result<Option<UrlQueueElementRef<'a, UrlWithDepth>>, QueueError> {
+        let mut lock = self.links_queue.lock().unwrap();
+        Ok(lock.pop_front().map(|value| self.wrap(value)))
     }
 
     #[cfg(test)]
-    async fn dequeue_n(&self, n: usize) -> Result<Vec<UrlQueueElement>, QueueError> {
-        let mut lock = self.links_queue.lock().await;
+    async fn dequeue_n<'a>(&'a self, n: usize) -> Result<Vec<UrlQueueElementRef<'a, UrlWithDepth>>, QueueError> {
+        let mut lock = self.links_queue.lock().unwrap();
         let len = lock.len();
-        Ok(lock.drain(0..min(len, n)).collect_vec())
+        Ok(lock.drain(0..min(len, n)).map(|value| self.wrap(value)).collect_vec())
     }
 
     async fn len(&self) -> usize {
-        let lock = self.links_queue.lock().await;
-        lock.len()
+        let lock = self.links_queue.lock().unwrap();
+        lock.len() + self.counter.get_count()
     }
 
     async fn is_empty(&self) -> bool {
-        let lock = self.links_queue.lock().await;
+        let lock = self.links_queue.lock().unwrap();
         lock.is_empty()
+    }
+
+    fn has_floating_urls(&self) -> bool {
+        self.counter.awaits_drops()
+    }
+
+    fn floating_url_count(&self) -> usize {
+        self.counter.get_count()
     }
 
     fn subscribe_to_change(&self) -> Receiver<EnqueueCalled> {
         self.broadcast.subscribe()
-    }
-
-    fn start_polling(&self) -> PollWaiter {
-        self.factory.create()
     }
 }
 

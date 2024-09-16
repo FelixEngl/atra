@@ -21,7 +21,7 @@ use crate::contexts::worker::WorkerContext;
 use crate::crawl::crawl;
 use crate::link_state::LinkStateManager;
 use crate::runtime::{
-    AtraRuntime, GracefulShutdown, OptionalAtraHandle, RuntimeContext, ShutdownReceiver,
+    AtraRuntime, GracefulShutdown, OptionalAtraHandle, RuntimeContext,
     ShutdownSignalSender,
 };
 use crate::seed::SeedDefinition;
@@ -200,7 +200,7 @@ impl Atra {
                 seeds.fill_queue(context.url_queue()).await;
                 crawl(
                     WorkerContext::create(0, context.clone()).await?,
-                    self.shutdown.weak_handle(),
+                    self.shutdown.clone(),
                     Arc::new(barrier),
                     GlobalErrorConsumer::new(),
                 )

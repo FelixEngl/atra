@@ -19,7 +19,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
 /// An entry for the url queue.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 pub struct UrlQueueElement<T = UrlWithDepth> {
     /// The distance between this url and the origin.
     pub is_seed: bool,
@@ -29,6 +29,17 @@ pub struct UrlQueueElement<T = UrlWithDepth> {
     pub host_was_in_use: bool,
     /// The target
     pub target: T,
+}
+
+impl<T> Debug for UrlQueueElement<T> where T: Debug {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UrlQueueElement")
+            .field("is_seed", &self.is_seed)
+            .field("age", &self.age)
+            .field("host_was_in_use", &self.host_was_in_use)
+            .field("target", &self.target)
+            .finish()
+    }
 }
 
 impl<T> AgingQueueElement for UrlQueueElement<T> {

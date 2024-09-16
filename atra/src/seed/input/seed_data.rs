@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::queue::UrlQueue;
+use crate::queue::{SupportsSeeding, UrlQueue};
 use crate::seed::read_seeds;
 use camino::Utf8PathBuf;
 use nom::branch::alt;
@@ -27,6 +27,7 @@ use nom::IResult;
 use nom::Parser;
 use std::convert::Infallible;
 use std::str::FromStr;
+use crate::url::UrlWithDepth;
 
 /// Defines what kind of seed is used
 /// CLI Syntax:
@@ -46,7 +47,7 @@ pub enum SeedDefinition {
 }
 
 impl SeedDefinition {
-    pub async fn fill_queue(&self, queue: &impl UrlQueue) {
+    pub async fn fill_queue(&self, queue: &impl UrlQueue<UrlWithDepth>) {
         match self {
             SeedDefinition::File(path) => queue
                 .enqueue_seeds(read_seeds(path).expect("Was not able to read file"))

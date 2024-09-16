@@ -14,14 +14,19 @@
 
 mod raw;
 mod url;
+pub mod errors;
 
-pub use raw::errors::QueueError;
+pub use errors::QueueError;
 pub use raw::implementation::RawAgingQueueFile;
 pub use raw::AgingQueueElement;
 pub use raw::EnqueueCalled;
+pub use raw::RawSupportsForcedQueueElement;
+
+pub use url::SupportsForcedQueueElement;
 pub use url::element::UrlQueueElement;
 pub use url::queue::UrlQueueWrapper;
 pub use url::result::*;
 pub use url::UrlQueue;
-pub use url::PollWaiterFactory;
-pub use url::PollWaiter;
+pub use url::UrlQueueElementRefCounter;
+pub use url::UrlQueueElementRef;
+pub use url::SupportsSeeding;
