@@ -15,17 +15,17 @@
 use crate::queue::raw::errors::QueueError;
 use crate::queue::raw::implementation::RawAgingQueueFile;
 use crate::queue::raw::RawAgingQueue;
-use crate::queue::url::{UrlQueue, UrlQueueElement};
+use crate::queue::url::{PollWaiterFactory, UrlQueue, UrlQueueElement};
 use crate::queue::EnqueueCalled;
 use crate::url::UrlWithDepth;
 use std::path::Path;
 use tokio::sync::broadcast::Receiver;
-use crate::queue::url::poll::{PollWaiter, PollWaiterRef};
+use crate::queue::url::poll::{PollWaiter};
 
 #[derive(Debug)]
 pub struct UrlQueueWrapper<T: RawAgingQueue> {
     inner: T,
-    sender: PollWaiter
+    factory: PollWaiterFactory
 }
 
 impl UrlQueueWrapper<RawAgingQueueFile> {
@@ -33,7 +33,7 @@ impl UrlQueueWrapper<RawAgingQueueFile> {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, queue_file::Error> {
         Ok(Self {
             inner: RawAgingQueueFile::open(path)?,
-            sender: PollWaiter::new()
+            factory: PollWaiterFactory::new()
         })
     }
 }
@@ -94,14 +94,14 @@ impl<T: RawAgingQueue> UrlQueue for UrlQueueWrapper<T> {
         self.inner.subscribe_to_change()
     }
 
-    fn start_polling(&self) -> PollWaiterRef {
-        self.sender.create_ref()
+    fn start_polling(&self) -> PollWaiter {
+        self.factory.create()
     }
 }
 
 impl<T: RawAgingQueue> From<T> for UrlQueueWrapper<T> {
     fn from(value: T) -> Self {
-        Self{inner: value, sender: PollWaiter::new()}
+        Self{inner: value, factory: PollWaiterFactory::new()}
     }
 }
 

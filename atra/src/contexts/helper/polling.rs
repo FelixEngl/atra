@@ -17,9 +17,9 @@ use crate::contexts::traits::{
     SupportsConfigs, SupportsLinkState, SupportsPolling, SupportsUrlGuarding, SupportsUrlQueue,
 };
 use crate::link_state::{LinkState, LinkStateKind, LinkStateManager};
-use crate::queue::{AbortCause, PollWaiterRef, QueueError, QueueExtractionError, UrlQueue, UrlQueueElement, UrlQueuePollResult};
+use crate::queue::{AbortCause, PollWaiter, PollWaiterFactory, QueueError, QueueExtractionError, UrlQueue, UrlQueueElement, UrlQueuePollResult};
 use crate::runtime::ShutdownReceiver;
-use crate::url::guard::{GuardianError, UrlGuardian};
+use crate::url::guard::{GuardianError, UrlGuard, UrlGuardian};
 use crate::url::{AtraOriginProvider, UrlWithGuard};
 use smallvec::SmallVec;
 
@@ -38,7 +38,7 @@ where
     ) -> UrlQueuePollResult<UrlWithGuard<'a, Self::Guardian>, Self::Error> {
         let mut polling = self.url_queue().start_polling();
         if self.url_queue().is_empty().await {
-            if abort_logic_for_is_empty(self, &mut polling).await {
+            if !has_possibly_unseen_urls(self, &mut polling).await {
                 return UrlQueuePollResult::Abort(AbortCause::QueueIsEmpty)
             }
         }
@@ -48,11 +48,11 @@ where
         let max_age = self.configs().crawl.max_queue_age;
         let mut missed = 0u64;
 
-        let cause = loop {
+        let mut cause = loop {
             if shutdown_handle.is_shutdown() {
                 break UrlQueuePollResult::Abort(AbortCause::Shutdown);
             }
-            if abort_logic_for_is_empty(self, &mut polling).await {
+            if !has_possibly_unseen_urls(self, &mut polling).await {
                 break UrlQueuePollResult::Abort(AbortCause::QueueIsEmpty)
             }
             if missed_host_cache.len() > MISSED_KEEPER_CACHE {
@@ -82,7 +82,7 @@ where
                                     missed += 1;
                                     missed_host_cache.push(entry);
                                     if retries == 0 {
-                                        break UrlQueuePollResult::Abort(AbortCause::OutOfPullRetries)
+                                        break UrlQueuePollResult::Abort(AbortCause::AllDomainsGuarded)
                                     } else if let Some(unpacked) = max_miss {
                                         if missed > unpacked {
                                             break UrlQueuePollResult::Abort(AbortCause::TooManyMisses)
@@ -101,7 +101,7 @@ where
                     match self.get_guardian().try_reserve(&entry.target).await {
                         Ok(guard) => {
                             break UrlQueuePollResult::Ok(unsafe {
-                                UrlWithGuard::new_unchecked(guard, entry.target)
+                                UrlWithGuard::new_unchecked(guard, entry.target, entry.is_seed)
                             });
                         }
                         Err(GuardianError::NoOriginError(_)) => {
@@ -119,8 +119,12 @@ where
                     }
                 }
                 Ok(None) => {
-                    if abort_logic_for_is_empty(self, &mut polling).await {
-                        break UrlQueuePollResult::Abort(AbortCause::QueueIsEmpty);
+                    if !has_possibly_unseen_urls(self, &mut polling).await {
+                        if missed != 0 {
+                            break UrlQueuePollResult::Abort(AbortCause::AllDomainsGuarded);
+                        } else {
+                            break UrlQueuePollResult::Abort(AbortCause::QueueIsEmpty);
+                        }
                     }
                 }
                 Err(err) => {
@@ -130,9 +134,46 @@ where
         };
 
         if !missed_host_cache.is_empty() {
+            if !cause.is_ok() {
+                let mut to_add = Vec::with_capacity(missed_host_cache.len());
+                let mut iter = missed_host_cache.into_iter();
+                while let Some(next) = iter.next() {
+                    match self.get_guardian().try_reserve(&next.target).await {
+                        Ok(guard) => {
+                            cause = UrlQueuePollResult::Ok(unsafe {
+                                UrlWithGuard::new_unchecked(guard, next.target, next.is_seed)
+                            });
+                        }
+                        Err(_) => {
+                            to_add.push(next);
+                        }
+                    }
+                    if cause.is_ok() {
+                        break
+                    }
+                }
+                to_add.extend(iter);
+                missed_host_cache = to_add;
+            }
             match self.url_queue().enqueue_all(missed_host_cache).await {
                 Ok(_) => cause,
-                Err(err) => UrlQueuePollResult::Err(QueueExtractionError::QueueError(err)),
+                Err(err) => {
+                    if cause.is_ok() {
+                        let unwrapped = cause.unwrap();
+                        let (url, is_seed) = unwrapped.into_seed();
+                        /// We are already in an error state.
+                        /// Hence, we can just ignore whatever happens.
+                        let _ = self.url_queue().enqueue(
+                            UrlQueueElement::new(
+                                is_seed,
+                                0,
+                                false,
+                                url
+                            )
+                        );
+                    }
+                    UrlQueuePollResult::Err(QueueExtractionError::QueueError(err))
+                },
             }
         } else {
             cause
@@ -140,19 +181,23 @@ where
     }
 }
 
-async fn abort_logic_for_is_empty<C: SupportsUrlQueue>(context: &C, polling: &mut PollWaiterRef<'_>) -> bool {
+/// Returns true if there are possibly more unseen urls.
+async fn has_possibly_unseen_urls<C: SupportsUrlQueue>(context: &C, polling: &mut PollWaiter<'_>) -> bool {
     if polling.has_other_waiters() {
-        (!context.url_queue().is_empty().await) || loop {
-            if !polling.wait_for_has_other_waiters().await {
-                break context.url_queue().is_empty().await;
-            } else {
-                if !context.url_queue().is_empty().await {
-                    break false
-                }
+        if !context.url_queue().is_empty().await {
+            return true
+        }
+        loop {
+            let other_waiter_count = polling.wait_for_other_waiter_count_changed().await;
+            let queue_is_empty = context.url_queue().is_empty().await;
+            if other_waiter_count == 0 {
+                break queue_is_empty;
+            } else if !queue_is_empty {
+                break true
             }
         }
     } else {
-        true
+        !context.url_queue().is_empty().await
     }
 }
 
@@ -191,7 +236,7 @@ mod test {
     use crate::config::crawl::CrawlBudget;
     use crate::contexts::traits::{SupportsConfigs, SupportsLinkState, SupportsPolling, SupportsUrlGuarding, SupportsUrlQueue};
     use crate::contexts::BaseContext;
-    use crate::queue::{QueueExtractionError, UrlQueue, UrlQueueElement, UrlQueuePollResult};
+    use crate::queue::{AbortCause, QueueExtractionError, UrlQueue, UrlQueueElement, UrlQueuePollResult};
     use crate::test_impls::{InMemoryLinkStateManager, TestUrlQueue};
     use crate::url::guard::{GuardianError, InMemoryUrlGuardian, UrlGuardian};
     use crate::url::{UrlWithDepth};
@@ -320,11 +365,20 @@ mod test {
         let next2 = fake.poll_next_free_url_no_shutdown(None).await.unwrap();
         let next3 = fake.poll_next_free_url_no_shutdown(None).await.unwrap();
 
+        assert_eq!("https://www.test1.de/", next1.seed_url().as_str());
+        assert_eq!("https://www.test2.de/", next2.seed_url().as_str());
+        assert_eq!("https://www.test3.de/", next3.seed_url().as_str());
+        assert_eq!(2, fake.queue.len().await);
+
         let fake2 = fake.clone();
         let result = tokio::spawn(async move {
+            assert_eq!(2, fake2.queue.len().await);
             match fake2.poll_next_free_url_no_shutdown(None).await {
                 UrlQueuePollResult::Ok(ok) => {
                     panic!("Ok for {}", ok.seed_url())
+                }
+                UrlQueuePollResult::Abort(AbortCause::AllDomainsGuarded) => {
+                    println!("All domains guarded");
                 }
                 UrlQueuePollResult::Abort(ab) => {
                     panic!("Abort for {}", ab)
@@ -337,7 +391,7 @@ mod test {
                                     panic!("No origin found! {err}")
                                 }
                                 GuardianError::AlreadyOccupied(err) => {
-                                    println!("Occupied: {err}");
+                                    panic!("This error should never occur! {err}")
                                 }
                             }
                         }

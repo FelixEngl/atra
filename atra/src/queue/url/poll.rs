@@ -13,45 +13,62 @@
 // limitations under the License.
 
 use std::marker::PhantomData;
-use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use mockall::Any;
 use tokio::sync::watch::{channel, Receiver, Sender};
 
-#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
-#[repr(transparent)]
-struct PollerEvent {
-    pub poller_left: usize
-}
-
-impl PollerEvent {
-    pub const ZERO: PollerEvent = PollerEvent::new(0);
-    pub const fn new(left: usize) -> Self {
-        Self { poller_left: left }
-    }
-}
-
-impl Default for PollerEvent {
-    fn default() -> Self {
-        Self::ZERO
-    }
-}
 
 #[derive(Debug, Clone)]
-pub struct PollWaiter {
-    send: Sender<PollerEvent>,
-    rec: Receiver<PollerEvent>,
+pub struct PollWaiterFactory {
+    send: Sender<PollUseState>,
+    rec: Receiver<PollUseState>,
 }
 
-unsafe impl Send for PollWaiter{}
-unsafe impl Sync for PollWaiter{}
+unsafe impl Send for PollWaiterFactory{}
+unsafe impl Sync for PollWaiterFactory{}
 
-impl PollWaiter {
+impl PollWaiterFactory {
     pub fn new() -> Self {
-        let (send, rec) = channel(PollerEvent::ZERO);
+        let (send, rec) = channel(PollUseState::ZERO);
         Self {
             send,
             rec,
+        }
+    }
+
+    /// Creates a cheap ref that has drop logic.
+    pub fn create(&self) -> PollWaiter {
+        let new = PollWaiter::new(
+            self.send.clone(),
+            self.rec.clone(),
+        );
+        self.send.send_modify(|value| value.increase());
+        new
+    }
+
+    #[cfg(test)]
+    pub fn current_state(&self) -> usize {
+        self.rec.borrow().current
+    }
+}
+
+
+pub struct PollWaiter<'a> {
+    inner: Arc<PollWaiterInner>,
+    rec: Receiver<PollUseState>,
+    _ll:PhantomData<&'a ()>
+}
+
+unsafe impl<'a> Send for PollWaiter<'a>{}
+unsafe impl<'a> Sync for PollWaiter<'a>{}
+
+impl<'a> PollWaiter<'a> {
+
+    fn new(send: Sender<PollUseState>, rec: Receiver<PollUseState>) -> Self {
+        Self {
+            inner: Arc::new(PollWaiterInner::new(send)),
+            rec,
+            _ll: PhantomData
         }
     }
 
@@ -59,114 +76,135 @@ impl PollWaiter {
         self.rec.has_changed().unwrap()
     }
 
+    pub fn peek_other_waiter_count(&self) -> usize {
+        self.rec.borrow().current
+    }
+
+    pub fn peek_has_other_waiters(&mut self) -> bool {
+        self.peek_other_waiter_count() > 1
+    }
+
     pub fn has_other_waiters(&mut self) -> bool {
-        self.rec.borrow_and_update().poller_left > 1
+        self.rec.borrow_and_update().current > 1
+    }
+
+    /// Returns the number ob other waiters.
+    pub async fn wait_for_other_waiter_count_changed(&mut self) -> usize {
+        if self.has_other_waiters() {
+            self.rec.wait_for(|value| {
+                value.changed_or_one()
+            }).await.unwrap().current - 1
+        } else {
+            0
+        }
     }
 
     pub async fn wait_for_has_other_waiters(&mut self) -> bool {
-        self.rec.wait_for(|_| true).await.unwrap().poller_left > 1
+        self.wait_for_other_waiter_count_changed().await == 0
     }
+}
 
-    #[cfg(test)]
-    pub fn get_waiter_count(&self) -> usize {
-        self.rec.borrow().poller_left
-    }
-
-
-    /// Creates a cheap ref that has drop logic.
-    pub fn create_ref(&self) -> PollWaiterRef {
-        let new = Self {
+impl<'a> Clone for PollWaiter<'a> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
             rec: self.rec.clone(),
-            send: self.send.clone()
-        };
-        self.send.send_modify(|value| { value.poller_left += 1 });
-        PollWaiterRef::new(new)
+            _ll: PhantomData
+        }
     }
+}
 
-    fn drop_logic(&mut self) {
+
+/// The sender of the poll waiter. Only sends on drop.
+/// It is basically responsible for executing the drop logic if
+/// all instances are dropped.
+#[clippy::has_significant_drop]
+#[repr(transparent)]
+struct PollWaiterInner {
+    send: Sender<PollUseState>
+}
+
+impl PollWaiterInner {
+    #[inline]
+    fn new(send: Sender<PollUseState>) -> Self {
+        Self {
+            send,
+        }
+    }
+}
+
+impl Drop for PollWaiterInner {
+    fn drop(&mut self) {
         self.send.send_if_modified(|value| {
-            let old = value.poller_left;
-            value.poller_left = value.poller_left.saturating_sub(1);
-            old != value.poller_left
+            value.decrease();
+            value.changed()
         });
     }
 }
 
-
-
-
-
-#[derive(Debug)]
-#[clippy::has_significant_drop]
-pub struct PollWaiterRef<'a> {
-    inner: PollWaiter,
-    borrow_count: Arc<AtomicUsize>,
-    _ll:PhantomData<&'a ()>
+/// The state of the pollers
+#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
+#[repr(C)]
+struct PollUseState {
+    pub current: usize,
+    pub last: usize
 }
 
-unsafe impl<'a> Send for PollWaiterRef<'a>{}
-unsafe impl<'a> Sync for PollWaiterRef<'a>{}
+impl PollUseState {
+    pub const ZERO: PollUseState = PollUseState::new(0);
+    pub const fn new(current: usize) -> Self {
+        Self { current, last: 0 }
+    }
 
-impl<'a> PollWaiterRef<'a> {
-    fn new(inner: PollWaiter) -> Self {
-        Self {
-            inner,
-            borrow_count: Arc::new(AtomicUsize::new(1)),
-            _ll: PhantomData
-        }
+    #[inline]
+    pub fn increase(&mut self) {
+        self.last = self.current;
+        self.current = self.current.saturating_add(1)
+    }
+
+    #[inline]
+    pub fn decrease(&mut self) {
+        self.last = self.current;
+        self.current = self.current.saturating_sub(1)
+    }
+
+    #[inline]
+    pub fn changed(&self) -> bool {
+        self.current != self.last
+    }
+
+    #[inline]
+    pub fn changed_or_one(&self) -> bool {
+        self.current == 1 || self.current != self.last
     }
 }
 
-impl<'a> Deref for PollWaiterRef<'a> {
-    type Target = PollWaiter;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
+impl Default for PollUseState {
+    fn default() -> Self {
+        Self::ZERO
     }
 }
 
-impl<'a> DerefMut for PollWaiterRef<'a> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
-}
 
-impl<'a> Clone for PollWaiterRef<'a> {
-    fn clone(&self) -> Self {
-        self.borrow_count.fetch_add(1, Ordering::Relaxed);
-        Self {
-            inner: self.inner.clone(),
-            borrow_count: self.borrow_count.clone(),
-            _ll: PhantomData
-        }
-    }
-}
 
-impl<'a> Drop for PollWaiterRef<'a> {
-    fn drop(&mut self) {
-        if self.borrow_count.fetch_sub(1, Ordering::Release) == 1 {
-            self.inner.drop_logic()
-        }
-    }
-}
 
 #[cfg(test)]
 mod test {
-    use crate::queue::PollWaiter;
+    use crate::queue::url::PollWaiterFactory;
 
     #[test]
     fn drop_check(){
-        let origin = PollWaiter::new();
-        let r1 = origin.create_ref();
+        let origin = PollWaiterFactory::new();
+        let r1 = origin.create();
         let r11 = r1.clone();
-        assert_eq!(1, origin.get_waiter_count());
-        let r2 = origin.create_ref();
-        assert_eq!(2, origin.get_waiter_count());
+        assert_eq!(1, origin.current_state());
+        let r2 = origin.create();
+        assert_eq!(2, origin.current_state());
         drop(r11);
-        assert_eq!(2, origin.get_waiter_count());
+        assert_eq!(2, origin.current_state());
         drop(r1);
-        assert_eq!(1, origin.get_waiter_count());
+        assert_eq!(1, origin.current_state());
         drop(r2);
-        assert_eq!(0, origin.get_waiter_count());
+        assert_eq!(0, origin.current_state());
     }
 }

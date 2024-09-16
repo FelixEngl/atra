@@ -123,8 +123,8 @@ where
                         AbortCause::TooManyMisses => {
                             patience -= 2;
                         }
-                        AbortCause::OutOfPullRetries => {
-                            patience -= 5;
+                        AbortCause::AllDomainsGuarded => {
+                            patience -= 1;
                         }
                         AbortCause::QueueIsEmpty => {
                             patience -= 10;

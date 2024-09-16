@@ -84,6 +84,6 @@ pub trait UrlQueue {
     fn subscribe_to_change(&self) -> Receiver<EnqueueCalled>;
 
     /// Allows to subscribe to a stream when polling.
-    fn start_polling(&self) -> PollWaiterRef;
+    fn start_polling(&self) -> PollWaiter;
 
 }

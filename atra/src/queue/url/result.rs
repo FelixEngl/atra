@@ -79,8 +79,8 @@ impl<T, E: Error>  UrlQueuePollResult<T, E> {
 pub enum AbortCause {
     #[error("The number of misses was higher than the maximum. Try again later.")]
     TooManyMisses,
-    #[error("No valid domain for crawl found.")]
-    OutOfPullRetries,
+    #[error("All domains are guarded.")]
+    AllDomainsGuarded,
     #[error("The queue is empty.")]
     QueueIsEmpty,
     #[error("The element does not have a host.")]

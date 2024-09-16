@@ -23,5 +23,5 @@ pub use url::element::UrlQueueElement;
 pub use url::queue::UrlQueueWrapper;
 pub use url::result::*;
 pub use url::UrlQueue;
-pub use url::PollWaiterRef;
+pub use url::PollWaiterFactory;
 pub use url::PollWaiter;

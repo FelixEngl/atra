@@ -28,7 +28,7 @@ use crate::extraction::ExtractedLink;
 use crate::gdbr::identifier::GdbrIdentifierRegistry;
 use crate::io::fs::FileSystemAccess;
 use crate::link_state::{LinkState, LinkStateDBError, LinkStateKind, LinkStateManager};
-use crate::queue::{PollWaiter, QueueError};
+use crate::queue::{PollWaiter, PollWaiterFactory, QueueError};
 use crate::queue::{EnqueueCalled, UrlQueue, UrlQueueElement};
 use crate::robots::InMemoryRobotsManager;
 use crate::seed::BasicSeed;
@@ -469,15 +469,15 @@ impl WebGraphManager for TestLinkNetManager {
 pub struct TestUrlQueue {
     links_queue: Arc<Mutex<VecDeque<UrlQueueElement<UrlWithDepth>>>>,
     broadcast: tokio::sync::broadcast::Sender<EnqueueCalled>,
-    poll_waiter: PollWaiter
+    factory: PollWaiterFactory
 }
 
 impl Default for TestUrlQueue {
     fn default() -> Self {
         Self {
-            links_queue: Arc::default(),
+            links_queue: Default::default(),
             broadcast: tokio::sync::broadcast::Sender::new(1),
-            poll_waiter: PollWaiter::new()
+            factory: PollWaiterFactory::new()
         }
     }
 }
@@ -564,8 +564,8 @@ impl UrlQueue for TestUrlQueue {
         self.broadcast.subscribe()
     }
 
-    fn start_polling(&self) -> crate::queue::PollWaiterRef {
-        self.poll_waiter.create_ref()
+    fn start_polling(&self) -> PollWaiter {
+        self.factory.create()
     }
 }
 
