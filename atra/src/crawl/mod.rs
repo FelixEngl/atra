@@ -100,7 +100,7 @@ where
                     patience = PATIENCE;
                 }
 
-                match context.create_crawl_task(guard.get_unguarded_seed()) {
+                match context.create_crawl_task(guard.get_guarded_seed()) {
                     Ok(mut task) => task.run(&context, shutdown.clone(), &consumer).await?,
                     Err(err) => {
                         consumer.consume_crawl_error(err.into())?;

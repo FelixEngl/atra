@@ -23,7 +23,6 @@ use crate::queue::{EnqueueCalled, RawSupportsForcedQueueElement};
 use crate::url::UrlWithDepth;
 use clap::builder::TypedValueParser;
 use itertools::{Either, Itertools};
-use nom::Parser;
 use std::future::Future;
 use std::ops::ControlFlow;
 use std::path::Path;

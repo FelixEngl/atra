@@ -70,7 +70,13 @@ where
                     default.unsigned_abs()
                 } else {
                     log::warn!("Fallback delay 1000ms for {}", url);
-                    std::time::Duration::from_millis(1000)
+                    #[cfg(test)] {
+                        std::time::Duration::from_millis(10)
+                    }
+
+                    #[cfg(not(test))] {
+                        std::time::Duration::from_millis(1000)
+                    }
                 };
                 self.registered_intervals
                     .insert(origin.clone(), tokio::time::interval(target_duration));

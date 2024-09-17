@@ -30,6 +30,8 @@ pub enum LinkStateError {
     IllegalMarker(u8),
     #[error(transparent)]
     TimestampNotReconstructable(#[from] error::ComponentRange),
+    #[error("Not convertible to bool {0}")]
+    NotConvertibleToBool(u8),
 }
 
 /// Possible errors of an [LinkStateDB]

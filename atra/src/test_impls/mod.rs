@@ -13,5 +13,11 @@
 // limitations under the License.
 
 mod inmemory;
+mod fake_client;
+mod providers;
+mod consumer;
 
 pub use inmemory::*;
+pub use providers::*;
+pub use fake_client::*;
+pub use consumer::*;

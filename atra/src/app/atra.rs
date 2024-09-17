@@ -18,10 +18,12 @@ use crate::config::Configs;
 use crate::contexts::local::LocalContext;
 use crate::contexts::traits::{SupportsLinkState, SupportsMetaInfo, SupportsUrlQueue};
 use crate::contexts::worker::WorkerContext;
-use crate::crawl::crawl;
+use crate::crawl::{crawl, ExitState};
 use crate::link_state::LinkStateManager;
+use crate::queue::{SupportsForcedQueueElement, UrlQueue, UrlQueueElement};
 use crate::runtime::{
-    AtraRuntime, GracefulShutdown, OptionalAtraHandle, RuntimeContext, ShutdownSignalSender,
+    AtraRuntime, GracefulShutdown, OptionalAtraHandle, RuntimeContext, ShutdownReceiver,
+    ShutdownSignalSender,
 };
 use crate::seed::SeedDefinition;
 use crate::sync::barrier::WorkerBarrier;
@@ -176,6 +178,34 @@ impl Atra {
         self.run_without_logger(seeds, configs).await
     }
 
+    /// Returns true if there are more thins to crawl
+    async fn try_recrawls<C>(&self, context: &C) -> bool
+    where
+        C: SupportsUrlQueue + SupportsLinkState,
+    {
+        log::info!("Start to check if we have some kind of recrawl.");
+
+        if context
+            .get_link_state_manager()
+            .check_if_there_are_any_recrawlable_links()
+            .await
+        {
+            let queue = context.url_queue();
+            context
+                .get_link_state_manager()
+                .collect_recrawlable_links(|is_seed, url| {
+                    queue
+                        .force_enqueue(UrlQueueElement::new(is_seed.is_yes(), 0, false, url))
+                        .unwrap()
+                })
+                .await;
+            log::info!("Finished refilling queue with data.");
+            !queue.is_empty().await
+        } else {
+            false
+        }
+    }
+
     async fn run_without_logger(
         &self,
         seeds: SeedDefinition,
@@ -190,37 +220,54 @@ impl Atra {
                     self.handle.clone(),
                 );
 
-                let context = Arc::new(
-                    LocalContext::new(configs, shutdown_and_handle)
-                        .await
-                        .unwrap(),
-                );
-                let barrier = WorkerBarrier::new(unsafe { NonZeroUsize::new_unchecked(1) });
+                let context = Arc::new(LocalContext::new(configs, shutdown_and_handle).unwrap());
                 seeds.fill_queue(context.url_queue()).await;
-                crawl(
-                    WorkerContext::create(0, context.clone()).await?,
-                    self.shutdown.clone(),
-                    Arc::new(barrier),
-                    GlobalErrorConsumer::new(),
-                )
-                .await
-                .expect("Failed the crawl.");
-                let time_needed = OffsetDateTime::now_utc() - start;
-                log::info!(
-                    "Needed {} for discovering {} websites",
-                    time_needed,
-                    context.discovered_websites()
-                );
-                log::info!(
-                    "Needed {} for crawling {} websites",
-                    time_needed,
-                    context
-                        .get_link_state_manager()
-                        .crawled_websites()
-                        .map(|value| value.to_string())
-                        .unwrap_or("# ERROR COUNTING#".to_string())
-                );
-                return Ok(());
+
+                let mut recrawl_ct = 0;
+
+                loop {
+                    let barrier = WorkerBarrier::new(unsafe { NonZeroUsize::new_unchecked(1) });
+
+                    let value = crawl(
+                        WorkerContext::create(0, recrawl_ct, context.clone()).await?,
+                        self.shutdown.clone(),
+                        Arc::new(barrier),
+                        GlobalErrorConsumer::new(),
+                    )
+                    .await?;
+
+                    let time_needed = OffsetDateTime::now_utc() - start;
+                    log::info!(
+                        "Needed {} for discovering {} websites",
+                        time_needed,
+                        context.discovered_websites()
+                    );
+                    log::info!(
+                        "Needed {} for crawling {} websites",
+                        time_needed,
+                        context
+                            .get_link_state_manager()
+                            .crawled_websites()
+                            .map(|value| value.to_string())
+                            .unwrap_or("# ERROR COUNTING#".to_string())
+                    );
+
+                    match value {
+                        ExitState::Shutdown => {
+                            println!("Shutting down.");
+                            break;
+                        }
+                        ExitState::NoMoreElements => {}
+                    }
+
+                    if self.try_recrawls(context.as_ref()).await {
+                        recrawl_ct += 1;
+                    } else {
+                        break;
+                    }
+                }
+
+                Ok(())
             }
             ApplicationMode::Multi(worker) => {
                 let start = OffsetDateTime::now_utc();
@@ -229,63 +276,88 @@ impl Atra {
                     self.handle.clone(),
                 );
 
-                let context = Arc::new(
-                    LocalContext::new(configs, shutdown_and_handle)
-                        .await
-                        .unwrap(),
-                );
+                let context = Arc::new(LocalContext::new(configs, shutdown_and_handle).unwrap());
                 seeds.fill_queue(context.url_queue()).await;
-                let mut set = JoinSet::new();
-                let worker_count = worker.unwrap_or(num_cpus());
-                let barrier = Arc::new(WorkerBarrier::new(worker_count));
-                for i in 0..worker_count.get() {
-                    log::info!("Spawn Worker: {i}");
-                    let b = barrier.clone();
-                    let s = self.shutdown.clone();
-                    let context = WorkerContext::create(i, context.clone()).await?;
-                    set.spawn(async move {
-                        let context = context;
-                        while context.can_poll().await {
-                            match crawl(
-                                context.clone(),
-                                s.clone(),
-                                b.clone(),
-                                GlobalErrorConsumer::new(),
-                            )
-                            .await
-                            {
-                                Ok(s) => {
-                                    log::info!("Exit {i} with {s}.");
-                                    break;
+
+                let mut recrawl_ct = 0;
+
+                loop {
+                    let mut set = JoinSet::new();
+                    let worker_count = worker.unwrap_or(num_cpus());
+                    let barrier = Arc::new(WorkerBarrier::new(worker_count));
+                    for i in 0..worker_count.get() {
+                        log::info!("Spawn Worker: {i}");
+                        let b = barrier.clone();
+                        let s = self.shutdown.clone();
+                        let context = WorkerContext::create(i, recrawl_ct, context.clone()).await?;
+                        set.spawn(async move {
+                            let context = context;
+                            let (i, state) = loop {
+                                if context.can_poll().await {
+                                    match crawl(
+                                        context.clone(),
+                                        s.clone(),
+                                        b.clone(),
+                                        GlobalErrorConsumer::new(),
+                                    )
+                                    .await
+                                    {
+                                        Ok(s) => {
+                                            log::info!("Exit {i} with {s}.");
+                                            break (i, s);
+                                        }
+                                        Err(_) => {
+                                            log::error!("Encountered some errors.");
+                                        }
+                                    }
+                                } else {
+                                    break (i, ExitState::NoMoreElements);
                                 }
-                                Err(_) => {
-                                    log::error!("Encountered some errors.");
-                                }
+                            };
+
+                            b.trigger_cancellation();
+                            (i, state)
+                        });
+                    }
+                    let mut is_stop = false;
+                    while let Some(res) = set.join_next().await {
+                        if let Ok((i, s)) = res {
+                            log::info!("Stopped worker {i}.");
+                            if matches!(s, ExitState::Shutdown) {
+                                is_stop = true
                             }
                         }
+                    }
+                    let time_needed = OffsetDateTime::now_utc() - start;
+                    log::info!(
+                        "Needed {} for discovering {} websites",
+                        time_needed,
+                        context.discovered_websites()
+                    );
+                    log::info!(
+                        "Needed {} for crawling {} websites",
+                        time_needed,
+                        context
+                            .get_link_state_manager()
+                            .crawled_websites()
+                            .map(|value| value.to_string())
+                            .unwrap_or("# ERROR COUNTING#".to_string())
+                    );
 
-                        b.trigger_cancellation();
-                        i
-                    });
+                    if is_stop || self.shutdown.is_shutdown() {
+                        log::info!("Shutting down.");
+                        break;
+                    }
+
+                    log::info!("Start to check if we have some kind of recrawl.");
+
+                    if self.try_recrawls(context.as_ref()).await {
+                        recrawl_ct += 1;
+                    } else {
+                        log::info!("Shutting down, because nothing to recrawl.");
+                        break;
+                    }
                 }
-                while let Some(res) = set.join_next().await {
-                    log::info!("Stopped worker {res:?}.")
-                }
-                let time_needed = OffsetDateTime::now_utc() - start;
-                log::info!(
-                    "Needed {} for discovering {} websites",
-                    time_needed,
-                    context.discovered_websites()
-                );
-                log::info!(
-                    "Needed {} for crawling {} websites",
-                    time_needed,
-                    context
-                        .get_link_state_manager()
-                        .crawled_websites()
-                        .map(|value| value.to_string())
-                        .unwrap_or("# ERROR COUNTING#".to_string())
-                );
                 Ok(())
             }
         }

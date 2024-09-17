@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::link_state::LinkState;
-use crate::url::UrlWithDepth;
 use num_enum::{FromPrimitive, IntoPrimitive};
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIs};
-use time::OffsetDateTime;
+
+/// The default value for unset markers
+pub const UNSET: u8 = u8::MAX - 1;
 
 /// Describes the current state of an url.
 #[derive(
@@ -50,7 +50,7 @@ pub enum LinkStateKind {
     /// An internal error.
     InternalError = 32u8,
     /// The value if unset, usually only used for updates.
-    Unset = u8::MAX - 1,
+    Unset = UNSET,
     /// An unknown type
     #[num_enum(catch_all)]
     Unknown(u8),
@@ -58,20 +58,125 @@ pub enum LinkStateKind {
 
 impl LinkStateKind {
     pub fn is_significant_raw(value: u8) -> bool {
-        value < 4
+        value <= 3u8
     }
 
     pub fn is_significant(&self) -> bool {
-        self < &LinkStateKind::InternalError
+        *self <= Self::ProcessedAndStored
+    }
+}
+
+macro_rules! yes_no_kind {
+    ($name: ident) => {
+        #[derive(
+            Debug,
+            Serialize,
+            Deserialize,
+            Clone,
+            Copy,
+            IntoPrimitive,
+            Eq,
+            PartialEq,
+            Ord,
+            PartialOrd,
+            FromPrimitive,
+            Display,
+            AsRefStr,
+            Hash,
+            EnumIs,
+        )]
+        #[repr(u8)]
+        pub enum $name {
+            No = 0u8,
+            Yes = 1u8,
+            /// The value if unset, usually only used for updates.
+            Unset = UNSET,
+            #[num_enum(catch_all)]
+            Unknown(u8),
+        }
+
+        impl $name {
+            pub fn is_significant_raw(value: u8) -> bool {
+                value <= 1u8
+            }
+
+            pub fn is_significant(&self) -> bool {
+                *self <= Self::Yes
+            }
+        }
+
+        impl From<Option<bool>> for $name {
+            #[inline]
+            fn from(value: Option<bool>) -> Self {
+                if let Some(value) = value {
+                    value.into()
+                } else {
+                    $name::Unset
+                }
+            }
+        }
+
+        impl From<bool> for $name {
+            #[inline]
+            fn from(value: bool) -> Self {
+                (value as u8).into()
+            }
+        }
+    };
+}
+
+yes_no_kind!(RecrawlYesNo);
+yes_no_kind!(IsSeedYesNo);
+
+#[cfg(test)]
+mod test {
+    use crate::link_state::kind::RecrawlYesNo;
+    use crate::link_state::LinkStateKind;
+
+    #[test]
+    pub fn recrawl_kind_conversion_correct() {
+        assert_eq!(RecrawlYesNo::No, false.into());
+        assert_eq!(RecrawlYesNo::No, Some(false).into());
+        assert_eq!(RecrawlYesNo::Yes, true.into());
+        assert_eq!(RecrawlYesNo::Yes, Some(true).into());
+        assert_eq!(RecrawlYesNo::Unset, None.into());
+        assert_eq!(RecrawlYesNo::Unknown(123), 123.into());
     }
 
-    pub fn into_update(self, url: &UrlWithDepth, payload: Option<Vec<u8>>) -> LinkState {
-        LinkState::new(
-            self.clone(),
-            Self::Unset,
-            OffsetDateTime::now_utc(),
-            url.depth().clone(),
-            payload,
-        )
+    #[test]
+    pub fn recrawl_kind_comparisons_work() {
+        assert!(RecrawlYesNo::is_significant_raw(RecrawlYesNo::No.into()));
+        assert!(RecrawlYesNo::is_significant_raw(RecrawlYesNo::Yes.into()));
+        assert!(!RecrawlYesNo::is_significant_raw(
+            RecrawlYesNo::Unset.into()
+        ));
+        assert!(!RecrawlYesNo::is_significant_raw(
+            RecrawlYesNo::Unknown(123).into()
+        ));
+    }
+
+    #[test]
+    pub fn link_state_comparisons_work() {
+        assert!(LinkStateKind::is_significant_raw(
+            LinkStateKind::Discovered.into()
+        ));
+        assert!(LinkStateKind::is_significant_raw(
+            LinkStateKind::ReservedForCrawl.into()
+        ));
+        assert!(LinkStateKind::is_significant_raw(
+            LinkStateKind::Crawled.into()
+        ));
+        assert!(LinkStateKind::is_significant_raw(
+            LinkStateKind::ProcessedAndStored.into()
+        ));
+        assert!(!LinkStateKind::is_significant_raw(
+            LinkStateKind::InternalError.into()
+        ));
+        assert!(!LinkStateKind::is_significant_raw(
+            LinkStateKind::Unset.into()
+        ));
+        assert!(!LinkStateKind::is_significant_raw(
+            LinkStateKind::Unknown(123).into()
+        ));
     }
 }

@@ -235,11 +235,11 @@ pub struct CrawlBudget {
 }
 
 impl CrawlBudget {
-    pub fn get_budget_for(&self, host: &impl AsRef<str>) -> &BudgetSetting {
+    pub fn get_budget_for(&self, origin: &impl AsRef<str>) -> &BudgetSetting {
         match self.per_host {
             None => &self.default,
             Some(ref found) => found
-                .get(&CaseInsensitiveString::from(host.as_ref()))
+                .get(&CaseInsensitiveString::from(origin.as_ref()))
                 .unwrap_or(&self.default),
         }
     }
@@ -399,7 +399,7 @@ impl BudgetSetting {
         .clone()
     }
 
-    pub fn get_recrawl_interval(&self) -> Option<Duration> {
+    pub fn get_recrawl_interval(&self) -> Option<&Duration> {
         match self {
             BudgetSetting::SeedOnly {
                 recrawl_interval, ..
@@ -411,7 +411,7 @@ impl BudgetSetting {
                 recrawl_interval, ..
             } => recrawl_interval,
         }
-        .clone()
+        .as_ref()
     }
 
     /// Returns true, iff the [url] is in the budget
@@ -423,18 +423,18 @@ impl BudgetSetting {
                 ..
             } => {
                 url_depth.distance_to_seed == 0
-                    && (0.eq(depth) || url_depth.depth_on_website.le(depth))
+                    && (0.eq(depth) || url_depth.depth_on_website.lt(depth))
             }
             BudgetSetting::Normal {
                 depth_on_website: depth,
                 depth: depth_distance,
                 ..
             } => {
-                (0.eq(depth) || url_depth.depth_on_website.le(depth))
+                (0.eq(depth) || url_depth.depth_on_website.lt(depth))
                     && url_depth.distance_to_seed.le(depth_distance)
             }
             BudgetSetting::Absolute { depth, .. } => {
-                0.eq(depth) || url_depth.total_distance_to_seed.le(depth)
+                0.eq(depth) || url_depth.total_distance_to_seed.lt(depth)
             }
         }
     }

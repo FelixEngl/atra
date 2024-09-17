@@ -25,18 +25,24 @@ use std::time::SystemTime;
 /// A guard that works basically like a Mutex or RwLock guard.
 /// Allows to block a domain until the guard is dropped.
 #[clippy::has_significant_drop]
-pub struct UrlGuard<'a, T: UrlGuardian> {
+pub struct UrlGuard<'a, Guardian>
+where
+    Guardian: UrlGuardian,
+{
     pub(super) reserved_at: SystemTime,
     pub(super) origin: AtraUrlOrigin,
-    pub(super) origin_manager: *const T,
+    pub(super) origin_manager: *const Guardian,
     pub(super) entry: GuardEntry,
-    pub(super) _marker: PhantomData<&'a T>,
+    pub(super) _marker: PhantomData<&'a Guardian>,
 }
 
-unsafe impl<'a, T: UrlGuardian> Sync for UrlGuard<'a, T> {}
-unsafe impl<'a, T: UrlGuardian> Send for UrlGuard<'a, T> {}
+unsafe impl<'a, Guardian: UrlGuardian> Sync for UrlGuard<'a, Guardian> where Guardian: UrlGuardian {}
+unsafe impl<'a, Guardian: UrlGuardian> Send for UrlGuard<'a, Guardian> where Guardian: UrlGuardian {}
 
-impl<'a, T: UrlGuardian> fmt::Debug for UrlGuard<'a, T> {
+impl<'a, Guardian> fmt::Debug for UrlGuard<'a, Guardian>
+where
+    Guardian: UrlGuardian,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HostGuard")
             .field("reserved_at", &self.reserved_at)
@@ -47,7 +53,10 @@ impl<'a, T: UrlGuardian> fmt::Debug for UrlGuard<'a, T> {
 }
 
 #[allow(dead_code)]
-impl<'a, T: UrlGuardian> UrlGuard<'a, T> {
+impl<'a, Guardian> UrlGuard<'a, Guardian>
+where
+    Guardian: UrlGuardian,
+{
     /// Checks the guard is poisoned.
     pub async fn check_for_poison(&self) -> Result<(), GuardPoisonedError> {
         unsafe { &*self.origin_manager }
@@ -87,7 +96,10 @@ impl<'a, T: UrlGuardian> UrlGuard<'a, T> {
     }
 }
 
-impl<'a, T: UrlGuardian> Drop for UrlGuard<'a, T> {
+impl<'a, Guardian> Drop for UrlGuard<'a, Guardian>
+where
+    Guardian: UrlGuardian,
+{
     fn drop(&mut self) {
         unsafe {
             (&*self.origin_manager).release(self.origin.clone());

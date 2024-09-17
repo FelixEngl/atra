@@ -37,6 +37,7 @@ pub trait AtraFS {
     async fn create_worker_file_provider(
         &self,
         worker_id: usize,
+        recrawl_iteration: usize,
     ) -> Result<WorkerFileSystemAccess, ErrorWithPath>;
 }
 
@@ -105,12 +106,14 @@ impl AtraFS for FileSystemAccess {
     async fn create_worker_file_provider(
         &self,
         worker_id: usize,
+        recrawl_iteration: usize,
     ) -> Result<WorkerFileSystemAccess, ErrorWithPath> {
         let _ = self.filesystem_lock.lock().await;
         WorkerFileSystemAccess::new(
             self.collection_root.clone(),
             self.worker_base.clone(),
             worker_id,
+            recrawl_iteration,
         )
     }
 }
@@ -126,13 +129,14 @@ impl WorkerFileSystemAccess {
         collection_root: Utf8PathBuf,
         worker_base: FileNameTemplate,
         worker_id: usize,
+        recrawl_iteration: usize,
     ) -> Result<Self, ErrorWithPath> {
         let worker_root = collection_root.join(format!("worker_{worker_id}"));
         if !worker_root.exists() {
             std::fs::create_dir_all(&worker_root).to_error_with_path(&worker_root)?;
         }
         let provider = UniquePathProvider::new(&worker_root).with_template(
-            file_name_template!(ref worker_base _ worker_id _ timestamp64 _ serial ".warc")
+            file_name_template!(ref worker_base _ worker_id _ "rc" _ recrawl_iteration _ serial ".warc")
                 .unwrap(),
         );
         Ok(Self {

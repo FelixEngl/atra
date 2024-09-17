@@ -25,11 +25,7 @@ pub use crate::blacklist::ManagedBlacklist;
 use crate::blacklist::{Blacklist, BlacklistManager};
 use crate::client::traits::AtraClient;
 use crate::config::BudgetSetting;
-use crate::contexts::traits::{
-    SupportsBlackList, SupportsConfigs, SupportsCrawlResults, SupportsCrawling,
-    SupportsFileSystemAccess, SupportsGdbrRegistry, SupportsLinkSeeding, SupportsLinkState,
-    SupportsRobotsManager, SupportsSlimCrawlResults, SupportsUrlQueue,
-};
+use crate::contexts::traits::{SupportsBlackList, SupportsConfigs, SupportsCrawlResults, SupportsCrawling, SupportsDomainHandling, SupportsFileSystemAccess, SupportsGdbrRegistry, SupportsLinkSeeding, SupportsLinkState, SupportsRobotsManager, SupportsSlimCrawlResults, SupportsUrlQueue};
 use crate::crawl::crawler::intervals::InvervalManager;
 use crate::crawl::crawler::result::CrawlResult;
 use crate::crawl::crawler::sitemaps::retrieve_and_parse;
@@ -39,14 +35,14 @@ use crate::fetching::ResponseData;
 use crate::format::supported::InterpretedProcessibleFileFormat;
 use crate::format::AtraFileInformation;
 use crate::io::fs::AtraFS;
-use crate::link_state::{LinkStateKind, LinkStateManager};
-use crate::queue::QueueError;
+use crate::link_state::{IsSeedYesNo, LinkStateKind, LinkStateManager, RecrawlYesNo};
+use crate::queue::{QueueError, UrlQueue, UrlQueueElement};
 use crate::robots::{GeneralRobotsInformation, RobotsInformation};
 use crate::runtime::ShutdownReceiver;
 use crate::seed::BasicSeed;
 use crate::toolkit::detect_language;
-use crate::url::UrlWithDepth;
-use itertools::Itertools;
+use crate::url::{AtraOriginProvider, UrlWithDepth};
+use itertools::{Either, Itertools};
 use log::LevelFilter;
 use sitemap::structs::Location;
 use smallvec::SmallVec;
@@ -58,6 +54,7 @@ use std::io::Write;
 use std::sync::Arc;
 use strum::EnumString;
 use time::OffsetDateTime;
+use crate::recrawl_management::DomainLastCrawledManager;
 
 /// A crawler for a single website. Starts from the provided `seed` and
 #[derive(Debug)]
@@ -88,7 +85,8 @@ where
     S: BasicSeed,
     Client: AtraClient,
 {
-    async fn update_linkstate<C, E, EC>(
+    #[inline(always)]
+    async fn update_linkstate_no_meta<C, E, EC>(
         handler: &EC,
         context: &C,
         target: &UrlWithDepth,
@@ -99,9 +97,25 @@ where
         E: From<<<C as SupportsLinkState>::LinkStateManager as LinkStateManager>::Error>,
         EC: ErrorConsumer<E>,
     {
+        Self::update_linkstate(handler, context, target, link_state_type, None, None).await
+    }
+
+    async fn update_linkstate<C, E, EC>(
+        handler: &EC,
+        context: &C,
+        target: &UrlWithDepth,
+        link_state_type: LinkStateKind,
+        is_seed: Option<IsSeedYesNo>,
+        recrawl: Option<RecrawlYesNo>,
+    ) -> Result<(), EC::Error>
+    where
+        C: SupportsLinkState,
+        E: From<<<C as SupportsLinkState>::LinkStateManager as LinkStateManager>::Error>,
+        EC: ErrorConsumer<E>,
+    {
         match context
             .get_link_state_manager()
-            .update_link_state(target, link_state_type)
+            .update_link_state_no_payload(target, link_state_type, is_seed, recrawl)
             .await
         {
             Ok(_) => Ok(()),
@@ -120,7 +134,7 @@ where
         E: From<<<C as SupportsLinkState>::LinkStateManager as LinkStateManager>::Error>,
         EC: ErrorConsumer<E>,
     {
-        if Self::update_linkstate(handler, context, target, link_state_type)
+        if Self::update_linkstate(handler, context, target, link_state_type, None, None)
             .await
             .is_err()
         {
@@ -138,25 +152,26 @@ where
     ) -> Result<(), EC::Error>
     where
         Cont: SupportsGdbrRegistry
-            + SupportsConfigs
-            + SupportsRobotsManager
-            + SupportsBlackList
-            + SupportsLinkState
-            + SupportsSlimCrawlResults
-            + SupportsFileSystemAccess
-            + SupportsCrawlResults
-            + SupportsLinkSeeding
-            + SupportsUrlQueue
-            + SupportsCrawling,
+        + SupportsConfigs
+        + SupportsRobotsManager
+        + SupportsBlackList
+        + SupportsLinkState
+        + SupportsSlimCrawlResults
+        + SupportsFileSystemAccess
+        + SupportsCrawlResults
+        + SupportsLinkSeeding
+        + SupportsUrlQueue
+        + SupportsCrawling
+        + SupportsDomainHandling,
         Shutdown: ShutdownReceiver,
         E: From<<Cont as SupportsSlimCrawlResults>::Error>
-            + From<<Cont as SupportsLinkSeeding>::Error>
-            + From<<Cont as SupportsCrawlResults>::Error>
-            + From<<<Cont as SupportsLinkState>::LinkStateManager as LinkStateManager>::Error>
-            + From<<Cont as SupportsCrawling>::Error>
-            + From<QueueError>
-            + From<io::Error>
-            + Display,
+        + From<<Cont as SupportsLinkSeeding>::Error>
+        + From<<Cont as SupportsCrawlResults>::Error>
+        + From<<<Cont as SupportsLinkState>::LinkStateManager as LinkStateManager>::Error>
+        + From<<Cont as SupportsCrawling>::Error>
+        + From<QueueError>
+        + From<io::Error>
+        + Display,
         EC: ErrorConsumer<E>,
     {
         let configuration = &context.configs().crawl;
@@ -171,8 +186,8 @@ where
                 self.client.user_agent().to_string(),
                 configuration.max_robots_age.clone(),
             )
-            .bind_to_domain(&self.client, self.seed.url())
-            .await,
+                .bind_to_domain(&self.client, self.seed.url())
+                .await,
         );
 
         let budget = configuration
@@ -187,7 +202,7 @@ where
         log::debug!("Local blacklist initialized {:}", self.seed.url());
         let mut queue = VecDeque::with_capacity(128);
 
-        queue.push_back(self.seed.url().clone());
+        queue.push_back((true, self.seed.url().clone()));
 
         match context.register_seed(&self.seed).await {
             Ok(_) => {}
@@ -215,14 +230,14 @@ where
                 &mut interval_manager,
                 None,
             )
-            .await
-            .urls
+                .await
+                .urls
             {
                 match value.loc {
                     Location::None => {}
                     Location::Url(url) => match UrlWithDepth::with_base(self.seed.url(), url) {
                         Ok(url) => {
-                            queue.push_back(url);
+                            queue.push_back((false, url));
                         }
                         Err(err) => {
                             log::debug!("Failed to parse url from sitemap: {err}");
@@ -234,83 +249,102 @@ where
                 }
             }
         }
+        let origin = self.seed.origin();
+        let manager = context.get_domain_manager();
 
-        while let Some(target) = queue.pop_front() {
+        if let Some(recrawl) = configuration
+            .budget
+            .get_budget_for(origin)
+            .get_recrawl_interval()
+        {
+            if let Some(time) = manager.get_time_for(origin).await {
+                let time_since_last_access = OffsetDateTime::now_utc() - time;
+                if time_since_last_access.le(recrawl) {
+                    log::debug!("The domain is on cooldown.");
+                    println!("time_since_last_access: {time_since_last_access} - recrawl: {recrawl}");
+                    return match context.url_queue().enqueue(
+                        UrlQueueElement::new(
+                            self.seed.is_original_seed(),
+                            0,
+                            false,
+                            self.seed.url().clone(),
+                        )
+                    ).await {
+                        Ok(_) => {
+                            Ok(())
+                        }
+                        Err(err) => {
+                            consumer.consume_crawl_error(err.into())
+                        }
+                    };
+                }
+            }
+        }
+
+        while let Some((is_seed, target)) = queue.pop_front() {
             if shutdown.is_shutdown() {
                 return Ok(());
             }
             log::trace!("Queue.len() => {}", queue.len());
+
             if !checker.check_if_allowed(self, &target).await {
                 log::debug!("Dropped: {}", target);
                 continue;
             }
 
-            match Self::update_linkstate(
-                consumer,
-                context,
-                &target,
-                LinkStateKind::ReservedForCrawl,
-            )
-            .await
-            {
-                Ok(_) => {}
-                Err(_) => {
-                    log::info!("Failed setting of linkstate of {target}, continue without further processing.");
-                    continue;
-                }
-            }
 
+            manager.register(origin).await;
             match context.retrieve_slim_crawled_website(&target).await {
                 Ok(value) => {
                     if let Some(already_crawled) = value {
                         if let Some(recrawl) = configuration
                             .budget
-                            .get_budget_for(&self.seed.origin())
+                            .get_budget_for(origin)
                             .get_recrawl_interval()
                         {
-                            if OffsetDateTime::now_utc() - already_crawled.meta.created_at
-                                >= recrawl
+                            println!("RECRAWL: {recrawl}");
+
+                            let time_since_crawled = OffsetDateTime::now_utc() - already_crawled.meta.created_at;
+
+                            if time_since_crawled.ge(recrawl)
                             {
                                 log::debug!("The url was already crawled.");
-                                if Self::update_linkstate(
-                                    consumer,
-                                    context,
-                                    &target,
-                                    LinkStateKind::ProcessedAndStored,
-                                )
-                                .await
-                                .is_err()
-                                {
-                                    log::info!(
-                                        "Failed set correct linkstate of {target}, ignoring."
-                                    );
-                                }
-                                // if let Err(err) = context.url_queue().enqueue(
-                                //     UrlQueueElementWeak::new(
-                                //         false,
-                                //         0,
-                                //         true,
-                                //         &target
-                                //     )
-                                // ).await {
-                                //     let _ = consumer.consume_crawl_error(err);
-                                // }
                                 continue;
                             }
-                        } else {
-                            log::debug!("The url was already crawled.");
-                            if Self::update_linkstate(
+                            match Self::update_linkstate_no_meta(
                                 consumer,
                                 context,
                                 &target,
-                                LinkStateKind::ProcessedAndStored,
+                                LinkStateKind::ReservedForCrawl,
                             )
-                            .await
-                            .is_err()
+                                .await
                             {
-                                log::info!("Failed set correct linkstate of {target}, ignoring.");
+                                Ok(_) => {}
+                                Err(_) => {
+                                    log::info!("Failed setting of linkstate of {target}, continue without further processing.");
+                                    continue;
+                                }
                             }
+                        } else {
+                            log::debug!("The url was already crawled.");
                             continue;
+                        }
+                    } else {
+                        match Self::update_linkstate(
+                            consumer,
+                            context,
+                            &target,
+                            LinkStateKind::ReservedForCrawl,
+                            Some(is_seed.into()),
+                            Some(checker.has_recrawl().into()),
+                        )
+                            .await
+                        {
+                            Ok(_) => {}
+                            Err(_) => {
+                                log::info!("Failed setting of linkstate of {target}, continue without further processing.");
+                                continue;
+                            }
                         }
                     }
                 }
@@ -320,6 +354,7 @@ where
                     )
                 }
             }
+
 
             if shutdown.is_shutdown() {
                 return Self::pack_shutdown(consumer, context, &target, LinkStateKind::Discovered)
@@ -336,7 +371,12 @@ where
             let url_str = target.as_str().into_owned();
             match self.client.retrieve(context, &url_str).await {
                 Ok(page) => {
-                    if Self::update_linkstate(consumer, context, &target, LinkStateKind::Discovered)
+                    if Self::update_linkstate_no_meta(
+                        consumer,
+                        context,
+                        &target,
+                        LinkStateKind::Discovered,
+                    )
                         .await
                         .is_err()
                     {
@@ -357,8 +397,8 @@ where
                                     &file_information,
                                     &decoded,
                                 )
-                                .ok()
-                                .flatten();
+                                    .ok()
+                                    .flatten();
 
                                 let result = context
                                     .configs()
@@ -417,7 +457,7 @@ where
                             &target,
                             LinkStateKind::Discovered,
                         )
-                        .await;
+                            .await;
                     }
                     log::debug!(
                         "Number of links in {}: {}",
@@ -438,7 +478,7 @@ where
                                 for in_seed in value {
                                     if checker.check_if_allowed(self, &in_seed).await {
                                         log::trace!("Queue: {}", target);
-                                        queue.push_back(in_seed);
+                                        queue.push_back((false, in_seed));
                                     } else {
                                         log::debug!("Dropped: {in_seed}");
                                     }
@@ -453,7 +493,7 @@ where
                                     &target,
                                     LinkStateKind::Discovered,
                                 )
-                                .await;
+                                    .await;
                             }
                         }
                     } else {
@@ -469,7 +509,7 @@ where
                             &target,
                             LinkStateKind::Discovered,
                         )
-                        .await;
+                            .await;
                     }
 
                     log::trace!("CrawlResult {}", response_data.url);
@@ -492,21 +532,21 @@ where
                                 &target,
                                 LinkStateKind::Discovered,
                             )
-                            .await;
+                                .await;
                         }
                         _ => {
                             log::debug!("Stored: {}", result.meta.url);
                         }
                     }
 
-                    if Self::update_linkstate(
+                    if Self::update_linkstate_no_meta(
                         consumer,
                         context,
                         &target,
                         LinkStateKind::ProcessedAndStored,
                     )
-                    .await
-                    .is_err()
+                        .await
+                        .is_err()
                     {
                         log::error!("Failed setting of linkstate of {target}.");
                     }
@@ -514,14 +554,14 @@ where
                 Err(err) => {
                     log::warn!("Failed to fetch {} with error {}", target, err);
 
-                    if Self::update_linkstate(
+                    if Self::update_linkstate_no_meta(
                         consumer,
                         context,
                         &target,
                         LinkStateKind::InternalError,
                     )
-                    .await
-                    .is_err()
+                        .await
+                        .is_err()
                     {
                         log::error!("Failed recovery of linkstate of {target}.");
                     }
@@ -568,9 +608,9 @@ impl<'a, R: RobotsInformation, B: Blacklist> UrlChecker<'a, R, B> {
         let result = !task.links_visited.contains(url)
             && !self.blacklist.has_match_for(&url.as_str())
             && self
-                .configured_robots
-                .check_if_allowed(&task.client, url)
-                .await
+            .configured_robots
+            .check_if_allowed(&task.client, url)
+            .await
             && self.budget.is_in_budget(url);
 
         match log::max_level() {
@@ -603,26 +643,18 @@ impl<'a, R: RobotsInformation, B: Blacklist> UrlChecker<'a, R, B> {
 
         return result;
     }
+
+    pub fn has_recrawl(&self) -> bool {
+        self.budget.get_recrawl_interval().is_some()
+    }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::config::crawl::UserAgent;
-    use crate::config::{BudgetSetting, Configs, CrawlConfig};
-    use crate::contexts::local::LocalContext;
-    use crate::contexts::traits::{SupportsConfigs, SupportsPolling, SupportsUrlQueue};
-    use crate::contexts::worker::WorkerContext;
-    use crate::crawl::crawler::CrawlTask;
+    use crate::contexts::traits::{SupportsCrawling, SupportsPolling, SupportsUrlQueue};
     use crate::crawl::CrawlResult;
-    use crate::queue::{AbortCause, UrlQueuePollResult};
-    use crate::robots::{InMemoryRobotsManager, RobotsManager};
-    use crate::runtime::{RuntimeContext, ShutdownPhantom};
-    use crate::seed::UnguardedSeed;
-    use crate::test_impls::TestContext;
     use crate::toolkit::header_map_extensions::optional_header_map;
     use crate::toolkit::serde_ext::status_code;
-    use crate::url::UrlWithDepth;
-    use itertools::Itertools;
     use log::LevelFilter;
     use log4rs::append::file::FileAppender;
     use log4rs::config::{Appender, Config, Logger, Root};
@@ -632,8 +664,16 @@ mod test {
     use serde::de::DeserializeOwned;
     use serde::{Deserialize, Serialize};
     use std::fmt::Debug;
-    use std::sync::Arc;
     use time::Duration;
+    use time::ext::NumericalDuration;
+    use crate::config::{BudgetSetting, Configs, CrawlConfig};
+    use crate::data::RawData;
+    use crate::fetching::FetchedRequestData;
+    use crate::queue::UrlQueue;
+    use crate::runtime::ShutdownPhantom;
+    use crate::seed::UnguardedSeed;
+    use crate::test_impls::{FakeClientProvider, FakeResponse, TestContext, TestErrorConsumer};
+    use crate::url::{AtraOriginProvider, AtraUrlOrigin};
 
     fn init() {
         // let stdout = ConsoleAppender::builder().build();
@@ -723,64 +763,146 @@ mod test {
         });
     }
 
+    fn init2() {
+        // let stdout = ConsoleAppender::builder().build();
+
+        let requests = FileAppender::builder()
+            .encoder(Box::new(PatternEncoder::new("{l};{I} - {d} - {m}{n}")))
+            .build("log/out.log")
+            .unwrap();
+
+        let config = Config::builder()
+            // .appender(Appender::builder().build("stdout", Box::new(stdout)))
+            .appender(Appender::builder().build("out", Box::new(requests)))
+            .logger(Logger::builder().build("atra", LevelFilter::Trace))
+            .build(Root::builder().appender("out").build(LevelFilter::Warn))
+            .unwrap();
+
+        let _ = log4rs::init_config(config).unwrap();
+    }
+
     #[tokio::test]
     async fn crawl_a_single_site() {
-        // init();
-        //
-        // let mut config: CrawlConfig = CrawlConfig::default();
-        // config.budget.default = BudgetSetting::SeedOnly {
-        //     depth_on_website: 3,
-        //     recrawl_interval: None,
-        //     request_timeout: None,
-        // };
-        //
-        // log::info!("START");
-        //
-        // let mut crawl = CrawlTask::builder(&config)
-        //     .build(
-        //         UnguardedSeed::new(
-        //             "https://choosealicense.com/"
-        //                 .parse::<UrlWithDepth>()
-        //                 .unwrap(),
-        //             "choosealicense.com".into(),
-        //         )
-        //         .unwrap(),
-        //     )
-        //     .await;
-        //
-        // let context = InMemoryContext::new(Configs::new(
-        //     Default::default(),
-        //     Default::default(),
-        //     config,
-        //     Default::default(),
-        // ));
-        //
-        // crawl
-        //     .crawl(
-        //         &context,
-        //         ShutdownPhantom,
-        //         &crate::app::consumer::GlobalErrorConsumer::new(),
-        //     )
-        //     .await
-        //     .expect("Expected a positive result!");
-        //
-        // // for ref crawled in crawled {
-        // //     let found = context.get_crawled_website(crawled).await.expect("The website should be working!");
-        // //     println!("--------\n{:?}", found.map(|value| value.url.to_string()).unwrap_or_default())
-        // // }
-        //
-        // let (a, _) = context.get_all_crawled_websites();
-        // let values = a.into_values().collect_vec();
-        //
-        // for value in &values {
-        //     println!("--------\n{:?}", &value.meta.url.to_string());
-        //     // if value.url.is_same_url_as("")
-        //     check_serialisation(value);
-        // }
-        //
-        // // File::create("./testdata/testdata.bin").unwrap().write_all(
-        // //     &bincode::serialize(&values).unwrap()
-        // // ).unwrap();
+
+        // init2();
+
+        let mut config: CrawlConfig = CrawlConfig::default();
+        config.budget.default = BudgetSetting::SeedOnly {
+            depth_on_website: 1,
+            recrawl_interval: Some(Duration::milliseconds(5000)),
+            request_timeout: None,
+        };
+
+        let context = TestContext::new(
+            Configs::new(
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                config,
+            ),
+            FakeClientProvider::new(),
+        );
+
+        context.provider().push(
+            Ok(
+                FakeResponse::new(
+                    Some(
+                        FetchedRequestData::new(
+                            RawData::from_vec(include_bytes!("../../testdata/samples/HTML attribute reference - HTML_ HyperText Markup Language _ MDN.html").to_vec()),
+                            None,
+                            StatusCode::OK,
+                            None,
+                            None,
+                            false,
+                        )
+                    ),
+                    1,
+                    "https://www.amazon.de/".parse().unwrap(),
+                )
+            )
+        );
+
+
+        let mut crawl_task = context
+            .create_crawl_task(
+                UnguardedSeed::from_url("https://www.ebay.com/")
+                    .unwrap()
+            )
+            .unwrap();
+
+
+        let result = crawl_task.run(
+            &context,
+            ShutdownPhantom::<true>,
+            &TestErrorConsumer::new(),
+        ).await;
+
+        println!("{:?}", result);
+
+        drop(crawl_task);
+        drop(result);
+
+        context.provider().push(
+            Ok(
+                FakeResponse::new(
+                    Some(
+                        FetchedRequestData::new(
+                            RawData::from_vec(include_bytes!("../../testdata/samples/Amazon.html").to_vec()),
+                            None,
+                            StatusCode::OK,
+                            None,
+                            None,
+                            false,
+                        )
+                    ),
+                    1,
+                    "https://www.amazon.de/test".parse().unwrap(),
+                )
+            )
+        );
+
+        let mut crawl_task = context
+            .create_crawl_task(
+                UnguardedSeed::from_url("https://www.ebay.com/")
+                    .unwrap()
+            )
+            .unwrap();
+
+
+        let result = crawl_task.run(
+            &context,
+            ShutdownPhantom::<true>,
+            &TestErrorConsumer::new(),
+        ).await;
+
+        drop(crawl_task);
+
+        println!("{:?}", result);
+
+        println!("{}", context.url_queue().len().await);
+
+        tokio::time::sleep(std::time::Duration::from_millis(6000)).await;
+
+        let x = context.url_queue().dequeue().await.unwrap().unwrap().take();
+        println!("{}", context.url_queue().len().await);
+
+        let origin = x.target.atra_origin().unwrap();
+        let mut crawl_task = context
+            .create_crawl_task(
+                UnguardedSeed::new(x.target, origin, true)
+                    .unwrap()
+            )
+            .unwrap();
+
+        let result = crawl_task.run(
+            &context,
+            ShutdownPhantom::<true>,
+            &TestErrorConsumer::new(),
+        ).await;
+
+        println!("{:?}", result);
+
+        println!("{}", context.url_queue().len().await);
     }
 
     #[tokio::test]

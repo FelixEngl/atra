@@ -45,6 +45,7 @@ create_context_trait! {
     SupportsPolling,
     SupportsWorkerId,
     SupportsCrawling,
+    SupportsDomainHandling,
 }
 
 pub mod traits {
@@ -58,7 +59,7 @@ pub mod traits {
     use crate::gdbr::identifier::GdbrRegistry;
     use crate::io::fs::AtraFS;
     use crate::link_state::LinkStateManager;
-    use crate::queue::{UrlQueue, UrlQueuePollResult};
+    use crate::queue::{SupportsForcedQueueElement, UrlQueue, UrlQueuePollResult};
     use crate::robots::RobotsManager;
     use crate::runtime::{ShutdownPhantom, ShutdownReceiverWithWait};
     use crate::seed::BasicSeed;
@@ -68,6 +69,7 @@ pub mod traits {
     use std::collections::HashSet;
     use std::error::Error;
     use text_processing::stopword_registry::StopWordRegistry;
+    use crate::recrawl_management::DomainLastCrawledManager;
 
     /// A marker interface for applying the context trait iff appropriate
     pub trait ContextDelegate {}
@@ -139,7 +141,7 @@ pub mod traits {
 
     pub trait SupportsUrlQueue: BaseContext {
         /// The url queue used by this
-        type UrlQueue: UrlQueue<UrlWithDepth>;
+        type UrlQueue: UrlQueue<UrlWithDepth> + SupportsForcedQueueElement<UrlWithDepth>;
 
         /// Returns true if poll possible
         async fn can_poll(&self) -> bool;
@@ -253,5 +255,11 @@ pub mod traits {
 
         /// Provides an unique id for this crawl instance.
         fn create_crawl_id(&self) -> String;
+    }
+
+    pub trait SupportsDomainHandling {
+        type DomainHandler: DomainLastCrawledManager;
+
+        fn get_domain_manager(&self) -> &Self::DomainHandler;
     }
 }

@@ -26,7 +26,8 @@ use crate::extraction::ExtractedLink;
 use crate::gdbr::identifier::{GdbrIdentifierRegistry, InitHelper};
 use crate::io::fs::FileSystemAccess;
 use crate::link_state::{
-    DatabaseLinkStateManager, LinkStateKind, LinkStateManager, LinkStateRockDB,
+    DatabaseLinkStateManager, IsSeedYesNo, LinkStateKind, LinkStateManager, LinkStateRockDB,
+    RecrawlYesNo,
 };
 use crate::queue::{RawAgingQueueFile, UrlQueue, UrlQueueElement, UrlQueueWrapper};
 use crate::robots::OffMemoryRobotsManager;
@@ -41,11 +42,14 @@ use rand::distributions::Alphanumeric;
 use rand::Rng;
 use rocksdb::DB;
 use std::collections::HashSet;
+use std::fs::File;
+use std::io::BufWriter;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use text_processing::stopword_registry::StopWordRegistry;
 use text_processing::tf_idf::{Idf, Tf};
 use time::OffsetDateTime;
+use crate::recrawl_management::DomainLastCrawledDatabaseManager;
 
 /// The state of the app
 #[derive(Debug)]
@@ -64,16 +68,22 @@ pub struct LocalContext {
     ct_discovered_websites: AtomicUsize,
     stop_word_registry: Option<StopWordRegistry>,
     gdbr_filer_registry: Option<GdbrIdentifierRegistry<Tf, Idf, L2R_L2LOSS_SVR>>,
+    domain_manager: DomainLastCrawledDatabaseManager,
     _graceful_shutdown_guard: UnsafeShutdownGuard,
 }
 
 impl LocalContext {
     /// Creates the state for Atra.
-    pub async fn new(configs: Configs, runtime_context: RuntimeContext) -> anyhow::Result<Self> {
+    pub fn new(configs: Configs, runtime_context: RuntimeContext) -> anyhow::Result<Self> {
         let output_path = configs.paths.root_path();
         if !output_path.exists() {
             std::fs::create_dir_all(output_path)?;
         }
+
+        serde_json::to_writer_pretty(
+            BufWriter::new(File::open(output_path.join("config.json"))?),
+            &configs,
+        )?;
 
         log::info!("Init file system.");
         let file_provider = Arc::new(FileSystemAccess::new(
@@ -126,6 +136,10 @@ impl LocalContext {
             None
         };
 
+        let domain_manager = DomainLastCrawledDatabaseManager::new(
+            db.clone()
+        );
+
         Ok(LocalContext {
             _db: db,
             url_queue,
@@ -141,6 +155,7 @@ impl LocalContext {
             links_net_manager: Arc::new(web_graph_manager),
             stop_word_registry,
             gdbr_filer_registry,
+            domain_manager,
             _graceful_shutdown_guard: runtime_context.shutdown_guard().clone(),
         })
     }
@@ -162,6 +177,16 @@ impl SupportsStopwordsRegistry for LocalContext {
     }
 }
 impl AsyncContext for LocalContext {}
+
+
+impl SupportsDomainHandling for LocalContext {
+    type DomainHandler = DomainLastCrawledDatabaseManager;
+
+    fn get_domain_manager(&self) -> &Self::DomainHandler {
+        &self.domain_manager
+    }
+}
+
 
 impl SupportsLinkSeeding for LocalContext {
     type Error = LinkHandlingError;
@@ -193,20 +218,25 @@ impl SupportsLinkSeeding for LocalContext {
                         .add(WebGraphEntry::create_link(from, url))
                         .await?;
                     if self.link_state_manager.get_link_state(url).await?.is_none() {
-                        self.link_state_manager
-                            .update_link_state(url, LinkStateKind::Discovered)
-                            .await?;
-                        if let Some(origin) = url.atra_origin() {
-                            if self
-                                .configs
-                                .crawl
-                                .budget
-                                .get_budget_for(&origin)
-                                .is_in_budget(url)
-                            {
+                        let recrawl: Option<RecrawlYesNo> = if let Some(origin) = url.atra_origin()
+                        {
+                            let budget = self.configs.crawl.budget.get_budget_for(&origin);
+                            if budget.is_in_budget(url) {
                                 for_queue.push(UrlQueueElement::new(false, 0, false, url.clone()));
                             }
-                        }
+                            Some(budget.get_recrawl_interval().is_some().into())
+                        } else {
+                            None
+                        };
+
+                        self.link_state_manager
+                            .update_link_state_no_payload(
+                                url,
+                                LinkStateKind::Discovered,
+                                Some(IsSeedYesNo::No),
+                                recrawl,
+                            )
+                            .await?;
                     }
                 }
                 ExtractedLink::Data { .. } => {

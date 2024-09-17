@@ -21,9 +21,11 @@ use crate::url::AtraUrlOrigin;
 use crate::url::UrlWithDepth;
 
 /// An unguarded version when no guarding is needed
+#[derive(Clone, Debug)]
 pub struct UnguardedSeed {
     url: UrlWithDepth,
     origin: AtraUrlOrigin,
+    is_seed: bool
 }
 
 #[allow(dead_code)]
@@ -32,10 +34,11 @@ impl UnguardedSeed {
     pub fn new(
         url: UrlWithDepth,
         origin: AtraUrlOrigin,
+        is_seed: bool,
     ) -> Result<UnguardedSeed, SeedCreationError> {
         if let Some(url_origin) = url.atra_origin() {
             if origin.eq(&url_origin) {
-                Ok(unsafe { Self::new_unchecked(url, origin) })
+                Ok(unsafe { Self::new_unchecked(url, origin, is_seed) })
             } else {
                 Err(SeedCreationError::GuardAndUrlDifferInOrigin {
                     origin_from_url: url_origin.clone(),
@@ -49,16 +52,19 @@ impl UnguardedSeed {
 
     /// Creates the seed but omits the host checks.
     /// You have to make sure yourself, that the contract is valid.
-    pub unsafe fn new_unchecked(url: UrlWithDepth, origin: AtraUrlOrigin) -> Self {
-        Self { url, origin }
+    pub unsafe fn new_unchecked(url: UrlWithDepth, origin: AtraUrlOrigin, is_seed: bool) -> Self {
+        Self { url, origin, is_seed }
     }
 
-    /// Provides a guarded version of the unguarded seed iff the host is the same.
-    pub fn guard<'a, 'guard: 'a, T: UrlGuardian>(
-        &'a self,
-        guard: &'a UrlGuard<'guard, T>,
-    ) -> GuardedSeed<'a, 'guard, T> {
-        unsafe { GuardedSeed::new_unchecked(guard, &self.url) }
+    #[cfg(test)]
+    pub fn from_url<S: AsRef<str>>(value: S) -> Result<UnguardedSeed, SeedCreationError> {
+        let url: UrlWithDepth = value.as_ref().parse().unwrap();
+        let data = url.atra_origin().unwrap();
+        Self::new(
+            url,
+            data,
+            false
+        )
     }
 }
 
@@ -70,6 +76,14 @@ impl BasicSeed for UnguardedSeed {
     fn origin(&self) -> &AtraUrlOrigin {
         &self.origin
     }
+
+    fn is_original_seed(&self) -> bool {
+        self.is_seed
+    }
+
+    fn create_unguarded(&self) -> UnguardedSeed {
+        self.clone()
+    }
 }
 
 impl TryFrom<UrlWithDepth> for UnguardedSeed {
@@ -77,7 +91,7 @@ impl TryFrom<UrlWithDepth> for UnguardedSeed {
 
     fn try_from(value: UrlWithDepth) -> Result<Self, Self::Error> {
         let host = value.atra_origin().ok_or(SeedCreationError::NoOrigin)?;
-        Ok(unsafe { Self::new_unchecked(value, host) })
+        Ok(unsafe { Self::new_unchecked(value, host, false) })
     }
 }
 

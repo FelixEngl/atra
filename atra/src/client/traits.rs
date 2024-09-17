@@ -23,6 +23,8 @@ pub trait AtraClient {
 
     type Response: AtraResponse<Error = Self::Error>;
 
+    const NAME: &'static str;
+
     fn user_agent(&self) -> &str;
 
     async fn get<U>(&self, url: U) -> Result<Self::Response, Self::Error>

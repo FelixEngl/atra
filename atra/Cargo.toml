@@ -165,6 +165,9 @@ whatlang = { version = "0.16", features = ["serde"] }
 liblinear = { workspace = true, features = ["serde"] }
 svm.workspace = true
 
+# Console
+console = {workspace = true}
+
 [target.'cfg(windows)'.dependencies]
 link_scraper = { version = "0.1", features = ["plaintext", "xml", "xlink", "svg", "ooxml", "odf", "rtf", "image"] }
 

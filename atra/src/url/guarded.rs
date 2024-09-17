@@ -72,19 +72,25 @@ impl<'a, T: UrlGuardian> UrlWithGuard<'a, T> {
     }
 
     /// Returns the seed url
-    #[cfg(test)]
     pub fn seed_url(&self) -> &UrlWithDepth {
         &self.seed_url
     }
 
+    pub fn is_seed(&self) -> bool {
+        self.is_seed
+    }
+
     /// Returns a guarded seed instance
-    pub fn get_guarded_seed<'b>(&'b self) -> GuardedSeed<'b, 'a, T> {
-        unsafe { GuardedSeed::new_unchecked(&self.guard, &self.seed_url) }
+    pub fn get_guarded_seed<'g>(&'g self) -> GuardedSeed<'a, T>
+    where
+        'g: 'a,
+    {
+        unsafe { GuardedSeed::new_unchecked(self) }
     }
 
     /// Returns an unguarded seed, you have to make sure, that the drop policy is properly done.
     pub fn get_unguarded_seed(&self) -> UnguardedSeed {
-        unsafe { UnguardedSeed::new_unchecked(self.seed_url.clone(), self.guard.origin().clone()) }
+        unsafe { UnguardedSeed::new_unchecked(self.seed_url.clone(), self.guard.origin().clone(), self.is_seed) }
     }
 
     pub fn into_seed(self) -> (UrlWithDepth, bool) {

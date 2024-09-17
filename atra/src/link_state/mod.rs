@@ -21,16 +21,16 @@ mod traits;
 
 pub use db::*;
 pub use errors::*;
-pub use kind::LinkStateKind;
+pub use kind::*;
 pub use manager::DatabaseLinkStateManager;
-pub use state::LinkState;
+pub use state::*;
 pub use traits::*;
 
 #[cfg(test)]
 mod test {
     use super::*;
     use crate::database::{destroy_db, open_db};
-    use crate::link_state::kind::LinkStateKind;
+    use crate::link_state::kind::{LinkStateKind, RecrawlYesNo};
     use crate::link_state::state::LinkState;
     use crate::url::{Depth, UrlWithDepth};
     use scopeguard::defer;
@@ -42,14 +42,16 @@ mod test {
         let new = LinkState::with_payload(
             LinkStateKind::Crawled,
             LinkStateKind::Crawled,
+            RecrawlYesNo::Yes,
+            IsSeedYesNo::Yes,
             OffsetDateTime::now_utc().replace_nanosecond(0).unwrap(),
             Depth::ZERO + (1, 2, 3),
             vec![1, 2, 3, 4, 5],
         );
 
-        let x = new.as_db_entry();
+        let x = new.as_bytes();
 
-        let deser = LinkState::from_db_entry(&x).unwrap();
+        let deser = RawLinkState::from_slice(&x).unwrap();
 
         assert_eq!(new, deser)
     }
@@ -66,6 +68,8 @@ mod test {
             &LinkState::without_payload(
                 LinkStateKind::Discovered,
                 LinkStateKind::Discovered,
+                RecrawlYesNo::Yes,
+                IsSeedYesNo::Yes,
                 OffsetDateTime::now_utc(),
                 Depth::ZERO,
             ),
@@ -77,6 +81,8 @@ mod test {
             &LinkState::without_payload(
                 LinkStateKind::Crawled,
                 LinkStateKind::Discovered,
+                RecrawlYesNo::No,
+                IsSeedYesNo::Yes,
                 OffsetDateTime::now_utc(),
                 Depth::ZERO,
             ),
@@ -88,6 +94,8 @@ mod test {
             &LinkState::without_payload(
                 LinkStateKind::InternalError,
                 LinkStateKind::Discovered,
+                RecrawlYesNo::Unset,
+                IsSeedYesNo::Yes,
                 OffsetDateTime::now_utc(),
                 Depth::ZERO,
             ),
@@ -121,6 +129,8 @@ mod test {
                 &LinkState::without_payload(
                     LinkStateKind::Discovered,
                     LinkStateKind::Discovered,
+                    RecrawlYesNo::Yes,
+                    IsSeedYesNo::Yes,
                     OffsetDateTime::now_utc(),
                     Depth::ZERO,
                 ),
@@ -132,6 +142,8 @@ mod test {
                 &LinkState::without_payload(
                     LinkStateKind::Crawled,
                     LinkStateKind::Discovered,
+                    RecrawlYesNo::Yes,
+                    IsSeedYesNo::Yes,
                     OffsetDateTime::now_utc(),
                     Depth::ZERO,
                 ),
@@ -162,21 +174,27 @@ mod test {
         {
             let db = db.weak();
 
-            db.update_state(
+            db.update_state_no_payload(
                 &UrlWithDepth::from_seed("https://amazon.de").unwrap(),
                 LinkStateKind::Discovered,
+                None,
+                None,
             )
             .unwrap();
 
-            db.update_state(
+            db.update_state_no_payload(
                 &UrlWithDepth::from_seed("https://google.de").unwrap(),
                 LinkStateKind::Discovered,
+                None,
+                None,
             )
             .unwrap();
 
-            db.update_state(
+            db.update_state_no_payload(
                 &UrlWithDepth::from_seed("https://google.de").unwrap(),
                 LinkStateKind::Crawled,
+                None,
+                None,
             )
             .unwrap();
 

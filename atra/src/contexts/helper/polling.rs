@@ -15,7 +15,7 @@
 use crate::contexts::traits::{
     SupportsConfigs, SupportsLinkState, SupportsPolling, SupportsUrlGuarding, SupportsUrlQueue,
 };
-use crate::link_state::{LinkState, LinkStateKind, LinkStateManager};
+use crate::link_state::{LinkState, LinkStateKind, LinkStateLike, LinkStateManager};
 use crate::queue::{
     AbortCause, EnqueueCalled, QueueError, QueueExtractionError, UrlQueue, UrlQueueElement,
     UrlQueueElementRef, UrlQueuePollResult,
@@ -181,9 +181,9 @@ where
 async fn drop_from_queue<C: SupportsConfigs>(
     context: &C,
     entry: &UrlQueueElement,
-    state: &LinkState,
+    state: &impl LinkStateLike,
 ) -> bool {
-    match state.kind {
+    match state.kind() {
         LinkStateKind::Discovered => false,
         LinkStateKind::ProcessedAndStored => {
             let budget = if let Some(origin) = entry.target.atra_origin() {

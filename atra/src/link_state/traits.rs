@@ -13,15 +13,14 @@
 // limitations under the License.
 
 use crate::link_state::kind::LinkStateKind;
-use crate::link_state::state::LinkState;
-use crate::link_state::LinkStateDBError;
+use crate::link_state::state::LinkStateLike;
+use crate::link_state::{IsSeedYesNo, LinkStateDBError, RawLinkState, RecrawlYesNo};
 use crate::url::UrlWithDepth;
 use std::error::Error;
-use std::ops::RangeBounds;
+use std::ops::{ControlFlow, RangeBounds};
 use std::time::Duration;
 
 /// Manages the linkstate
-#[allow(dead_code)]
 pub trait LinkStateManager {
     type Error: Error + Send + Sync;
 
@@ -29,62 +28,129 @@ pub trait LinkStateManager {
     fn crawled_websites(&self) -> Result<u64, Self::Error>;
 
     /// Sets the state of the link
-    async fn update_link_state(
+    async fn update_link_state<P>(
         &self,
         url: &UrlWithDepth,
         state: LinkStateKind,
-    ) -> Result<(), Self::Error>;
+        is_seed: Option<IsSeedYesNo>,
+        recrawl: Option<RecrawlYesNo>,
+        payload: Option<Option<&P>>,
+    ) -> Result<(), Self::Error>
+    where
+        P: ?Sized + AsRef<[u8]>;
 
-    /// Sets the state of the link with a payload
-    async fn update_link_state_with_payload(
+    async fn update_link_state_no_payload(
         &self,
         url: &UrlWithDepth,
         state: LinkStateKind,
-        payload: Vec<u8>,
-    ) -> Result<(), Self::Error>;
+        is_seed: Option<IsSeedYesNo>,
+        recrawl: Option<RecrawlYesNo>,
+    ) -> Result<(), Self::Error> {
+        self.update_link_state(url, state, is_seed, recrawl, None::<Option<&[u8]>>)
+            .await
+    }
+
+    async fn update_link_state_no_meta<P>(
+        &self,
+        url: &UrlWithDepth,
+        state: LinkStateKind,
+        payload: Option<Option<&P>>,
+    ) -> Result<(), Self::Error>
+    where
+        P: ?Sized + AsRef<[u8]>,
+    {
+        self.update_link_state(url, state, None, None, payload)
+            .await
+    }
+
+    async fn update_link_state_no_meta_and_payload(
+        &self,
+        url: &UrlWithDepth,
+        state: LinkStateKind,
+    ) -> Result<(), Self::Error> {
+        self.update_link_state(url, state, None, None, None::<Option<&[u8]>>)
+            .await
+    }
 
     /// Gets the state of the current url
-    async fn get_link_state(&self, url: &UrlWithDepth) -> Result<Option<LinkState>, Self::Error>;
+    async fn get_link_state(&self, url: &UrlWithDepth)
+        -> Result<Option<RawLinkState>, Self::Error>;
 
     /// Checks if there are any crawable links. [max_age] denotes the maximum amount of time since
     /// the last search
     async fn check_if_there_are_any_crawlable_links(&self, max_age: Duration) -> bool;
+
+    /// Checks if there are any recrawlable links
+    async fn check_if_there_are_any_recrawlable_links(&self) -> bool;
+
+    /// Returns the recrawlable links.
+    async fn collect_recrawlable_links<F: Fn(IsSeedYesNo, UrlWithDepth) -> ()>(&self, collector: F);
 }
 
 #[allow(dead_code)]
 pub trait LinkStateDB {
     /// Sets the state of [url] to [new_state]
-    fn set_state(&self, url: &UrlWithDepth, new_state: &LinkState) -> Result<(), LinkStateDBError>;
+    fn set_state(
+        &self,
+        url: &UrlWithDepth,
+        new_state: &impl LinkStateLike,
+    ) -> Result<(), LinkStateDBError>;
 
     /// Gets the state of [url] or None
-    fn get_state(&self, url: &UrlWithDepth) -> Result<Option<LinkState>, LinkStateDBError>;
+    fn get_state(&self, url: &UrlWithDepth) -> Result<Option<RawLinkState>, LinkStateDBError>;
 
     /// Upserts the state of the [url] with [upsert].
-    fn upsert_state(&self, url: &UrlWithDepth, upsert: &LinkState) -> Result<(), LinkStateDBError>;
+    fn upsert_state(
+        &self,
+        url: &UrlWithDepth,
+        upsert: &impl LinkStateLike,
+    ) -> Result<(), LinkStateDBError>;
 
     /// Basically an [upsert_state] but the update is automatically generated
     fn update_state(
         &self,
         url: &UrlWithDepth,
         new_state: LinkStateKind,
+        is_seed: Option<IsSeedYesNo>,
+        recrawl: Option<RecrawlYesNo>,
+        payload: Option<Option<impl AsRef<[u8]>>>,
     ) -> Result<(), LinkStateDBError> {
-        self.upsert_state(url, &new_state.into_update(url, None))
+        let new_upsert =
+            RawLinkState::new_preconfigured_upsert(url, new_state, is_seed, recrawl, payload);
+        self.upsert_state(url, &new_upsert)
+    }
+
+    fn update_state_no_payload(
+        &self,
+        url: &UrlWithDepth,
+        new_state: LinkStateKind,
+        is_seed: Option<IsSeedYesNo>,
+        recrawl: Option<RecrawlYesNo>,
+    ) -> Result<(), LinkStateDBError> {
+        let new_upsert = RawLinkState::new_preconfigured_upsert(
+            url,
+            new_state,
+            is_seed,
+            recrawl,
+            None::<Option<&[u8]>>,
+        );
+        self.upsert_state(url, &new_upsert)
     }
 
     /// Counts the provided number of links state with the provided [LinkStateKind]
     fn count_state(&self, link_state_type: LinkStateKind) -> Result<u64, LinkStateDBError>;
 
-    /// Basically an [upsert_state] but the update is automatically generated
-    fn update_state_with_payload(
-        &self,
-        url: &UrlWithDepth,
-        new_state: LinkStateKind,
-        payload: Vec<u8>,
-    ) -> Result<(), LinkStateDBError> {
-        self.upsert_state(url, &new_state.into_update(url, Some(payload)))
-    }
-
     /// Scans for any [states] in the underlying structure.
     /// This method is async due to its expensive nature.
     async fn scan_for_any_link_state<T: RangeBounds<LinkStateKind>>(&self, states: T) -> bool;
+
+    async fn scan_for_value<F>(&self, scanner: F) -> bool
+    where
+        F: Fn(&[u8], &[u8]) -> bool;
+
+    /// Collects as long as [collector] returns true.
+    /// Is expensive because it does not support async.
+    fn collect_values<F>(&self, collector: F)
+    where
+        F: Fn(u64, &[u8], &[u8]) -> bool;
 }

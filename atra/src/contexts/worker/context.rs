@@ -23,10 +23,11 @@ use crate::io::errors::ErrorWithPath;
 use crate::io::fs::{AtraFS, WorkerFileSystemAccess};
 use crate::seed::BasicSeed;
 use crate::stores::warc::ThreadsafeMultiFileWarcWriter;
-use crate::url::UrlWithDepth;
+use crate::url::{AtraUrlOrigin, UrlWithDepth};
 use crate::warc_ext::write_warc;
 use std::collections::HashSet;
 use std::sync::Arc;
+use time::OffsetDateTime;
 use text_processing::stopword_registry::StopWordRegistry;
 
 /// A context for a specific worker
@@ -51,8 +52,15 @@ impl<T> WorkerContext<T>
 where
     T: SupportsFileSystemAccess,
 {
-    pub async fn create(worker_id: usize, inner: Arc<T>) -> Result<Self, ErrorWithPath> {
-        let worker_warc_system = inner.fs().create_worker_file_provider(worker_id).await?;
+    pub async fn create(
+        worker_id: usize,
+        recrawl_number: usize,
+        inner: Arc<T>,
+    ) -> Result<Self, ErrorWithPath> {
+        let worker_warc_system = inner
+            .fs()
+            .create_worker_file_provider(worker_id, recrawl_number)
+            .await?;
         Ok(Self::new(worker_id, inner, worker_warc_system)?)
     }
 
@@ -249,6 +257,18 @@ where
             async fn retrieve_slim_crawled_website(&self, url: &UrlWithDepth) -> Result<Option<SlimCrawlResult>, Self::Error>;
 
             async fn store_slim_crawled_website(&self, result: SlimCrawlResult) -> Result<(), Self::Error>;
+        }
+    }
+}
+
+impl<T> SupportsDomainHandling for WorkerContext<T>
+where
+    T: SupportsDomainHandling,
+{
+    type DomainHandler = T::DomainHandler;
+    delegate::delegate! {
+        to self.inner {
+            fn get_domain_manager(&self) -> &Self::DomainHandler;
         }
     }
 }
@@ -464,7 +484,7 @@ pub mod test {
         .unwrap();
 
         let wwr = ThreadsafeMultiFileWarcWriter::new_for_worker(Arc::new(
-            fs.create_worker_file_provider(0).await.unwrap(),
+            fs.create_worker_file_provider(0, 0).await.unwrap(),
         ))
         .unwrap();
 
@@ -504,13 +524,9 @@ pub mod test {
         let mut cfg = Configs::default();
         cfg.paths.root = "test".parse().unwrap();
 
-        let local = Arc::new(
-            LocalContext::new(cfg, RuntimeContext::unbound())
-                .await
-                .unwrap(),
-        );
+        let local = Arc::new(LocalContext::new(cfg, RuntimeContext::unbound()).unwrap());
 
-        let worker = WorkerContext::create(0, local.clone()).await.unwrap();
+        let worker = WorkerContext::create(0, 0, local.clone()).await.unwrap();
         let test_data1 = create_testdata_with_on_seed(None);
         const BIG_DATA: [u8; ByteUnit::Gigabyte(1).as_u64() as usize - 20] =
             [b'a'; { ByteUnit::Gigabyte(1).as_u64() as usize - 20 }];
@@ -557,13 +573,9 @@ pub mod test {
         let mut cfg = Configs::default();
         cfg.paths.root = "test".parse().unwrap();
 
-        let local = Arc::new(
-            LocalContext::new(cfg, RuntimeContext::unbound())
-                .await
-                .unwrap(),
-        );
+        let local = Arc::new(LocalContext::new(cfg, RuntimeContext::unbound()).unwrap());
 
-        let worker = WorkerContext::create(0, local.clone()).await.unwrap();
+        let worker = WorkerContext::create(0, 0, local.clone()).await.unwrap();
         let test_data1 = create_testdata_with_on_seed(None);
         const BIG_DATA: [u8; ByteUnit::Gigabyte(1).as_u64() as usize - 20] =
             [b'a'; { ByteUnit::Gigabyte(1).as_u64() as usize - 20 }];

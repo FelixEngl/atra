@@ -38,4 +38,9 @@ pub trait BasicSeed {
 
     /// A reference to the host
     fn origin(&self) -> &AtraUrlOrigin;
+
+    fn is_original_seed(&self) -> bool;
+
+    /// Creates an unguarded version that can be used for storing.
+    fn create_unguarded(&self) -> UnguardedSeed;
 }

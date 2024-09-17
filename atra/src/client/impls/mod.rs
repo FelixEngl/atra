@@ -301,4 +301,6 @@ impl AtraClient for ClientWithUserAgent {
             }
         }
     }
+
+    const NAME: &'static str = "reqwest with middleware";
 }

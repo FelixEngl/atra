@@ -14,8 +14,11 @@
 
 use crate::database::DatabaseError;
 use crate::link_state::traits::LinkStateManager;
-use crate::link_state::{LinkState, LinkStateDB, LinkStateDBError, LinkStateKind, LinkStateRockDB};
-use crate::url::UrlWithDepth;
+use crate::link_state::{
+    IsSeedYesNo, LinkState, LinkStateDB, LinkStateDBError, LinkStateKind, LinkStateLike,
+    LinkStateRockDB, RawLinkState, RecrawlYesNo,
+};
+use crate::url::{AtraUri, UrlWithDepth};
 use rocksdb::DB;
 use std::sync::Arc;
 use std::time::Duration;
@@ -45,37 +48,30 @@ impl<DB: LinkStateDB> LinkStateManager for DatabaseLinkStateManager<DB> {
         self.db.count_state(LinkStateKind::ProcessedAndStored)
     }
 
-    async fn update_link_state(
+    async fn update_link_state<P>(
         &self,
         url: &UrlWithDepth,
         state: LinkStateKind,
-    ) -> Result<(), Self::Error> {
-        match self.db.update_state(url, state) {
+        is_seed: Option<IsSeedYesNo>,
+        recrawl: Option<RecrawlYesNo>,
+        payload: Option<Option<&P>>,
+    ) -> Result<(), Self::Error>
+    where
+        P: ?Sized + AsRef<[u8]>,
+    {
+        match self.db.update_state(url, state, is_seed, recrawl, payload) {
             Err(LinkStateDBError::Database(DatabaseError::RecoverableFailure { .. })) => {
                 yield_now().await;
-                self.db.update_state(url, state)
+                self.db.update_state(url, state, is_seed, recrawl, payload)
             }
             escalate => escalate,
         }
     }
 
-    async fn update_link_state_with_payload(
+    async fn get_link_state(
         &self,
         url: &UrlWithDepth,
-        state: LinkStateKind,
-        payload: Vec<u8>,
-    ) -> Result<(), Self::Error> {
-        let linkstate = state.into_update(url, Some(payload));
-        match self.db.upsert_state(url, &linkstate) {
-            Err(LinkStateDBError::Database(DatabaseError::RecoverableFailure { .. })) => {
-                yield_now().await;
-                self.db.upsert_state(url, &linkstate)
-            }
-            escalate => escalate,
-        }
-    }
-
-    async fn get_link_state(&self, url: &UrlWithDepth) -> Result<Option<LinkState>, Self::Error> {
+    ) -> Result<Option<RawLinkState>, Self::Error> {
         match self.db.get_state(url) {
             Err(LinkStateDBError::Database(DatabaseError::RecoverableFailure { .. })) => {
                 self.db.get_state(url)
@@ -104,6 +100,34 @@ impl<DB: LinkStateDB> LinkStateManager for DatabaseLinkStateManager<DB> {
             .await;
         lock.replace((found, OffsetDateTime::now_utc()));
         found
+    }
+
+    async fn check_if_there_are_any_recrawlable_links(&self) -> bool {
+        self.db
+            .scan_for_value(|k, v| {
+                if let Ok(value) = RawLinkState::read_recrawl(v) {
+                    value.is_yes()
+                } else {
+                    false
+                }
+            })
+            .await
+    }
+
+    async fn collect_recrawlable_links<F: Fn(IsSeedYesNo, UrlWithDepth) -> ()>(
+        &self,
+        collector: F,
+    ) {
+        self.db.collect_values(|pos, k, v| {
+            let raw = unsafe { RawLinkState::from_slice_unchecked(v.as_ref()) };
+            if raw.recrawl().is_yes() {
+                let uri: AtraUri = unsafe { String::from_utf8_lossy(k) }.parse().unwrap();
+                collector(raw.is_seed(), UrlWithDepth::new(raw.depth(), uri));
+                true
+            } else {
+                true
+            }
+        })
     }
 }
 

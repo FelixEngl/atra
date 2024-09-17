@@ -43,6 +43,7 @@ mod toolkit;
 mod url;
 mod warc_ext;
 mod web_graph;
+mod recrawl_management;
 
 fn main() {
     exec_args(AtraArgs::parse())

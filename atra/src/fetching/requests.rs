@@ -18,7 +18,7 @@ use reqwest::StatusCode;
 use std::net::SocketAddr;
 
 /// The response of a fetch.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 #[allow(dead_code)]
 pub struct FetchedRequestData {
     /// A dataholder with the body of a fetched request.

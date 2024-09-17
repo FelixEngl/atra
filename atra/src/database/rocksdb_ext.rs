@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::link_state::{LinkState, LinkStateKind};
+use crate::link_state::{LinkState, LinkStateKind, RawLinkState};
 use rocksdb::{BlockBasedOptions, DBCompressionType, MergeOperands, Options, SliceTransform, DB};
 use std::fmt::Debug;
 use std::path::Path;
@@ -22,6 +22,7 @@ pub const LINK_STATE_DB_CF: &'static str = "ls";
 pub const CRAWL_DB_CF: &'static str = "cr";
 pub const ROBOTS_TXT_DB_CF: &'static str = "rt";
 pub const SEED_ID_DB_CF: &'static str = "si";
+pub const DOMAIN_MANAGER_DB_CF: &'static str = "dm";
 
 /// Errors when opening a database.
 #[derive(Debug, Error)]
@@ -81,13 +82,14 @@ pub fn destroy_db<P: AsRef<Path>>(path: P) -> Result<(), Error> {
 }
 
 /// Creates the open option
-fn create_open_options() -> (Options, [(&'static str, Options); 4]) {
+fn create_open_options() -> (Options, [(&'static str, Options); 5]) {
     let db_options = db_options();
     let cf_options = [
         (LINK_STATE_DB_CF, link_state_cf_options()),
         (CRAWL_DB_CF, crawled_page_cf_options()),
         (ROBOTS_TXT_DB_CF, robots_txt_cf_options()),
         (SEED_ID_DB_CF, seed_id_cf_options()),
+        (DOMAIN_MANAGER_DB_CF, domain_manager_cf_options()),
     ];
     (db_options, cf_options)
 }
@@ -128,69 +130,11 @@ fn db_options() -> Options {
     options
 }
 
-fn merge_linkstate(
-    new_key: &[u8],
-    existing_val: Option<&[u8]>,
-    operands: &MergeOperands,
-) -> Option<Vec<u8>> {
-    let mut merge_result = if let Some(first) = existing_val {
-        Vec::from(first)
-    } else {
-        Vec::new()
-    };
-    for operand in operands {
-        if operand.is_empty() {
-            continue;
-        }
-        if merge_result.is_empty() {
-            merge_result.extend_from_slice(operand);
-            continue;
-        }
-        let upsert_time = LinkState::read_timestamp(&merge_result);
-        let new_time = LinkState::read_timestamp(operand);
-
-        let upsert_time = if let Ok(upsert_time) = upsert_time {
-            upsert_time
-        } else {
-            if new_time.is_ok() {
-                log::error!("Illegal value for {:?}. Does not contain a timestamp in the merge target, but can fallback to new!", new_key);
-                merge_result.clear();
-                merge_result.extend_from_slice(operand);
-            } else {
-                log::error!("Illegal value for {:?}. Does not contain a timestamp in the merge target or the new value!", new_key);
-            }
-            continue;
-        };
-
-        let new_time = if let Ok(new_time) = new_time {
-            new_time
-        } else {
-            log::error!(
-                "Illegal value for {:?}. Does not contain a timestamp in the new value!",
-                new_key
-            );
-            continue;
-        };
-
-        if upsert_time < new_time {
-            let mut last_significant = merge_result[LinkState::LAST_SIGNIFICANT_TYP_POS];
-            let old = merge_result[LinkState::KIND_POS];
-            if LinkStateKind::is_significant_raw(old) && old > last_significant {
-                last_significant = merge_result[LinkState::KIND_POS];
-            }
-            merge_result.clear();
-            merge_result.extend_from_slice(operand);
-            merge_result[LinkState::LAST_SIGNIFICANT_TYP_POS] = last_significant;
-        }
-    }
-    Some(merge_result)
-}
-
 pub fn link_state_cf_options() -> Options {
     let mut options = Options::default();
     options.create_if_missing(true);
     options.create_missing_column_families(true);
-    options.set_merge_operator_associative("merge_linkstate", merge_linkstate);
+    options.set_merge_operator_associative("merge_linkstate", RawLinkState::merge_linkstate);
     options
 }
 
@@ -204,6 +148,13 @@ pub fn robots_txt_cf_options() -> Options {
 }
 
 pub fn seed_id_cf_options() -> Options {
+    let mut options: Options = Default::default();
+    options.create_if_missing(true);
+    options.create_missing_column_families(true);
+    options
+}
+
+pub fn domain_manager_cf_options() -> Options {
     let mut options: Options = Default::default();
     options.create_if_missing(true);
     options.create_missing_column_families(true);
