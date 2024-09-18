@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use crate::app::args::{consume_args, ConsumedArgs};
-use crate::config::Configs;
+use crate::config::Config;
 use crate::runtime::graceful_shutdown;
 use crate::seed::SeedDefinition;
 use log::info;
@@ -26,6 +26,7 @@ mod logging;
 
 #[cfg(test)]
 mod terminal;
+mod config;
 
 use crate::app::atra::{ApplicationMode, Atra};
 pub use args::AtraArgs;
@@ -36,11 +37,14 @@ pub fn exec_args(args: AtraArgs) {
             execute(mode, seeds, configs);
         }
         ConsumedArgs::Nothing => {}
+        ConsumedArgs::RecoverConfig(_, _) => {
+            todo!()
+        }
     }
 }
 
 /// Execute the
-fn execute(application_mode: ApplicationMode, seed_definition: SeedDefinition, configs: Configs) {
+fn execute(application_mode: ApplicationMode, seed_definition: SeedDefinition, configs: Config) {
     let (notify, shutdown, mut barrier) = graceful_shutdown();
     let (mut atra, runtime) = Atra::build_with_runtime(application_mode, notify, shutdown);
     let signal_handler = tokio::signal::ctrl_c();
@@ -67,7 +71,7 @@ mod test {
     use crate::app::atra::ApplicationMode;
     use crate::app::{execute, AtraArgs};
     use crate::config::crawl::UserAgent;
-    use crate::config::{BudgetSetting, Configs, CrawlConfig};
+    use crate::config::{BudgetSetting, Config, CrawlConfig};
     use crate::seed::SeedDefinition;
     use time::Duration;
 
@@ -120,7 +124,7 @@ mod test {
                 "http://www.carefornetworks.de/".to_string(),
                 "https://ticktoo.com/".to_string(),
             ]),
-            Configs::new(
+            Config::new(
                 Default::default(),
                 Default::default(),
                 Default::default(),

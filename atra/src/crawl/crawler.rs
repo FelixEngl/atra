@@ -652,7 +652,7 @@ impl<'a, R: RobotsInformation, B: Blacklist> UrlChecker<'a, R, B> {
 
 #[cfg(test)]
 mod test {
-    use crate::config::{BudgetSetting, Configs, CrawlConfig};
+    use crate::config::{BudgetSetting, Config as AtraConfig, CrawlConfig};
     use crate::contexts::traits::{SupportsCrawling, SupportsUrlQueue};
     use crate::crawl::CrawlResult;
     use crate::data::RawData;
@@ -791,7 +791,7 @@ mod test {
         };
 
         let context = TestContext::new(
-            Configs::new(
+            AtraConfig::new(
                 Default::default(),
                 Default::default(),
                 Default::default(),

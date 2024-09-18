@@ -12,19 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::app::consumer::GlobalErrorConsumer;
+use std::error::Error;
+use std::future::Future;
+use std::io;
+use crate::app::consumer::{GlobalError, GlobalErrorConsumer};
 use crate::app::logging::configure_logging;
-use crate::config::Configs;
+use crate::config::Config;
 use crate::contexts::local::LocalContext;
-use crate::contexts::traits::{SupportsLinkState, SupportsMetaInfo, SupportsUrlQueue};
+use crate::contexts::traits::*;
 use crate::contexts::worker::WorkerContext;
-use crate::crawl::{crawl, ExitState};
+use crate::crawl::{crawl, ErrorConsumer, ExitState};
 use crate::link_state::LinkStateManager;
-use crate::queue::{SupportsForcedQueueElement, UrlQueue, UrlQueueElement};
-use crate::runtime::{
-    AtraRuntime, GracefulShutdown, OptionalAtraHandle, RuntimeContext, ShutdownReceiver,
-    ShutdownSignalSender,
-};
+use crate::queue::{QueueError, SupportsForcedQueueElement, UrlQueue, UrlQueueElement};
+use crate::runtime::{AtraRuntime, GracefulShutdown, OptionalAtraHandle, RuntimeContext, ShutdownReceiver, ShutdownReceiverWithWait, ShutdownSignalSender};
 use crate::seed::SeedDefinition;
 use crate::sync::barrier::WorkerBarrier;
 use cfg_if::cfg_if;
@@ -32,6 +32,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use time::OffsetDateTime;
 use tokio::task::JoinSet;
+use crate::contexts::Context;
 
 cfg_if! {
     if #[cfg(test)] {
@@ -172,7 +173,7 @@ impl Atra {
     pub async fn run(
         &mut self,
         seeds: SeedDefinition,
-        configs: Configs,
+        configs: Config,
     ) -> Result<(), anyhow::Error> {
         configure_logging(&configs);
         self.run_without_logger(seeds, configs).await
@@ -206,25 +207,25 @@ impl Atra {
         }
     }
 
+
+
     async fn run_without_logger(
         &self,
         seeds: SeedDefinition,
-        configs: Configs,
+        configs: Config,
     ) -> Result<(), anyhow::Error> {
+        let shutdown_and_handle = RuntimeContext::new(
+            self.shutdown.new_guard_instance().to_unsafe(),
+            self.handle.clone(),
+        );
+        let context = Arc::new(LocalContext::new(configs, shutdown_and_handle)?);
+        seeds.fill_queue(context.url_queue()).await;
+
+
         match self.mode {
             ApplicationMode::Single => {
                 let start = OffsetDateTime::now_utc();
-
-                let shutdown_and_handle = RuntimeContext::new(
-                    self.shutdown.new_guard_instance().to_unsafe(),
-                    self.handle.clone(),
-                );
-
-                let context = Arc::new(LocalContext::new(configs, shutdown_and_handle)?);
-                seeds.fill_queue(context.url_queue()).await;
-
                 let mut recrawl_ct = 0;
-
                 loop {
                     let barrier = WorkerBarrier::new(unsafe { NonZeroUsize::new_unchecked(1) });
 
@@ -234,7 +235,7 @@ impl Atra {
                         Arc::new(barrier),
                         GlobalErrorConsumer::new(),
                     )
-                    .await?;
+                        .await?;
 
                     let time_needed = OffsetDateTime::now_utc() - start;
                     log::info!(
@@ -271,14 +272,6 @@ impl Atra {
             }
             ApplicationMode::Multi(worker) => {
                 let start = OffsetDateTime::now_utc();
-                let shutdown_and_handle = RuntimeContext::new(
-                    self.shutdown.new_guard_instance().to_unsafe(),
-                    self.handle.clone(),
-                );
-
-                let context = Arc::new(LocalContext::new(configs, shutdown_and_handle)?);
-                seeds.fill_queue(context.url_queue()).await;
-
                 let mut recrawl_ct = 0;
 
                 loop {
@@ -300,7 +293,7 @@ impl Atra {
                                         b.clone(),
                                         GlobalErrorConsumer::new(),
                                     )
-                                    .await
+                                        .await
                                     {
                                         Ok(s) => {
                                             log::info!("Exit {i} with {s}.");
@@ -364,6 +357,8 @@ impl Atra {
     }
 }
 
+
+
 /// The mode of the application
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ApplicationMode {
@@ -377,7 +372,8 @@ mod test {
     use super::{ApplicationMode, Atra};
     use crate::app::constants::ATRA_LOGO;
     use crate::config::crawl::UserAgent;
-    use crate::config::{BudgetSetting, Configs, CrawlConfig};
+    use crate::config::{BudgetSetting, CrawlConfig};
+    use crate::config::Config as AtraConfig;
     use crate::runtime::OptionalAtraHandle;
     use crate::seed::SeedDefinition;
     use log::LevelFilter;
@@ -458,7 +454,7 @@ mod test {
         config.delay = Some(Duration::milliseconds(1000));
         config.user_agent = UserAgent::Custom("TestCrawl/Atra/v0.1.0".to_string());
 
-        let configs = Configs::new(
+        let configs = AtraConfig::new(
             Default::default(),
             Default::default(),
             Default::default(),
@@ -483,14 +479,34 @@ mod test {
     }
 }
 
+
+pub trait RunContextProvider: Sync + Send + 'static {
+    type Context: Context;
+    type Error:
+    From<<Self::Context as SupportsSlimCrawlResults>::Error>
+    + From<<Self::Context as SupportsLinkSeeding>::Error>
+    + From<<Self::Context as SupportsCrawlResults>::Error>
+    + From<<<Self::Context as SupportsLinkState>::LinkStateManager as LinkStateManager>::Error>
+    + From<<Self::Context as SupportsPolling>::Error>
+    + From<<Self::Context as SupportsCrawling>::Error>
+    + From<QueueError>
+    + From<io::Error>
+    + Error;
+
+    type ErrorConsumer: ErrorConsumer<Self::Error>;
+
+    fn create_context(&self, worker_id: usize, retry: usize) -> Self::Context;
+    fn create_consumer(&self) -> Self::ErrorConsumer;
+}
+
 #[cfg(test)]
 mod config_test {
-    use crate::config::Configs;
+    use crate::app::config::load_from;
     use crate::seed::read_seeds;
 
     #[test]
     fn can_load() {
-        Configs::load_from("test_crawl/atra").expect("Works");
+        load_from("test_crawl/atra").expect("Works");
         let _ = read_seeds("test_crawl/atra/seeds.txt").expect("Was not able to read file");
     }
 }

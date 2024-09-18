@@ -14,7 +14,7 @@
 
 use crate::blacklist::{InMemoryBlacklistManager, PolyBlackList};
 use crate::client::{build_classic_client, ClientWithUserAgent};
-use crate::config::configs::Configs;
+use crate::config::configs::Config;
 use crate::contexts::local::errors::LinkHandlingError;
 use crate::contexts::traits::*;
 use crate::contexts::BaseContext;
@@ -50,6 +50,7 @@ use std::sync::Arc;
 use text_processing::stopword_registry::StopWordRegistry;
 use text_processing::tf_idf::{Idf, Tf};
 use time::OffsetDateTime;
+use crate::app::consumer::{GlobalError, GlobalErrorConsumer};
 
 /// The state of the app
 #[derive(Debug)]
@@ -63,7 +64,7 @@ pub struct LocalContext {
     robots: OffMemoryRobotsManager,
     crawled_data: CrawlDB,
     host_manager: InMemoryUrlGuardian,
-    configs: Configs,
+    configs: Config,
     links_net_manager: Arc<QueuingWebGraphManager>,
     ct_discovered_websites: AtomicUsize,
     stop_word_registry: Option<StopWordRegistry>,
@@ -74,7 +75,7 @@ pub struct LocalContext {
 
 impl LocalContext {
     /// Creates the state for Atra.
-    pub fn new(configs: Configs, runtime_context: RuntimeContext) -> anyhow::Result<Self> {
+    pub fn new(configs: Config, runtime_context: RuntimeContext) -> anyhow::Result<Self> {
         let output_path = configs.paths.root_path();
         if !output_path.exists() {
             std::fs::create_dir_all(output_path)?;
@@ -280,7 +281,7 @@ impl SupportsMetaInfo for LocalContext {
     }
 }
 impl SupportsConfigs for LocalContext {
-    fn configs(&self) -> &Configs {
+    fn configs(&self) -> &Config {
         &self.configs
     }
 }

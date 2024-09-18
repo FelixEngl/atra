@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::config::Configs;
+use crate::config::Config as AtraConfig;
 use log::LevelFilter;
 use log4rs::append::console::ConsoleAppender;
 use log4rs::append::file::FileAppender;
@@ -21,7 +21,7 @@ use log4rs::encode::pattern::PatternEncoder;
 use log4rs::Config;
 
 /// Configure the logging
-pub fn configure_logging(configs: &Configs) {
+pub fn configure_logging(configs: &AtraConfig) {
     // todo: improve by adding custom logging
     // see: https://docs.rs/log4rs/latest/log4rs/
     // https://docs.rs/log4rs/latest/log4rs/encode/pattern/index.html

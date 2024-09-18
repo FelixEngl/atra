@@ -48,7 +48,7 @@ pub enum ExitState {
 }
 
 /// A consumer for some kind of error. Allows to return an error if necessary to stop the crawling.
-pub trait ErrorConsumer<E>: Send + Sync {
+pub trait ErrorConsumer<E> {
     type Error;
     fn consume_crawl_error(&self, e: E) -> Result<(), Self::Error>;
     fn consume_poll_error(&self, e: E) -> Result<(), Self::Error>;
@@ -73,7 +73,7 @@ where
         + From<QueueError>
         + From<io::Error>
         + Error,
-    EC: ErrorConsumer<E> + Send + Sync,
+    EC: ErrorConsumer<E>,
 {
     const PATIENCE: i32 = 150;
 

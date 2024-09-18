@@ -142,6 +142,10 @@ nom.workspace = true
 tar = "0.4"
 zip = "2"
 
+
+# JavaScript
+#deno_core.workspace = true
+
 # Text processing
 unicode-normalization.workspace = true
 unicode-segmentation.workspace = true
@@ -149,7 +153,7 @@ text_processing.workspace = true
 
 ## Stemming of data
 rust-stemmers.workspace = true
-isolang = { workspace = true, features = ["serde"] }
+isolang = { workspace = true, features = ["serde", "english_names", "local_names", "lowercase_names"] }
 iso_stopwords.workspace = true
 
 # File formats

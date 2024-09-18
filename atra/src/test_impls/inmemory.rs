@@ -16,7 +16,7 @@ use crate::blacklist::{
     create_managed_blacklist, Blacklist, BlacklistError, BlacklistManager, BlacklistType,
     ManagedBlacklist, ManagedBlacklistSender, PolyBlackList, RegexBlackList,
 };
-use crate::config::Configs;
+use crate::config::Config;
 use crate::contexts::local::LinkHandlingError;
 use crate::contexts::traits::*;
 use crate::contexts::{BaseContext, Context};
@@ -66,7 +66,7 @@ pub struct TestContext<Provider = DefaultProvider> {
     pub blacklist_manager: TestBlacklistManager,
     pub crawled_websites: std::sync::RwLock<HashMap<AtraUri, SlimCrawlResult>>,
     pub data_urls: Mutex<Vec<(UrlWithDepth, UrlWithDepth)>>,
-    pub configs: Configs,
+    pub configs: Config,
     pub host_manager: InMemoryUrlGuardian,
     pub started_at: OffsetDateTime,
     pub links_queue: TestUrlQueue,
@@ -81,7 +81,7 @@ impl<Provider> TestContext<Provider>
 where
     Provider: Send + Sync + 'static,
 {
-    pub fn new(configs: Configs, provider: Provider) -> Self {
+    pub fn new(configs: Config, provider: Provider) -> Self {
         Self {
             ct_crawled_websites: AtomicUsize::new(0),
             ct_found_websites: AtomicUsize::new(0),
@@ -103,7 +103,7 @@ where
     }
 
     pub fn with_blacklist(
-        configs: Configs,
+        configs: Config,
         provider: Provider,
         blacklist: Option<Vec<String>>,
     ) -> Self {
@@ -135,7 +135,7 @@ where
 
 impl Default for TestContext<DefaultProvider> {
     fn default() -> Self {
-        Self::new(Configs::default(), DefaultProvider::default())
+        Self::new(Config::default(), DefaultProvider::default())
     }
 }
 
@@ -341,7 +341,7 @@ impl<Provider> SupportsConfigs for TestContext<Provider>
 where
     Provider: Send + Sync + 'static,
 {
-    fn configs(&self) -> &Configs {
+    fn configs(&self) -> &Config {
         &self.configs
     }
 }

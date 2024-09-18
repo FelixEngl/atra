@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use crate::config::crawl::RedirectPolicy;
-use crate::config::Configs;
+use crate::config::Config;
 use crate::contexts::traits::{SupportsConfigs, SupportsCrawling};
 use crate::seed::BasicSeed;
 use crate::toolkit::domains::domain_name;
@@ -102,7 +102,7 @@ where
     Ok(client.build())
 }
 
-fn setup_redirect_policy(config: &Configs, url: &UrlWithDepth) -> reqwest::redirect::Policy {
+fn setup_redirect_policy(config: &Config, url: &UrlWithDepth) -> reqwest::redirect::Policy {
     match config.crawl.redirect_policy {
         RedirectPolicy::Loose => reqwest::redirect::Policy::limited(config.crawl.redirect_limit),
         RedirectPolicy::Strict => {

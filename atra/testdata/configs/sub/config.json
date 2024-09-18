@@ -1,0 +1,110 @@
+{
+  "system": {
+    "robots_cache_size": 1222,
+    "web_graph_cache_size": 20000,
+    "max_file_size_in_memory": 100000000,
+    "log_level": "INFO",
+    "log_to_file": false
+  },
+  "paths": {
+    "root": "./atra_data\\single_AAAAAAAAAAAX9k6nPzvRZA==_xNgUOWEL1Wc=",
+    "directories": {
+      "database": "./rocksdb",
+      "big_files": "./big_files"
+    },
+    "files": {
+      "queue": "./queue.tmp",
+      "blacklist": "./blacklist.txt",
+      "web_graph": "./web_graph.ttl"
+    }
+  },
+  "session": {
+    "service": "atra",
+    "collection": "unnamed",
+    "crawl_job_id": 0
+  },
+  "crawl": {
+    "user_agent": "Default",
+    "respect_robots_txt": true,
+    "respect_nofollow": true,
+    "crawl_embedded_data": false,
+    "crawl_javascript": true,
+    "crawl_onclick_by_heuristic": false,
+    "apply_gdbr_filter_if_possible": true,
+    "store_only_html_in_warc": true,
+    "store_big_file_hints_in_warc": false,
+    "max_file_size": null,
+    "max_robots_age": null,
+    "ignore_sitemap": false,
+    "subdomains": false,
+    "cache": false,
+    "use_cookies": true,
+    "cookies": null,
+    "headers": null,
+    "proxies": null,
+    "tld": false,
+    "delay": null,
+    "budget": {
+      "default": {
+        "depth_on_website": 1,
+        "depth": null,
+        "recrawl_interval": null,
+        "request_timeout": null
+      },
+      "per_host": null
+    },
+    "max_queue_age": 20,
+    "redirect_limit": 5,
+    "redirect_policy": "Loose",
+    "accept_invalid_certs": false,
+    "link_extractors": [
+      {
+        "extractor_method": "HtmlV1",
+        "apply_when": "IfSuitable"
+      },
+      {
+        "extractor_method": "JSV1",
+        "apply_when": "IfSuitable"
+      },
+      {
+        "extractor_method": "PlainText",
+        "apply_when": "IfSuitable"
+      },
+      {
+        "extractor_method": "BinaryHeuristic",
+        "apply_when": "Fallback"
+      },
+      {
+        "extractor_method": "Rtf",
+        "apply_when": "IfSuitable"
+      },
+      {
+        "extractor_method": "Ooxml",
+        "apply_when": "IfSuitable"
+      },
+      {
+        "extractor_method": "Odf",
+        "apply_when": "IfSuitable"
+      },
+      {
+        "extractor_method": "Exif",
+        "apply_when": "IfSuitable"
+      },
+      {
+        "extractor_method": "Xml",
+        "apply_when": "IfSuitable"
+      },
+      {
+        "extractor_method": "Svg",
+        "apply_when": "IfSuitable"
+      },
+      {
+        "extractor_method": "Xlink",
+        "apply_when": "IfSuitable"
+      }
+    ],
+    "decode_big_files_up_to": null,
+    "stopword_registry": null,
+    "gbdr": null
+  }
+}

@@ -34,7 +34,7 @@ pub enum LinkOrigin {
 }
 
 /// Extracts links from an html
-pub fn extract_links<'a, C: SupportsGdbrRegistry + SupportsConfigs>(
+pub fn extract_links<'a, C>(
     root_url: &'a UrlWithDepth,
     html: &str,
     context: &C,
@@ -43,7 +43,8 @@ pub fn extract_links<'a, C: SupportsGdbrRegistry + SupportsConfigs>(
     Cow<'a, UrlWithDepth>,
     HashSet<(LinkOrigin, CompactString)>,
     Vec<Cow<'static, str>>,
-)> {
+)> where C: SupportsGdbrRegistry + SupportsConfigs
+{
     let cfg = context.configs();
 
     let respect_nofollow: bool = cfg.crawl.respect_nofollow;
@@ -138,7 +139,9 @@ pub fn extract_links<'a, C: SupportsGdbrRegistry + SupportsConfigs>(
 
     if crawl_onclick_by_heuristic {
         for element in html.select(&selectors::ON_CLICK) {
-            let found = selectors::HREF_LOCATION_MATCHER.captures(element.attr("onclick").unwrap());
+            // Get the regex into the thread to get your own cache.
+            let regex = selectors::HREF_LOCATION_MATCHER.clone();
+            let found = regex.captures(element.attr("onclick").unwrap());
             if let Some(found) = found {
                 if let Some(found) = found.get(1) {
                     result.insert((LinkOrigin::OnClick, found.as_str().to_compact_string()));
@@ -222,7 +225,7 @@ mod selectors {
      */
 
     pub static HREF_LOCATION_MATCHER: Lazy<Regex> =
-        Lazy::new(|| Regex::new("location\\.href='([^']*)';").unwrap());
+        Lazy::new(|| Regex::new("location\\s*\\.\\s*href\\s*=\\s*'\\s*([^']*)\\s*'\\s*;?").unwrap());
 
     // Ignore [ping] of area/a
     static_selectors! {
@@ -237,5 +240,33 @@ mod selectors {
 
             META_NO_FOLLOW = "meta[name=\"robots\"][content=\"nofollow\"]"
         ]
+    }
+}
+
+
+#[cfg(test)]
+mod test {
+    use scraper::Html;
+
+    #[test]
+    fn can_recognize_properly(){
+        const HTML: &str = r#"
+            <html><body><button onclick="javascript:location.href = '  http://www.google.com/'"></button></button></html>
+        "#;
+
+        let html = Html::parse_document(HTML);
+        for element in html.select(&crate::extraction::html::selectors::ON_CLICK) {
+            let found = crate::extraction::html::selectors::HREF_LOCATION_MATCHER.captures(element.attr("onclick").unwrap());
+            if let Some(found) = found {
+                if let Some(found) = found.get(1) {
+                    assert_eq!(
+                        "http://www.google.com/",
+                        found.as_str()
+                    );
+                    return;
+                }
+            }
+        }
+        panic!("The on click was not found!");
     }
 }

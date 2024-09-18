@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::config::Configs;
+use crate::config::Config;
 use crate::contexts::traits::*;
 use crate::contexts::worker::error::CrawlWriteError;
 use crate::crawl::StoredDataHint;
@@ -177,7 +177,7 @@ where
 {
     delegate::delegate! {
         to self.inner {
-            fn configs(&self) -> &Configs;
+            fn configs(&self) -> &Config;
         }
     }
 }
@@ -355,7 +355,7 @@ where
 
 #[cfg(test)]
 pub mod test {
-    use crate::config::Configs;
+    use crate::config::Config;
     use crate::contexts::local::LocalContext;
     use crate::contexts::traits::{SupportsCrawlResults, SupportsSlimCrawlResults};
     use crate::contexts::worker::context::WorkerContext;
@@ -520,7 +520,7 @@ pub mod test {
             std::fs::remove_dir_all("test").unwrap();
         }
 
-        let mut cfg = Configs::default();
+        let mut cfg = Config::default();
         cfg.paths.root = "test".parse().unwrap();
 
         let local = Arc::new(LocalContext::new(cfg, RuntimeContext::unbound()).unwrap());
@@ -569,7 +569,7 @@ pub mod test {
             std::fs::remove_dir_all("test").unwrap();
         }
 
-        let mut cfg = Configs::default();
+        let mut cfg = Config::default();
         cfg.paths.root = "test".parse().unwrap();
 
         let local = Arc::new(LocalContext::new(cfg, RuntimeContext::unbound()).unwrap());

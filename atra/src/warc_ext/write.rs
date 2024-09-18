@@ -90,6 +90,11 @@ pub fn write_warc<W: SpecialWarcWriter>(
         log_consume!(builder.atra_content_encoding(enc));
     }
 
+    if let Some(language) = &content.meta.language {
+        log_consume!(builder.atra_language_hint(language.lang()));
+    }
+
+
     if let Some(ref redir) = content.meta.final_redirect_destination {
         let urilike = unsafe { UriLikeFieldValue::from_string_unchecked(redir) };
         log_consume!(builder.target_uri(urilike));
@@ -136,7 +141,7 @@ pub fn write_warc<W: SpecialWarcWriter>(
             let (skip_pointer_path, position) = worker_warc_writer.get_skip_pointer()?;
             log_consume!(builder.external_bin_file_string(file.file_name().unwrap()));
             log_consume!(builder.content_length(header_signature_octet_count as u64));
-            log_consume!(builder.header_length(header_signature_octet_count as u64));
+            log_consume!(builder.atra_header_length(header_signature_octet_count as u64));
             log_consume!(builder.truncated_reason(TruncatedReason::Length));
             let warc_header_offset = worker_warc_writer.write_header(builder)?;
             worker_warc_writer.write_body_complete(&header)?;
@@ -155,7 +160,7 @@ pub fn write_warc<W: SpecialWarcWriter>(
             log::trace!("Warc-Write: No Payload");
             let (skip_pointer_path, skip_position) = worker_warc_writer.get_skip_pointer()?;
             log_consume!(builder.content_length(header_signature_octet_count as u64));
-            log_consume!(builder.header_length(header_signature_octet_count as u64));
+            log_consume!(builder.atra_header_length(header_signature_octet_count as u64));
             let warc_header_offset = worker_warc_writer.write_header(builder)?;
             worker_warc_writer.write_body_complete(&header)?;
             return Ok(WarcSkipInstruction::new_single(
@@ -175,7 +180,7 @@ pub fn write_warc<W: SpecialWarcWriter>(
                 log::warn!("Warc-Write: No Payload, but was detected as payload. Falling back!");
                 let (skip_pointer_path, skip_position) = worker_warc_writer.get_skip_pointer()?;
                 log_consume!(builder.content_length(header_signature_octet_count as u64));
-                log_consume!(builder.header_length(header_signature_octet_count as u64));
+                log_consume!(builder.atra_header_length(header_signature_octet_count as u64));
                 let warc_header_offset = worker_warc_writer.write_header(builder)?;
                 worker_warc_writer.write_body_complete(&header)?;
                 return Ok(WarcSkipInstruction::new_single(
@@ -225,7 +230,7 @@ pub fn write_warc<W: SpecialWarcWriter>(
             match position {
                 Position::First => {
                     // warc_type set beforehand
-                    log_consume!(sub_builder.header_length(header_signature_octet_count as u64));
+                    log_consume!(sub_builder.atra_header_length(header_signature_octet_count as u64));
                 }
                 Position::Middle => {
                     log_consume!(
@@ -242,7 +247,7 @@ pub fn write_warc<W: SpecialWarcWriter>(
                 }
                 Position::Only => {
                     // Combination of first and last
-                    log_consume!(sub_builder.header_length(header_signature_octet_count as u64));
+                    log_consume!(sub_builder.atra_header_length(header_signature_octet_count as u64));
                     log_consume!(
                         sub_builder.warc_record_id_string(&Uuid::new_v4().as_urn().to_string())
                     );
@@ -274,7 +279,7 @@ pub fn write_warc<W: SpecialWarcWriter>(
         ))
     } else {
         log::trace!("Warc normal mode!");
-        log_consume!(builder.header_length(header_signature_octet_count as u64));
+        log_consume!(builder.atra_header_length(header_signature_octet_count as u64));
         log_consume!(builder.block_digest_bytes(digest.clone()));
         log_consume!(builder.payload_digest_bytes(digest));
         log_consume!(builder.content_length(body.len() as u64));

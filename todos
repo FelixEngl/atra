@@ -3,6 +3,7 @@ Features:
 
 - JS:
     - https://github.com/denoland/rusty_v8
+    - https://github.com/denoland/deno_core
 
 - Plugin System
     - https://docs.rs/abi_stable/latest/abi_stable/

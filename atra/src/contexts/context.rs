@@ -17,43 +17,51 @@ use traits::*;
 /// A trait for marking a context trait
 pub trait BaseContext {}
 
-macro_rules! create_context_trait {
-    ($($name: ident),+ $(,)?) => {
-        /// The context for a crawl context, collecting all needed taits in one.
-        pub trait Context: BaseContext + AsyncContext $(+$name)+
-        {}
 
-        impl<T> Context for T where T: ContextDelegate + AsyncContext $( + $name)+ {}
+macro_rules! create_abstract_traits {
+    ($($(#[$meta:meta])* $t_name: ident {$($name: ident),+ $(,)?}),+) => {
+        $(
+            $(#[$meta])*
+            pub trait $t_name: BaseContext + AsyncContext $(+$name)+ {}
+
+            impl<T> $t_name for T where T: ContextDelegate + AsyncContext $( + $name)+ {}
+        )+
     };
 }
 
-create_context_trait! {
-    SupportsLinkState,
-    SupportsUrlGuarding,
-    SupportsRobotsManager,
-    SupportsBlackList,
-    SupportsMetaInfo,
-    SupportsConfigs,
-    SupportsUrlQueue,
-    SupportsFileSystemAccess,
-    SupportsWebGraph,
-    SupportsStopwordsRegistry,
-    SupportsGdbrRegistry,
-    SupportsSlimCrawlResults,
-    SupportsCrawlResults,
-    SupportsLinkSeeding,
-    SupportsPolling,
-    SupportsWorkerId,
-    SupportsCrawling,
-    SupportsDomainHandling,
+create_abstract_traits! {
+    #[doc = "The context for a crawl context, collecting all needed taits in one."]
+    Context {
+        SupportsLinkState,
+        SupportsUrlGuarding,
+        SupportsRobotsManager,
+        SupportsBlackList,
+        SupportsMetaInfo,
+        SupportsConfigs,
+        SupportsUrlQueue,
+        SupportsFileSystemAccess,
+        SupportsWebGraph,
+        SupportsStopwordsRegistry,
+        SupportsGdbrRegistry,
+        SupportsSlimCrawlResults,
+        SupportsCrawlResults,
+        SupportsLinkSeeding,
+        SupportsPolling,
+        SupportsWorkerId,
+        SupportsCrawling,
+        SupportsDomainHandling,
+    }
 }
+
+
+
 
 pub mod traits {
     use crate::blacklist::BlacklistManager;
     use crate::client::traits::AtraClient;
-    use crate::config::Configs;
+    use crate::config::Config;
     use crate::contexts::BaseContext;
-    use crate::crawl::SlimCrawlResult;
+    use crate::crawl::{ErrorConsumer, SlimCrawlResult};
     use crate::crawl::{CrawlResult, CrawlTask};
     use crate::extraction::ExtractedLink;
     use crate::gdbr::identifier::GdbrRegistry;
@@ -82,6 +90,7 @@ pub mod traits {
     /// Can basically do nothing alone and is only a helper interface for the
     /// required interfaces.
     pub trait AsyncContext: BaseContext + Send + Sync + 'static {}
+
 
     pub trait SupportsLinkSeeding: BaseContext {
         type Error: Error + Send + Sync;
@@ -138,7 +147,7 @@ pub mod traits {
 
     pub trait SupportsConfigs: BaseContext {
         /// Returns a reference to the config
-        fn configs(&self) -> &Configs;
+        fn configs(&self) -> &Config;
     }
 
     pub trait SupportsUrlQueue: BaseContext {
@@ -258,9 +267,10 @@ pub mod traits {
         fn create_crawl_id(&self) -> String;
     }
 
-    pub trait SupportsDomainHandling {
+    pub trait SupportsDomainHandling: BaseContext {
         type DomainHandler: DomainLastCrawledManager;
 
         fn get_domain_manager(&self) -> &Self::DomainHandler;
     }
+
 }

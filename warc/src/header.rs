@@ -282,7 +282,9 @@ impl WarcHeader {
     create_setter_and_getter!(ContentLength with content_length(self, content_length: u64) -> Number; @required);
 
     #[cfg(feature = "atra-fieldnames")]
-    create_setter_and_getter!(HeaderLength with header_length(self, header_length: u64) -> Number; @optional);
+    create_setter_and_getter!(HeaderLength with atra_header_length(self, header_length: u64) -> Number; @optional);
+    #[cfg(feature = "atra-fieldnames")]
+    create_setter_and_getter!(LanguageHint with atra_language_hint(self, language_hint: isolang::Language) -> Language; @optional);
     create_setter_and_getter!(SegmentNumber with segment_number(self, segment_number: u64) -> Number; @optional);
     // Sum of all octets in all segments
     create_setter_and_getter!(SegmentTotalLength with segment_total_length(self, total_length: u64) -> Number; @optional);

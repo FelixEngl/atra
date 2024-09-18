@@ -18,6 +18,7 @@ mime.workspace = true
 const_format.workspace = true
 compact_str.workspace = true
 unescaper.workspace = true
+isolang = {workspace = true, features = ["english_names", "local_names", "lowercase_names"]}
 
 
 [features]

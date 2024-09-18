@@ -206,7 +206,7 @@ async fn drop_from_queue<C: SupportsConfigs>(
 #[cfg(test)]
 mod test {
     use crate::config::crawl::CrawlBudget;
-    use crate::config::{Configs, CrawlConfig, PathsConfig, SessionConfig, SystemConfig};
+    use crate::config::{Config, CrawlConfig, PathsConfig, SessionConfig, SystemConfig};
     use crate::contexts::traits::{
         SupportsConfigs, SupportsLinkState, SupportsPolling, SupportsUrlGuarding, SupportsUrlQueue,
     };
@@ -220,13 +220,13 @@ mod test {
 
     struct Fake {
         queue: TestUrlQueue,
-        configs: Configs,
+        configs: Config,
         guard: InMemoryUrlGuardian,
         link_state_manager: InMemoryLinkStateManager,
     }
 
     impl Fake {
-        pub fn new(configs: Configs) -> Self {
+        pub fn new(configs: Config) -> Self {
             Self {
                 queue: TestUrlQueue::default(),
                 configs,
@@ -251,7 +251,7 @@ mod test {
     }
 
     impl SupportsConfigs for Fake {
-        fn configs(&self) -> &Configs {
+        fn configs(&self) -> &Config {
             &self.configs
         }
     }
@@ -271,7 +271,7 @@ mod test {
         }
     }
 
-    fn create_configs(max_queue_age: Option<u32>, budget_setting: Option<CrawlBudget>) -> Configs {
+    fn create_configs(max_queue_age: Option<u32>, budget_setting: Option<CrawlBudget>) -> Config {
         let mut cfg = CrawlConfig::default();
         if let Some(max_queue_age) = max_queue_age {
             cfg.max_queue_age = max_queue_age;
@@ -281,7 +281,7 @@ mod test {
             cfg.budget = budget;
         }
 
-        Configs::new(
+        Config::new(
             SystemConfig::default(),
             PathsConfig::default(),
             SessionConfig::default(),

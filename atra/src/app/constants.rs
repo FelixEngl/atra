@@ -34,8 +34,8 @@ use ubyte::ToByteUnit;
 pub const ATRA_LOGO: &'static str = include_str!("../../../logo.txt");
 pub const ATRA_WELCOME: &'static str = include_str!("welcome.txt");
 
-pub fn create_example_config() -> crate::config::configs::Configs {
-    crate::config::configs::Configs {
+pub fn create_example_config() -> crate::config::configs::Config {
+    crate::config::configs::Config {
         system: Default::default(),
         paths: Default::default(),
         session: SessionConfig {

@@ -18,7 +18,7 @@ pub mod paths;
 pub mod session;
 pub mod system;
 
-pub use configs::Configs;
+pub use configs::Config;
 pub use crawl::BudgetSetting;
 pub use crawl::CrawlConfig;
 #[allow(unused_imports)]

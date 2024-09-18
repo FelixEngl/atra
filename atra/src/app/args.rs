@@ -20,9 +20,10 @@ use std::str::FromStr;
 use time::Duration;
 
 use crate::app::atra::ApplicationMode;
+use crate::app::config::{discover, discover_or_default, load_from};
 use crate::app::constants::{create_example_config, ATRA_LOGO, ATRA_WELCOME};
 use crate::config::crawl::UserAgent;
-use crate::config::{BudgetSetting, Configs};
+use crate::config::{BudgetSetting, Config};
 use crate::seed::SeedDefinition;
 
 #[derive(Parser, Debug, Default)]
@@ -91,14 +92,25 @@ pub enum RunMode {
         /// Seed to be crawled
         seeds: SeedDefinition,
     },
-    // CLUSTER,
-    /// Initializes Atra for Multi by creating the default config file.
-    INIT,
+    /// Continue a crawl that was somehow ended.
+    RECOVER {
+        /// The number of threads used by this application.
+        #[arg(short, long)]
+        threads: Option<usize>,
+        /// Log to file
+        #[arg(long)]
+        log_to_file: bool,
+        /// The path to the folder with the atra data
+        path: String,
+    },
+    /// Initializes Atra for Multi by creating the default config filee
+    INIT
 }
 
 #[derive(Debug)]
 pub enum ConsumedArgs {
-    RunConfig(ApplicationMode, SeedDefinition, Configs),
+    RunConfig(ApplicationMode, SeedDefinition, Config),
+    RecoverConfig(ApplicationMode, Config),
     Nothing,
 }
 
@@ -117,7 +129,7 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
                 log_to_file,
                 delay,
             } => {
-                let mut configs = Configs::discover_or_default().unwrap_or_default();
+                let mut configs = discover_or_default().unwrap_or_default();
 
                 configs.paths.root = configs.paths.root_path().join(format!(
                     "single_{}_{}",
@@ -170,8 +182,8 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
                 log_to_file,
             } => {
                 let mut configs = match configs_folder {
-                    None => Configs::discover(),
-                    Some(path) => Configs::load_from(path),
+                    None => discover(),
+                    Some(path) => load_from(path),
                 }
                 .expect("No config found!");
 
@@ -211,7 +223,7 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
             RunMode::INIT => {
                 println!("{}\n\n{}\n", ATRA_WELCOME, ATRA_LOGO);
                 println!("Start creating the default config.");
-                let cfg = Configs::default();
+                let cfg = Config::default();
                 let root = cfg.paths.root_path();
                 std::fs::create_dir_all(root).unwrap();
                 let path = root.join("config.json");
@@ -235,6 +247,13 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
                 }
 
                 ConsumedArgs::Nothing
+            }
+            RunMode::RECOVER {
+                threads,
+                log_to_file,
+                path
+            } => {
+                todo!("Recovery Mode!")
             }
         }
     } else {
@@ -298,6 +317,7 @@ mod test {
                 execute(mode, seeds, configs);
             }
             ConsumedArgs::Nothing => {}
+            _ => {}
         }
     }
 }

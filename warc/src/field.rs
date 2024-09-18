@@ -23,6 +23,7 @@ use crate::media_type::{parse_media_type, MediaType};
 use crate::record_type::WarcRecordType;
 use crate::truncated_reason::TruncatedReason;
 use encoding_rs::Encoding;
+use isolang::ParseLanguageError;
 use itertools::Either;
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumString};
@@ -129,6 +130,10 @@ pub enum WarcFieldName {
     #[cfg(feature = "atra-fieldnames")]
     #[strum(to_string = "xx--atra--header-length")]
     HeaderLength,
+    /// Contains a language hint for the file
+    #[cfg(feature = "atra-fieldnames")]
+    #[strum(to_string = "xx--atra--language-hint")]
+    LanguageHint,
     #[strum(default)]
     Unknown(String),
 }
@@ -159,6 +164,9 @@ pub enum WarcFieldValueParseError {
     AddressNotParseable(#[from] AddrParseError),
     #[error("Failed to parse mimetype with {0}")]
     MediaTypeNotParseable(String),
+    #[cfg(feature = "atra-fieldnames")]
+    #[error(transparent)]
+    ParseLanguageError(#[from] ParseLanguageError)
 }
 
 /// The values supported in the warc map
@@ -170,6 +178,8 @@ pub enum WarcFieldValue {
     Encoding(&'static Encoding),
     ContentType(MediaType),
     Date(OffsetDateTime),
+    #[cfg(feature = "atra-fieldnames")]
+    Language(isolang::Language),
     Number(u64),
     Bool(bool),
     TruncatedReason(TruncatedReason),
@@ -278,6 +288,11 @@ impl WarcFieldValue {
                 // Use unsafe to protect from bad user data
                 WarcFieldValue::General(unsafe { GeneralFieldValue::from_buffer_unchecked(buf) })
             }
+
+            #[cfg(feature = "atra-fieldnames")]
+            WarcFieldName::LanguageHint => {
+                WarcFieldValue::Language(std::str::from_utf8(buf)?.trim().parse()?)
+            }
         };
         Ok(result)
     }
@@ -295,6 +310,8 @@ impl WarcFieldValue {
             WarcFieldValue::Raw(value) => out.write(value.as_ref())?,
             WarcFieldValue::Encoding(value) => out.write(value.name().as_bytes())?,
             WarcFieldValue::Bool(value) => out.write(if *value { b"true" } else { b"false" })?,
+            #[cfg(feature = "atra-fieldnames")]
+            WarcFieldValue::Language(value) => out.write(value.to_639_3().as_bytes())?
         })
     }
 }

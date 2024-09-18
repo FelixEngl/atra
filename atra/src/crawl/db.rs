@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::config::Configs;
+use crate::config::Config;
 use crate::crawl::SlimCrawlResult;
 use crate::database::DBActionType::{Read, Write};
 use crate::database::{DatabaseError, RawDatabaseError, RawIOError};
@@ -35,7 +35,7 @@ impl CrawlDB {
     }
 
     /// Panics if the needed CFs are not configured.
-    pub fn new(db: Arc<DB>, _: &Configs) -> Result<Self, rocksdb::Error> {
+    pub fn new(db: Arc<DB>, _: &Config) -> Result<Self, rocksdb::Error> {
         db_health_check!(db: [
             Self::CRAWL_DB_CF => (
                 if test crawled_page_cf_options
