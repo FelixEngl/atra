@@ -82,15 +82,50 @@ pub enum WarcFieldName {
     WarcType,
     #[strum(to_string = "warc-warcinfo-id")]
     WarcInfoID,
+    /// Stores the explicit content encoding recognized by atra. This can derivate from the response
+    /// header when the header was wrong or atra failed to decode the content without errors.
     #[cfg(feature = "atra-fieldnames")]
     #[strum(to_string = "xx--atra--content-encoding")]
     ContentEncoding,
+    /// Stores if there is some external data for this warc entry. It is usually relative to the
+    /// files position or some kind of root folder. (but can also contain an absolute path.)
     #[cfg(feature = "atra-fieldnames")]
     #[strum(to_string = "xx--atra--external-file")]
     ExternalBinFile,
+    /// Stores a boolean if the content is Base64 encoded.
     #[cfg(feature = "atra-fieldnames")]
     #[strum(to_string = "xx--atra--base64")]
     Base64Encoded,
+    /// Stores the length of the header in bytes for using jump pointer in the warc file.
+    /// The header length is usually the printed response header (one entry per line)
+    /// followed by a single newline '\n' before
+    ///
+    ///
+    /// Example:
+    /// ```text
+    /// WARC/1.1
+    /// xx--atra--header-length:204
+    /// warc-record-id:urn:uuid:cc70c0a1-1f4c-5326-a405-283380dd14d4
+    /// content-type:text/html;charset=UTF-8
+    /// xx--atra--content-encoding:UTF-8
+    /// content-length:419727
+    /// warc-payload-digest:XXH128:5J2YTMD6FP7HAJS7FBG3TRW3FU======
+    /// warc-type:response
+    /// warc-date:2024-09-18T10:06:28.789006500Z
+    /// warc-target-uri:https://www.arche-naturkueche.de/de/rezepte/uebersicht.php
+    /// warc-block-digest:XXH128:5J2YTMD6FP7HAJS7FBG3TRW3FU======
+    ///
+    /// GET 200 OK
+    /// content-type: text/html; charset=UTF-8
+    /// transfer-encoding: chunked
+    /// connection: keep-alive
+    /// keep-alive: timeout=15
+    /// date: Wed, 18 Sep 2024 10:06:27 GMT
+    /// server: Apache
+    /// x-xss-protection: 0
+    ///
+    /// <!DOCTYPE html>
+    /// ```
     #[cfg(feature = "atra-fieldnames")]
     #[strum(to_string = "xx--atra--header-length")]
     HeaderLength,

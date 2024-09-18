@@ -117,8 +117,7 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
                 log_to_file,
                 delay,
             } => {
-                let mut configs =
-                    Configs::discover_or_default().expect("Expected some kind of config!");
+                let mut configs = Configs::discover_or_default().unwrap_or_default();
 
                 configs.paths.root = configs.paths.root_path().join(format!(
                     "single_{}_{}",
@@ -261,6 +260,44 @@ pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
             ConsumedArgs::Nothing
         } else {
             ConsumedArgs::Nothing
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::app::args::{consume_args, ConsumedArgs};
+    use crate::app::{execute, AtraArgs};
+    use crate::config::crawl::UserAgent;
+    use crate::seed::SeedDefinition;
+    use log::max_level;
+
+    #[test]
+    fn works() {
+        let args = AtraArgs {
+            generate_example_config: false,
+            mode: Some(crate::app::args::RunMode::SINGLE {
+                session_name: None,
+                depth: 1,
+                log_to_file: true,
+                delay: None,
+                absolute: false,
+                agent: UserAgent::Default,
+                seeds: SeedDefinition::Single(
+                    "https://www.arche-naturkueche.de/de/rezepte/uebersicht.php".to_string(),
+                ),
+                log_level: max_level(),
+                timeout: None,
+            }),
+        };
+
+        let args = consume_args(args);
+
+        match args {
+            ConsumedArgs::RunConfig(mode, seeds, configs) => {
+                execute(mode, seeds, configs);
+            }
+            ConsumedArgs::Nothing => {}
         }
     }
 }

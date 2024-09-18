@@ -81,7 +81,13 @@ impl LocalContext {
         }
 
         serde_json::to_writer_pretty(
-            BufWriter::new(File::open(output_path.join("config.json"))?),
+            BufWriter::new(
+                File::options()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .open(output_path.join("config.json"))?,
+            ),
             &configs,
         )?;
 

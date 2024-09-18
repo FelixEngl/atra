@@ -220,7 +220,7 @@ impl Atra {
                     self.handle.clone(),
                 );
 
-                let context = Arc::new(LocalContext::new(configs, shutdown_and_handle).unwrap());
+                let context = Arc::new(LocalContext::new(configs, shutdown_and_handle)?);
                 seeds.fill_queue(context.url_queue()).await;
 
                 let mut recrawl_ct = 0;
@@ -276,7 +276,7 @@ impl Atra {
                     self.handle.clone(),
                 );
 
-                let context = Arc::new(LocalContext::new(configs, shutdown_and_handle).unwrap());
+                let context = Arc::new(LocalContext::new(configs, shutdown_and_handle)?);
                 seeds.fill_queue(context.url_queue()).await;
 
                 let mut recrawl_ct = 0;

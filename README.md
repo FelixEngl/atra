@@ -139,7 +139,6 @@ The following table shows the configs written as qualified paths for a json.
 | crawl.use_default_stopwords         | boolean                                                                                        | If this is set all stopwords inclide the default stopwords known to atra (drfault: true)                                                                                                |
 | crawl.stopword_registry             | JSON/null; (see [Stopword Registry](#Stopword-Registry))                                       | Used to configure the global registry for stopwords.                                                                                                                                    |
 | crawl.gbdr                          | JSON/null; (see [GDBR Filter](#GBDR-Filter))                                                   | Used to configure the SVM for filtering GBRS. The model used is the L2R_L2LOSS_SVR.                                                                                                     |
-| crawl.chrome_settings               | - unused -                                                                                     | - unused -                                                                                                                                                                              |
 
 ### Log Level
 | Level | Explanation                                        |

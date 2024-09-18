@@ -4,25 +4,20 @@ Features:
 - JS:
     - https://github.com/denoland/rusty_v8
 
-- GDPR recognition
-    - https://github.com/shadeMe/liblinear-rs/tree/master
-    - Model: Eric - DSGVO
-    - https://docs.rs/libsvm/latest/libsvm/
+- Plugin System
+    - https://docs.rs/abi_stable/latest/abi_stable/
+
+
 - Chrome
 - TOR support
 - Dedublication
     - https://github.com/internetarchive/heritrix3/wiki/Duplication%20Reduction%20Processors
 - Extractors:
     - https://heritrix.readthedocs.io/en/latest/bean-reference.html#link-extractors
-    - PDF
-    - CSS
     - SWF
     - WORD/EXCEL/POWERPOINT
     - More comprehensive JS
-    - XML/JSON
-    - Universal
     - JAR/EXE
-    - nofollow-Attribute!
 
 - Archive Detection & Crawling
 - Database Crawling?
@@ -69,9 +64,6 @@ Features:
     - Compare Stack?
 
 
-- Build
-    - https://crates.io/crates/autocfg
-
 
 - Warc
     - https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1-annotated/
@@ -100,15 +92,12 @@ Features:
     404 -> Do not talk to it
     410: Block until told otherwise
 
--- Interval crawling
-
 -- Use stdout for Unix-like output for piping
 
 
 
 
 -- https://crates.io/crates/ethbloom
-
 
 
 

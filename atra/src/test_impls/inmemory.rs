@@ -413,7 +413,7 @@ where
         &self,
         url: &UrlWithDepth,
     ) -> Result<Option<SlimCrawlResult>, DatabaseError> {
-        let crawled = self.crawled_websites.read();
+        let crawled = self.crawled_websites.read().unwrap();
         if let Some(found) = crawled.get(url.url()) {
             Ok(Some(found.clone()))
         } else {
@@ -426,7 +426,7 @@ where
         result: SlimCrawlResult,
     ) -> Result<(), DatabaseError> {
         self.ct_crawled_websites.fetch_add(1, Ordering::Relaxed);
-        let mut crawled = self.crawled_websites.write();
+        let mut crawled = self.crawled_websites.write().unwrap();
         crawled.insert(result.meta.url.url().clone(), result);
         Ok(())
     }
