@@ -13,8 +13,8 @@
 // limitations under the License.
 
 use super::origin::{AtraOriginProvider, AtraUrlOrigin};
+use crate::toolkit::CaseInsensitiveString;
 use crate::url::cleaner::AtraUrlCleaner;
-use case_insensitive_string::CaseInsensitiveString;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -49,6 +49,10 @@ pub enum ParseError {
 }
 
 impl AtraUri {
+    pub fn parse<T: AsRef<str>>(url: T) -> Result<Self, ParseError> {
+        url.as_ref().parse()
+    }
+
     pub fn with_base<U: AsRef<str>>(base: &Self, target: U) -> Result<Self, ParseError> {
         let target = target.as_ref();
         match base {
@@ -70,12 +74,14 @@ impl AtraUri {
         cleaner.clean(self)
     }
 
+    /// Returns the path
     pub fn path(&self) -> Option<&str> {
         match self {
             AtraUri::Url(value) => Some(value.path()),
         }
     }
 
+    /// Returns all file endings of the url
     pub fn get_file_endings(&self) -> Option<Vec<&str>> {
         match self {
             AtraUri::Url(value) => {
@@ -93,6 +99,7 @@ impl AtraUri {
         }
     }
 
+    /// Returns true if the hosts are similar
     pub fn same_host(&self, other: &Self) -> bool {
         match self {
             AtraUri::Url(a) => match other {
@@ -101,21 +108,76 @@ impl AtraUri {
         }
     }
 
+    /// Returns true if the hosts are similar
     pub fn same_host_url(&self, other: &Url) -> bool {
         match self {
             AtraUri::Url(a) => a.host() == other.host(),
         }
     }
 
+    /// If this URL has a host and it is a domain name (not an IP address), return it.
+    /// Non-ASCII domains are punycode-encoded per IDNA if this is the host
+    /// of a special URL, or percent encoded for non-special URLs.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use crate::url::atra_uri::*;
+    ///
+    /// # fn run() -> Result<(), ParseError> {
+    /// let url = AtraUri::parse("https://127.0.0.1/")?;
+    /// assert_eq!(url.domain(), None);
+    ///
+    /// let url = AtraUri::parse("mailto:rms@example.net")?;
+    /// assert_eq!(url.domain(), None);
+    ///
+    /// let url = AtraUri::parse("https://example.com/")?;
+    /// assert_eq!(url.domain(), Some("example.com".to_string()));
+    /// # Ok(())
+    /// # }
+    /// # run().unwrap();
+    /// ```
     pub fn domain(&self) -> Option<String> {
         match self {
             AtraUri::Url(value) => value.domain().map(|value| value.to_lowercase()),
         }
     }
 
-    pub fn host(&self) -> Option<String> {
+    /// Return the string representation of the host (domain or IP address) for this URL, if any.
+    ///
+    /// Non-ASCII domains are punycode-encoded per IDNA if this is the host
+    /// of a special URL, or percent encoded for non-special URLs.
+    /// IPv6 addresses are given between `[` and `]` brackets.
+    ///
+    /// Cannot-be-a-base URLs (typical of `data:` and `mailto:`) and some `file:` URLs
+    /// don’t have a host.
+    ///
+    /// See also the `host` method.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use crate::url::atra_uri::*;
+    ///
+    /// # fn run() -> Result<(), ParseError> {
+    /// let url = AtraUri::parse("https://127.0.0.1/index.html")?;
+    /// assert_eq!(url.host(), Some("127.0.0.1".to_string()));
+    ///
+    /// let url = AtraUri::parse("ftp://rms@example.com")?;
+    /// assert_eq!(url.host(), Some("example.com".to_string()));
+    ///
+    /// let url = AtraUri::parse("unix:/run/foo.socket")?;
+    /// assert_eq!(url.host(), None);
+    ///
+    /// let url = AtraUri::parse("data:text/plain,Stuff")?;
+    /// assert_eq!(url.host(), None);
+    /// # Ok(())
+    /// # }
+    /// # run().unwrap();
+    /// ```
+    pub fn host(&self) -> Option<CaseInsensitiveString> {
         match self {
-            AtraUri::Url(value) => value.host_str().map(|value| value.to_lowercase()),
+            AtraUri::Url(value) => value.host_str().map(|value| value.into()),
         }
     }
 
@@ -123,7 +185,7 @@ impl AtraUri {
     /// Cleanup depends on the public suffix list.
     pub fn domain_name(&self) -> Option<CaseInsensitiveString> {
         match self {
-            AtraUri::Url(value) => Some(CaseInsensitiveString::new(
+            AtraUri::Url(value) => Some(CaseInsensitiveString::from(
                 psl::domain(value.host_str()?.as_bytes())?.as_bytes(),
             )),
         }
@@ -176,12 +238,14 @@ impl AtraUri {
         }
     }
 
+    /// Returns the str representation, iff the value can be represented as str
     pub fn try_as_str(&self) -> Option<&str> {
         match self {
             AtraUri::Url(value) => Some(value.as_str()),
         }
     }
 
+    /// Returns either a str or the result of the to_string
     pub fn as_str(&self) -> Cow<str> {
         match self.try_as_str() {
             None => Cow::Owned(self.to_string()),
@@ -217,8 +281,31 @@ impl FromStr for AtraUri {
 }
 
 impl From<Url> for AtraUri {
+    #[inline]
     fn from(value: Url) -> Self {
-        AtraUri::Url(value)
+        Self::Url(value)
+    }
+}
+impl<'a> TryFrom<&'a str> for AtraUri {
+    type Error = ParseError;
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
+        Ok(AtraUri::from_str(value)?)
+    }
+}
+
+impl TryFrom<String> for AtraUri {
+    type Error = ParseError;
+    #[inline]
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.as_str().try_into()
+    }
+}
+
+impl<'a> TryFrom<&'a String> for AtraUri {
+    type Error = ParseError;
+    #[inline]
+    fn try_from(value: &'a String) -> Result<Self, Self::Error> {
+        value.as_str().try_into()
     }
 }
 

@@ -1,6 +1,6 @@
 [package]
 name = "atra"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 # https://en.wikipedia.org/wiki/Erigone_atra
@@ -32,8 +32,7 @@ http-cache-reqwest = "0.14"
 ua_generator = "0.5"
 tempfile = "3"
 
-# Webdrivers
-chromiumoxide = { version = "0.7", optional = true, features = ["tokio-runtime", "bytes"], default-features = false }
+
 
 # Configuration and Init
 clap = { version = "4", features = ["derive"] }
@@ -73,7 +72,7 @@ float-cmp.workspace = true
 # Memory stuff
 smallvec = { workspace = true, features = ["serde", "const_new", "const_generics", "union"] }
 compact_str = { workspace = true, features = ["serde", "bytes"] }
-case_insensitive_string = { workspace = true, features = ["serde"] }
+#case_insensitive_string = { workspace = true, features = ["serde"] }
 
 # Data structures
 indexmap = "2"
@@ -186,6 +185,3 @@ lipsum.workspace = true
 
 [build-dependencies]
 rustc_version = "0"
-
-[features]
-chrome = ["dep:chromiumoxide"]

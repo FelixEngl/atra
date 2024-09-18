@@ -100,7 +100,7 @@ mod test {
         assert_eq!(ptr, y);
 
         let x = create_test_data(
-            UrlWithDepth::from_seed("https://www.google.de").unwrap(),
+            UrlWithDepth::from_url("https://www.google.de").unwrap(),
             None,
         );
         let slim = SlimCrawlResult::new(&x, ptr);

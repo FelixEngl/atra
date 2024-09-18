@@ -20,13 +20,13 @@ mod unguarded;
 use crate::url::{AtraUrlOrigin, UrlWithDepth};
 use cfg_if::cfg_if;
 
+pub use guarded::GuardedSeed;
 pub use input::lines::read_seeds;
 pub use input::seed_data::SeedDefinition;
 pub use unguarded::UnguardedSeed;
 
 cfg_if! {
     if #[cfg(test)] {
-        pub use guarded::GuardedSeed;
         pub use error::SeedCreationError;
     }
 }
@@ -42,5 +42,6 @@ pub trait BasicSeed {
     fn is_original_seed(&self) -> bool;
 
     /// Creates an unguarded version that can be used for storing.
+    #[cfg(test)]
     fn create_unguarded(&self) -> UnguardedSeed;
 }

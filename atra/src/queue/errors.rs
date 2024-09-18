@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use crate::url::ParseError;
-use std::sync::{MutexGuard, TryLockError};
 use thiserror::Error;
 
 /// Error of an url queue file

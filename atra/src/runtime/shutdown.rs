@@ -15,9 +15,7 @@
 #![allow(dead_code)]
 
 use log::info;
-use std::fmt::{Display, Formatter};
 use std::sync::atomic::{AtomicBool, Ordering};
-use thiserror::Error;
 use tokio::sync::broadcast::error::{RecvError, SendError};
 use tokio::sync::{broadcast, mpsc};
 
@@ -203,7 +201,7 @@ impl GracefulShutdown {
 
     delegate::delegate! {
         to self.shutdown {
-            #[allow(dead_code)] pub async fn wait(&mut self);
+            pub async fn wait(&mut self);
         }
     }
 
@@ -240,6 +238,7 @@ impl ShutdownReceiver for GracefulShutdown {
         }
     }
 
+    #[allow(clippy::needless_lifetimes)]
     fn weak_handle<'a>(&'a self) -> ShutdownHandle<'a, Shutdown> {
         self.shutdown.weak_handle()
     }

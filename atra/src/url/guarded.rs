@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::seed::UnguardedSeed;
+use crate::seed::{GuardedSeed, UnguardedSeed};
 use crate::url::guard::{UrlGuard, UrlGuardian};
 use crate::url::UrlWithDepth;
 use cfg_if::cfg_if;
+
 cfg_if! {
     if #[cfg(test)] {
-        use crate::seed::{GuardedSeed, SeedCreationError};
+        use crate::seed::{SeedCreationError};
         use crate::url::AtraOriginProvider;
     }
 }
@@ -66,7 +67,6 @@ impl<'a, T: UrlGuardian> UrlWithGuard<'a, T> {
     }
 
     /// Returns the domain guard
-    #[cfg(test)]
     pub fn guard(&self) -> &UrlGuard<'a, T> {
         &self.guard
     }
@@ -90,7 +90,13 @@ impl<'a, T: UrlGuardian> UrlWithGuard<'a, T> {
 
     /// Returns an unguarded seed, you have to make sure, that the drop policy is properly done.
     pub fn get_unguarded_seed(&self) -> UnguardedSeed {
-        unsafe { UnguardedSeed::new_unchecked(self.seed_url.clone(), self.guard.origin().clone(), self.is_seed) }
+        unsafe {
+            UnguardedSeed::new_unchecked(
+                self.seed_url.clone(),
+                self.guard.origin().clone(),
+                self.is_seed,
+            )
+        }
     }
 
     pub fn into_seed(self) -> (UrlWithDepth, bool) {

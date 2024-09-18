@@ -52,7 +52,6 @@ where
     }
 }
 
-#[allow(dead_code)]
 impl<'a, Guardian> UrlGuard<'a, Guardian>
 where
     Guardian: UrlGuardian,

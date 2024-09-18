@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use crate::config::BudgetSetting;
-use crate::seed::{BasicSeed, UnguardedSeed};
+use crate::seed::UnguardedSeed;
 use crate::url::{AtraUrlOrigin, UrlWithDepth};
 use console::Term;
 use std::collections::VecDeque;

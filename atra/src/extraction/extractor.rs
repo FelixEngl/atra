@@ -289,7 +289,7 @@ mod test {
                 None,
                 false
             ),
-            UrlWithDepth::from_seed("https://www.example.com/").unwrap()
+            UrlWithDepth::from_url("https://www.example.com/").unwrap()
         );
 
         let context = TestContext::default();

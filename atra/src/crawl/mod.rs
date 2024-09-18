@@ -30,9 +30,8 @@ use crate::contexts::traits::{
 use crate::contexts::Context;
 use crate::queue::QueueError;
 use crate::queue::{AbortCause, QueueExtractionError, UrlQueuePollResult};
-use crate::runtime::{ShutdownReceiver, ShutdownReceiverWithWait};
+use crate::runtime::ShutdownReceiverWithWait;
 use crate::sync::barrier::{ContinueOrStop, WorkerBarrier};
-use crate::url::guard::GuardianError;
 
 use crate::link_state::LinkStateManager;
 #[cfg(test)]

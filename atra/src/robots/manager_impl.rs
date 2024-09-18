@@ -86,7 +86,7 @@ impl RobotsManager for InMemoryRobotsManager {
         // Later used but cheaper than downloading and then recognizing invalidity for manager.
         let origin = url.atra_origin().ok_or(RobotsError::NoDomainForUrl)?;
         let result = client
-            .get(&get_robots_url(&url.as_str())?)
+            .get(&get_robots_url(&url.try_as_str())?)
             .await
             .map_err(RobotsError::ClientWasNotAbleToSend)?;
         let retrieved_at = OffsetDateTime::now_utc();
@@ -216,7 +216,7 @@ impl OffMemoryRobotsManager {
         }
 
         let result = client
-            .get(&get_robots_url(&url.as_str())?)
+            .get(&get_robots_url(&url.try_as_str())?)
             .await
             .map_err(RobotsError::ClientWasNotAbleToSend)?;
         let retrieved_at = OffsetDateTime::now_utc();

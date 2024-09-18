@@ -18,6 +18,7 @@ use crate::gdbr::scraper_ext::Text;
 use crate::html::{HtmlTag, HtmlTagCategory};
 use crate::toolkit::LanguageInformation;
 #[cfg(test)]
+#[allow(unused_imports)]
 use camino::Utf8Path;
 use ego_tree::NodeRef;
 use isolang::Language;

@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use thiserror::Error;
 use crate::contexts::local::LinkHandlingError;
 use crate::contexts::worker::CrawlWriteError;
 use crate::crawl::ErrorConsumer;
@@ -20,6 +19,7 @@ use crate::database::DatabaseError;
 use crate::link_state::{LinkStateDBError, LinkStateError};
 use crate::queue::QueueError;
 use crate::test_impls::FakeResponseError;
+use thiserror::Error;
 
 pub struct TestErrorConsumer;
 

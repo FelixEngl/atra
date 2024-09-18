@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod case_insensitive_str;
 pub mod digest;
 pub mod domains;
 pub mod dropping;
@@ -24,6 +25,8 @@ pub mod serde_ext;
 pub mod utf8;
 
 pub use language_detection::*;
+
+pub use case_insensitive_str::*;
 
 /// Compare two optionals by a function.
 #[cfg(test)]

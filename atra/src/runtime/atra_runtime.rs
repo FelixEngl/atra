@@ -28,14 +28,12 @@ impl AtraRuntime {
     }
 
     /// Returns a reference to a special handle used for io tasks
-    #[allow(dead_code)]
     #[inline]
     pub fn io(&self) -> Option<&Runtime> {
         self.io.as_ref()
     }
 
     /// Returns a reference to the main runtime used of all tasks
-    #[allow(dead_code)]
     #[inline]
     pub fn main(&self) -> &Runtime {
         &self.main
@@ -109,7 +107,6 @@ impl Deref for AtraHandle {
 /// An optional Atra handle
 pub type OptionalAtraHandle = Option<AtraHandle>;
 
-#[allow(dead_code)]
 pub trait AtraHandleOption {
     /// Panics if None and not called in an async runtime.
     /// See [Handle::current] for more information.

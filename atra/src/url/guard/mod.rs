@@ -19,7 +19,7 @@ mod traits;
 
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use std::sync::{Arc, LockResult, RwLockReadGuard, RwLockWriteGuard, TryLockError, TryLockResult};
+use std::sync::{Arc, LockResult, RwLockReadGuard, RwLockWriteGuard, TryLockError};
 use std::time::SystemTime;
 use tokio::sync::watch::Receiver;
 use tokio::task::yield_now;
@@ -216,7 +216,6 @@ impl InMemoryUrlGuardianState {
         }
     }
 
-    #[allow(dead_code)]
     pub fn read_blocking(&self) -> ReadResult {
         self.data_holder.read()
     }

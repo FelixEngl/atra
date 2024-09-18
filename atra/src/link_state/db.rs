@@ -15,12 +15,12 @@
 use crate::database::DBActionType::{Merge, Read, Write};
 use crate::database::{DBActionType, RawDatabaseError, LINK_STATE_DB_CF};
 use crate::link_state::{
-    LinkState, LinkStateDB, LinkStateDBError, LinkStateKind, LinkStateLike, RawLinkState,
+    LinkStateDB, LinkStateDBError, LinkStateKind, LinkStateLike, RawLinkState,
 };
 use crate::url::UrlWithDepth;
 use crate::{db_health_check, declare_column_families};
 use rocksdb::{BoundColumnFamily, ReadOptions, DB};
-use std::ops::{ControlFlow, RangeBounds};
+use std::ops::RangeBounds;
 use std::sync::Arc;
 use tokio::task::yield_now;
 
@@ -232,8 +232,6 @@ impl LinkStateDB for LinkStateRockDB {
     {
         let mut options = ReadOptions::default();
         options.fill_cache(false);
-
-        const MAX_STEP_SIZE: u64 = 1_000;
 
         match self.db.flush_cf(&self.cf_handle()) {
             Ok(_) => {}

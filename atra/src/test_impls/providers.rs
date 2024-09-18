@@ -12,23 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::error::Error;
-use crate::client::{build_classic_client, ClientWithUserAgent};
 use crate::client::traits::AtraClient;
+use crate::client::{build_classic_client, ClientWithUserAgent};
 use crate::contexts::traits::{SupportsConfigs, SupportsCrawling};
 use crate::seed::BasicSeed;
 use crate::test_impls::{FakeClient, FakeResponse, FakeResponseError};
+use crate::url::AtraUri;
+use std::error::Error;
 
 pub trait ClientProvider {
     type Client: AtraClient;
 
     type Error: Error + Send + Sync;
 
-    fn provide<C, T>(
-        &self,
-        context: &C,
-        seed: &T,
-    ) -> Result<Self::Client, Self::Error>
+    fn provide<C, T>(&self, context: &C, seed: &T) -> Result<Self::Client, Self::Error>
     where
         C: SupportsCrawling + SupportsConfigs,
         T: BasicSeed;
@@ -44,24 +41,28 @@ impl ClientProvider for DefaultProvider {
     fn provide<C, T>(&self, context: &C, seed: &T) -> Result<Self::Client, Self::Error>
     where
         C: SupportsCrawling + SupportsConfigs,
-        T: BasicSeed
+        T: BasicSeed,
     {
-        let useragent = context.configs().crawl.user_agent.get_user_agent().to_string();
+        let useragent = context
+            .configs()
+            .crawl
+            .user_agent
+            .get_user_agent()
+            .to_string();
         let client = build_classic_client(context, seed, &useragent)?;
         let client = ClientWithUserAgent::new(useragent, client);
         Ok(client)
     }
 }
 
-
-pub struct FakeClientProvider{
-    inner: FakeClient
+pub struct FakeClientProvider {
+    inner: FakeClient,
 }
 
 impl FakeClientProvider {
     pub fn new() -> Self {
         Self {
-            inner: FakeClient::new()
+            inner: FakeClient::new(),
         }
     }
 
@@ -69,8 +70,8 @@ impl FakeClientProvider {
         self.inner.clear()
     }
 
-    pub fn push(&self, value: Result<FakeResponse, FakeResponseError>) {
-        self.inner.push(value)
+    pub fn insert(&self, key: AtraUri, value: Result<FakeResponse, FakeResponseError>) {
+        self.inner.insert(key, value);
     }
 }
 
@@ -81,7 +82,7 @@ impl ClientProvider for FakeClientProvider {
     fn provide<C, T>(&self, _: &C, _: &T) -> Result<Self::Client, Self::Error>
     where
         C: SupportsCrawling + SupportsConfigs,
-        T: BasicSeed
+        T: BasicSeed,
     {
         Ok(self.inner.clone())
     }

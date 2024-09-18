@@ -13,9 +13,7 @@
 // limitations under the License.
 
 use crate::seed::error::SeedCreationError;
-use crate::seed::guarded::GuardedSeed;
 use crate::seed::BasicSeed;
-use crate::url::guard::{UrlGuard, UrlGuardian};
 use crate::url::AtraOriginProvider;
 use crate::url::AtraUrlOrigin;
 use crate::url::UrlWithDepth;
@@ -25,10 +23,9 @@ use crate::url::UrlWithDepth;
 pub struct UnguardedSeed {
     url: UrlWithDepth,
     origin: AtraUrlOrigin,
-    is_seed: bool
+    is_seed: bool,
 }
 
-#[allow(dead_code)]
 impl UnguardedSeed {
     /// Creates a new UnguardedSeed for a [url] and an associated [host].
     pub fn new(
@@ -53,18 +50,18 @@ impl UnguardedSeed {
     /// Creates the seed but omits the host checks.
     /// You have to make sure yourself, that the contract is valid.
     pub unsafe fn new_unchecked(url: UrlWithDepth, origin: AtraUrlOrigin, is_seed: bool) -> Self {
-        Self { url, origin, is_seed }
+        Self {
+            url,
+            origin,
+            is_seed,
+        }
     }
 
     #[cfg(test)]
     pub fn from_url<S: AsRef<str>>(value: S) -> Result<UnguardedSeed, SeedCreationError> {
         let url: UrlWithDepth = value.as_ref().parse().unwrap();
         let data = url.atra_origin().unwrap();
-        Self::new(
-            url,
-            data,
-            false
-        )
+        Self::new(url, data, false)
     }
 }
 
@@ -81,6 +78,7 @@ impl BasicSeed for UnguardedSeed {
         self.is_seed
     }
 
+    #[cfg(test)]
     fn create_unguarded(&self) -> UnguardedSeed {
         self.clone()
     }

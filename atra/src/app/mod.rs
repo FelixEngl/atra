@@ -23,6 +23,8 @@ mod atra;
 mod constants;
 pub mod consumer;
 mod logging;
+
+#[cfg(test)]
 mod terminal;
 
 use crate::app::atra::{ApplicationMode, Atra};

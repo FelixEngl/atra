@@ -17,7 +17,7 @@ use crate::link_state::state::LinkStateLike;
 use crate::link_state::{IsSeedYesNo, LinkStateDBError, RawLinkState, RecrawlYesNo};
 use crate::url::UrlWithDepth;
 use std::error::Error;
-use std::ops::{ControlFlow, RangeBounds};
+use std::ops::RangeBounds;
 use std::time::Duration;
 
 /// Manages the linkstate
@@ -87,7 +87,6 @@ pub trait LinkStateManager {
     async fn collect_recrawlable_links<F: Fn(IsSeedYesNo, UrlWithDepth) -> ()>(&self, collector: F);
 }
 
-#[allow(dead_code)]
 pub trait LinkStateDB {
     /// Sets the state of [url] to [new_state]
     fn set_state(

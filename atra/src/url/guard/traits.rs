@@ -32,7 +32,6 @@ pub unsafe trait UnsafeUrlGuardian {
 }
 
 /// A class capable of managing origins
-#[allow(dead_code)]
 pub trait UrlGuardian: UnsafeUrlGuardian
 where
     Self: Sized,

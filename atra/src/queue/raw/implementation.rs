@@ -23,7 +23,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::fmt::Debug;
 use std::path::Path;
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard, TryLockError, TryLockResult};
+use std::sync::{Arc, RwLock, TryLockError};
 use tokio::sync::watch::Receiver;
 
 /// A mutexed queue for urls that are supported by spider.

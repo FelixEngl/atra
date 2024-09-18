@@ -387,6 +387,35 @@ pub enum DepthField {
     TotalDistanceToSeed(u64),
 }
 
+pub trait DepthFieldConversion {
+    fn to_depth_on_website(self) -> DepthField;
+    fn to_distance_to_seed(self) -> DepthField;
+    fn to_total_distance_to_seed(self) -> DepthField;
+}
+
+macro_rules! conversion_impl {
+    ($($t:ty)*) => {
+        $(
+            impl DepthFieldConversion for $t {
+                #[inline(always)]
+                fn to_depth_on_website(self) -> DepthField {
+                    DepthField::DepthOnWebsite(self as u64)
+                }
+                #[inline(always)]
+                fn to_distance_to_seed(self) -> DepthField {
+                    DepthField::DistanceToSeed(self as u64)
+                }
+                #[inline(always)]
+                fn to_total_distance_to_seed(self) -> DepthField {
+                    DepthField::TotalDistanceToSeed(self as u64)
+                }
+            }
+        )*
+    };
+}
+
+conversion_impl! { usize u8 u16 u32 u64 u128 isize i8 i16 i32 i64 i128 }
+
 macro_rules! add_impl {
     ($($t:ty)*) => ($(
         impl Add<$t> for DepthField {

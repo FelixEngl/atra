@@ -15,8 +15,8 @@
 use crate::database::DatabaseError;
 use crate::link_state::traits::LinkStateManager;
 use crate::link_state::{
-    IsSeedYesNo, LinkState, LinkStateDB, LinkStateDBError, LinkStateKind, LinkStateLike,
-    LinkStateRockDB, RawLinkState, RecrawlYesNo,
+    IsSeedYesNo, LinkStateDB, LinkStateDBError, LinkStateKind, LinkStateLike, LinkStateRockDB,
+    RawLinkState, RecrawlYesNo,
 };
 use crate::url::{AtraUri, UrlWithDepth};
 use rocksdb::DB;
@@ -83,7 +83,7 @@ impl<DB: LinkStateDB> LinkStateManager for DatabaseLinkStateManager<DB> {
     async fn check_if_there_are_any_crawlable_links(&self, max_age: Duration) -> bool {
         let lock = self.last_scan_over_link_states.read().await;
         if let Some(value) = lock.as_ref() {
-            if OffsetDateTime::now_utc() - value.1 <= max_age {
+            if (OffsetDateTime::now_utc() - value.1) <= max_age {
                 return value.0;
             }
         }
@@ -104,7 +104,7 @@ impl<DB: LinkStateDB> LinkStateManager for DatabaseLinkStateManager<DB> {
 
     async fn check_if_there_are_any_recrawlable_links(&self) -> bool {
         self.db
-            .scan_for_value(|k, v| {
+            .scan_for_value(|_, v| {
                 if let Ok(value) = RawLinkState::read_recrawl(v) {
                     value.is_yes()
                 } else {
@@ -118,11 +118,11 @@ impl<DB: LinkStateDB> LinkStateManager for DatabaseLinkStateManager<DB> {
         &self,
         collector: F,
     ) {
-        self.db.collect_values(|pos, k, v| {
+        self.db.collect_values(|_, k, v| {
             let raw = unsafe { RawLinkState::from_slice_unchecked(v.as_ref()) };
             if raw.recrawl().is_yes() {
-                let uri: AtraUri = unsafe { String::from_utf8_lossy(k) }.parse().unwrap();
-                collector(raw.is_seed(), UrlWithDepth::new(raw.depth(), uri));
+                let uri: AtraUri = String::from_utf8_lossy(k).parse().unwrap();
+                collector(raw.is_seed(), UrlWithDepth::new(uri, raw.depth()));
                 true
             } else {
                 true

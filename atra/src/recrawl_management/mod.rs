@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::database::DBActionType::Read;
-use crate::database::{RawDatabaseError, RawIOError};
 use crate::url::AtraUrlOrigin;
 use crate::{db_health_check, declare_column_families};
 use rocksdb::DB;
@@ -21,9 +19,9 @@ use std::sync::Arc;
 use time::OffsetDateTime;
 
 pub trait DomainLastCrawledManager {
-    async fn register(&self, domain: &AtraUrlOrigin);
+    async fn register_access(&self, origin: &AtraUrlOrigin);
 
-    async fn get_time_for(&self, domain: &AtraUrlOrigin) -> Option<OffsetDateTime>;
+    async fn get_last_access(&self, origin: &AtraUrlOrigin) -> Option<OffsetDateTime>;
 }
 
 #[derive(Debug, Clone)]
@@ -49,7 +47,7 @@ impl DomainLastCrawledDatabaseManager {
 }
 
 impl DomainLastCrawledManager for DomainLastCrawledDatabaseManager {
-    async fn register(&self, domain: &AtraUrlOrigin) {
+    async fn register_access(&self, domain: &AtraUrlOrigin) {
         let _ = self.db.put_cf(
             &self.cf_handle(),
             domain.as_bytes(),
@@ -57,7 +55,7 @@ impl DomainLastCrawledManager for DomainLastCrawledDatabaseManager {
         );
     }
 
-    async fn get_time_for(&self, domain: &AtraUrlOrigin) -> Option<OffsetDateTime> {
+    async fn get_last_access(&self, domain: &AtraUrlOrigin) -> Option<OffsetDateTime> {
         let handle = self.cf_handle();
         let key = domain.as_bytes();
         if self.db.key_may_exist_cf(&handle, key) {

@@ -16,7 +16,6 @@ use crate::blacklist::{
     create_managed_blacklist, Blacklist, BlacklistError, BlacklistManager, BlacklistType,
     ManagedBlacklist, ManagedBlacklistSender, PolyBlackList, RegexBlackList,
 };
-use crate::client::{build_classic_client, ClientWithUserAgent};
 use crate::config::Configs;
 use crate::contexts::local::LinkHandlingError;
 use crate::contexts::traits::*;
@@ -28,16 +27,18 @@ use crate::extraction::ExtractedLink;
 use crate::gdbr::identifier::GdbrIdentifierRegistry;
 use crate::io::fs::FileSystemAccess;
 use crate::link_state::{
-    IsSeedYesNo, LinkState, LinkStateDBError, LinkStateKind, LinkStateLike, LinkStateManager,
-    RawLinkState, RecrawlYesNo,
+    IsSeedYesNo, LinkStateDBError, LinkStateKind, LinkStateLike, LinkStateManager, RawLinkState,
+    RecrawlYesNo,
 };
 use crate::queue::{EnqueueCalled, UrlQueue, UrlQueueElement};
 use crate::queue::{QueueError, SupportsForcedQueueElement, UrlQueueElementRef};
+use crate::recrawl_management::DomainLastCrawledManager;
 use crate::robots::InMemoryRobotsManager;
 use crate::seed::{BasicSeed, UnguardedSeed};
+use crate::test_impls::providers::{ClientProvider, DefaultProvider};
 use crate::url::guard::InMemoryUrlGuardian;
-use crate::url::{AtraUrlOrigin, UrlWithDepth};
 use crate::url::{AtraOriginProvider, AtraUri};
+use crate::url::{AtraUrlOrigin, UrlWithDepth};
 use crate::web_graph::{LinkNetError, WebGraphEntry, WebGraphManager};
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -55,9 +56,6 @@ use text_processing::tf_idf::{Idf, Tf};
 use time::OffsetDateTime;
 use tokio::sync::watch::Receiver;
 use tokio::sync::Mutex;
-use crate::client::traits::AtraClient;
-use crate::recrawl_management::DomainLastCrawledManager;
-use crate::test_impls::providers::{ClientProvider, DefaultProvider};
 
 #[derive(Debug)]
 pub struct TestContext<Provider = DefaultProvider> {
@@ -66,7 +64,7 @@ pub struct TestContext<Provider = DefaultProvider> {
     pub link_state_manager: InMemoryLinkStateManager,
     pub robots_manager: InMemoryRobotsManager,
     pub blacklist_manager: TestBlacklistManager,
-    pub crawled_websites: tokio::sync::RwLock<HashMap<AtraUri, SlimCrawlResult>>,
+    pub crawled_websites: std::sync::RwLock<HashMap<AtraUri, SlimCrawlResult>>,
     pub data_urls: Mutex<Vec<(UrlWithDepth, UrlWithDepth)>>,
     pub configs: Configs,
     pub host_manager: InMemoryUrlGuardian,
@@ -76,19 +74,20 @@ pub struct TestContext<Provider = DefaultProvider> {
     pub stop_word_registry: StopWordRegistry,
     pub gdbr_registry: Option<GdbrIdentifierRegistry<Tf, Idf, L2R_L2LOSS_SVR>>,
     pub provider: Provider,
-    pub domain_manager: InMemoryDomainManager
+    pub domain_manager: InMemoryDomainManager,
 }
 
-
-
-impl<Provider> TestContext<Provider> where Provider: Send + Sync + 'static {
+impl<Provider> TestContext<Provider>
+where
+    Provider: Send + Sync + 'static,
+{
     pub fn new(configs: Configs, provider: Provider) -> Self {
         Self {
             ct_crawled_websites: AtomicUsize::new(0),
             ct_found_websites: AtomicUsize::new(0),
             robots_manager: InMemoryRobotsManager::new(),
             blacklist_manager: TestBlacklistManager::new(Default::default()),
-            crawled_websites: tokio::sync::RwLock::new(HashMap::new()),
+            crawled_websites: RwLock::new(HashMap::new()),
             link_state_manager: InMemoryLinkStateManager::new(),
             links_queue: TestUrlQueue::default(),
             data_urls: Default::default(),
@@ -99,27 +98,33 @@ impl<Provider> TestContext<Provider> where Provider: Send + Sync + 'static {
             link_net_manager: TestLinkNetManager::default(),
             gdbr_registry: None,
             domain_manager: Default::default(),
-            provider
+            provider,
         }
     }
 
-    pub fn with_blacklist(configs: Configs, provider: Provider, blacklist: Option<Vec<String>>) -> Self {
+    pub fn with_blacklist(
+        configs: Configs,
+        provider: Provider,
+        blacklist: Option<Vec<String>>,
+    ) -> Self {
         Self {
             blacklist_manager: TestBlacklistManager::new(blacklist),
             ..Self::new(configs, provider)
         }
     }
 
+    /// Returns the crawled websites on the left the results, on the right the data.
     pub fn get_all_crawled_websites(
-        self,
+        &self,
     ) -> (HashMap<AtraUri, CrawlResult>, HashMap<AtraUri, Vec<u8>>) {
         let data = self
             .crawled_websites
-            .into_inner()
-            .into_iter()
-            .map(|value| (value.0, value.1.inflate(None)))
+            .read()
+            .unwrap()
+            .iter()
+            .map(|value| (value.0.clone(), value.1.clone().inflate(None)))
             .collect();
-        let found = self.link_state_manager.state.into_inner().unwrap();
+        let found = self.link_state_manager.state.read().unwrap().clone();
         (data, found)
     }
 
@@ -138,13 +143,19 @@ impl<Provider> BaseContext for TestContext<Provider> where Provider: Send + Sync
 
 impl<Provider> AsyncContext for TestContext<Provider> where Provider: Send + Sync + 'static {}
 
-impl<Provider> SupportsWorkerId for TestContext<Provider> where Provider: Send + Sync + 'static {
+impl<Provider> SupportsWorkerId for TestContext<Provider>
+where
+    Provider: Send + Sync + 'static,
+{
     fn worker_id(&self) -> usize {
         0
     }
 }
 
-impl<Provider> SupportsCrawling for TestContext<Provider> where Provider: Send + Sync + 'static + ClientProvider {
+impl<Provider> SupportsCrawling for TestContext<Provider>
+where
+    Provider: Send + Sync + 'static + ClientProvider,
+{
     type Client = Provider::Client;
     type Error = Provider::Error;
 
@@ -155,8 +166,9 @@ impl<Provider> SupportsCrawling for TestContext<Provider> where Provider: Send +
         let seed2 = UnguardedSeed::new(
             seed.url().clone(),
             seed.origin().clone(),
-            seed.is_original_seed()
-        ).unwrap();
+            seed.is_original_seed(),
+        )
+        .unwrap();
         let provider = self.provider.provide(self, &seed2)?;
         Ok(CrawlTask::new(seed, provider))
     }
@@ -184,9 +196,15 @@ impl<Provider> SupportsCrawling for TestContext<Provider> where Provider: Send +
     }
 }
 
-impl<Provider> Context for TestContext<Provider> where Provider: Send + Sync + 'static + ClientProvider {}
+impl<Provider> Context for TestContext<Provider> where
+    Provider: Send + Sync + 'static + ClientProvider
+{
+}
 
-impl<Provider> SupportsLinkSeeding for TestContext<Provider> where Provider: Send + Sync + 'static {
+impl<Provider> SupportsLinkSeeding for TestContext<Provider>
+where
+    Provider: Send + Sync + 'static,
+{
     type Error = LinkHandlingError;
 
     async fn register_seed<S: BasicSeed>(&self, seed: &S) -> Result<(), LinkHandlingError> {
@@ -254,21 +272,30 @@ impl<Provider> SupportsLinkSeeding for TestContext<Provider> where Provider: Sen
     }
 }
 
-impl<Provider> SupportsDomainHandling for TestContext<Provider> where Provider: Send + Sync + 'static {
+impl<Provider> SupportsDomainHandling for TestContext<Provider>
+where
+    Provider: Send + Sync + 'static,
+{
     type DomainHandler = InMemoryDomainManager;
     fn get_domain_manager(&self) -> &InMemoryDomainManager {
         &self.domain_manager
     }
 }
 
-impl<Provider> SupportsLinkState for TestContext<Provider> where Provider: Send + Sync + 'static {
+impl<Provider> SupportsLinkState for TestContext<Provider>
+where
+    Provider: Send + Sync + 'static,
+{
     type LinkStateManager = InMemoryLinkStateManager;
     fn get_link_state_manager(&self) -> &Self::LinkStateManager {
         &self.link_state_manager
     }
 }
 
-impl<Provider> SupportsUrlGuarding for TestContext<Provider> where Provider: Send + Sync + 'static {
+impl<Provider> SupportsUrlGuarding for TestContext<Provider>
+where
+    Provider: Send + Sync + 'static,
+{
     type Guardian = InMemoryUrlGuardian;
 
     fn get_guardian(&self) -> &InMemoryUrlGuardian {
@@ -276,7 +303,10 @@ impl<Provider> SupportsUrlGuarding for TestContext<Provider> where Provider: Sen
     }
 }
 
-impl<Provider> SupportsRobotsManager for TestContext<Provider> where Provider: Send + Sync + 'static {
+impl<Provider> SupportsRobotsManager for TestContext<Provider>
+where
+    Provider: Send + Sync + 'static,
+{
     type RobotsManager = InMemoryRobotsManager;
 
     fn get_robots_manager(&self) -> &Self::RobotsManager {
@@ -284,14 +314,20 @@ impl<Provider> SupportsRobotsManager for TestContext<Provider> where Provider: S
     }
 }
 
-impl<Provider> SupportsBlackList for TestContext<Provider> where Provider: Send + Sync + 'static {
+impl<Provider> SupportsBlackList for TestContext<Provider>
+where
+    Provider: Send + Sync + 'static,
+{
     type BlacklistManager = TestBlacklistManager;
     fn get_blacklist_manager(&self) -> &Self::BlacklistManager {
         &self.blacklist_manager
     }
 }
 
-impl<Provider> SupportsMetaInfo for TestContext<Provider> where Provider: Send + Sync + 'static {
+impl<Provider> SupportsMetaInfo for TestContext<Provider>
+where
+    Provider: Send + Sync + 'static,
+{
     fn crawl_started_at(&self) -> OffsetDateTime {
         self.started_at
     }
@@ -301,13 +337,19 @@ impl<Provider> SupportsMetaInfo for TestContext<Provider> where Provider: Send +
     }
 }
 
-impl<Provider> SupportsConfigs for TestContext<Provider> where Provider: Send + Sync + 'static {
+impl<Provider> SupportsConfigs for TestContext<Provider>
+where
+    Provider: Send + Sync + 'static,
+{
     fn configs(&self) -> &Configs {
         &self.configs
     }
 }
 
-impl<Provider> SupportsUrlQueue for TestContext<Provider> where Provider: Send + Sync + 'static {
+impl<Provider> SupportsUrlQueue for TestContext<Provider>
+where
+    Provider: Send + Sync + 'static,
+{
     type UrlQueue = TestUrlQueue;
 
     async fn can_poll(&self) -> bool {
@@ -319,7 +361,10 @@ impl<Provider> SupportsUrlQueue for TestContext<Provider> where Provider: Send +
     }
 }
 
-impl<Provider> SupportsFileSystemAccess for TestContext<Provider> where Provider: Send + Sync + 'static {
+impl<Provider> SupportsFileSystemAccess for TestContext<Provider>
+where
+    Provider: Send + Sync + 'static,
+{
     type FileSystem = FileSystemAccess;
 
     fn fs(&self) -> &FileSystemAccess {
@@ -327,7 +372,10 @@ impl<Provider> SupportsFileSystemAccess for TestContext<Provider> where Provider
     }
 }
 
-impl<Provider> SupportsWebGraph for TestContext<Provider> where Provider: Send + Sync + 'static {
+impl<Provider> SupportsWebGraph for TestContext<Provider>
+where
+    Provider: Send + Sync + 'static,
+{
     type WebGraphManager = TestLinkNetManager;
 
     fn web_graph_manager(&self) -> &Self::WebGraphManager {
@@ -335,13 +383,19 @@ impl<Provider> SupportsWebGraph for TestContext<Provider> where Provider: Send +
     }
 }
 
-impl<Provider> SupportsStopwordsRegistry for TestContext<Provider> where Provider: Send + Sync + 'static {
+impl<Provider> SupportsStopwordsRegistry for TestContext<Provider>
+where
+    Provider: Send + Sync + 'static,
+{
     fn stopword_registry(&self) -> Option<&StopWordRegistry> {
         Some(&self.stop_word_registry)
     }
 }
 
-impl<Provider> SupportsGdbrRegistry for TestContext<Provider> where Provider: Send + Sync + 'static {
+impl<Provider> SupportsGdbrRegistry for TestContext<Provider>
+where
+    Provider: Send + Sync + 'static,
+{
     type Registry = GdbrIdentifierRegistry<Tf, Idf, L2R_L2LOSS_SVR>;
 
     fn gdbr_registry(&self) -> Option<&Self::Registry> {
@@ -349,14 +403,17 @@ impl<Provider> SupportsGdbrRegistry for TestContext<Provider> where Provider: Se
     }
 }
 
-impl<Provider> SupportsSlimCrawlResults for TestContext<Provider> where Provider: Send + Sync + 'static {
+impl<Provider> SupportsSlimCrawlResults for TestContext<Provider>
+where
+    Provider: Send + Sync + 'static,
+{
     type Error = DatabaseError;
 
     async fn retrieve_slim_crawled_website(
         &self,
         url: &UrlWithDepth,
     ) -> Result<Option<SlimCrawlResult>, DatabaseError> {
-        let crawled = self.crawled_websites.read().await;
+        let crawled = self.crawled_websites.read();
         if let Some(found) = crawled.get(url.url()) {
             Ok(Some(found.clone()))
         } else {
@@ -369,13 +426,16 @@ impl<Provider> SupportsSlimCrawlResults for TestContext<Provider> where Provider
         result: SlimCrawlResult,
     ) -> Result<(), DatabaseError> {
         self.ct_crawled_websites.fetch_add(1, Ordering::Relaxed);
-        let mut crawled = self.crawled_websites.write().await;
+        let mut crawled = self.crawled_websites.write();
         crawled.insert(result.meta.url.url().clone(), result);
         Ok(())
     }
 }
 
-impl<Provider> SupportsCrawlResults for TestContext<Provider> where Provider: Send + Sync + 'static {
+impl<Provider> SupportsCrawlResults for TestContext<Provider>
+where
+    Provider: Send + Sync + 'static,
+{
     type Error = DatabaseError;
 
     async fn store_crawled_website(&self, result: &CrawlResult) -> Result<(), DatabaseError> {
@@ -674,27 +734,26 @@ impl LinkStateManager for InMemoryLinkStateManager {
         for (k, v) in lock.iter() {
             let raw = RawLinkState::from_slice(v.as_ref()).unwrap();
             if raw.recrawl().is_yes() {
-                collector(raw.is_seed(), UrlWithDepth::new(raw.depth(), k.clone()))
+                collector(raw.is_seed(), UrlWithDepth::new(k.clone(), raw.depth()))
             }
         }
     }
 }
 
-
 #[derive(Clone, Default, Debug)]
 pub struct InMemoryDomainManager {
-    inner: Arc<RwLock<HashMap<String, OffsetDateTime>>>
+    inner: Arc<RwLock<HashMap<AtraUrlOrigin, OffsetDateTime>>>,
 }
 
 impl DomainLastCrawledManager for InMemoryDomainManager {
-    async fn register(&self, domain: &AtraUrlOrigin) {
-        self.inner.write().unwrap().insert(
-            domain.to_string(),
-            OffsetDateTime::now_utc()
-        );
+    async fn register_access(&self, domain: &AtraUrlOrigin) {
+        self.inner
+            .write()
+            .unwrap()
+            .insert(domain.clone(), OffsetDateTime::now_utc());
     }
 
-    async fn get_time_for(&self, domain: &AtraUrlOrigin) -> Option<OffsetDateTime> {
-        self.inner.read().unwrap().get(domain.as_ref()).cloned()
+    async fn get_last_access(&self, domain: &AtraUrlOrigin) -> Option<OffsetDateTime> {
+        self.inner.read().unwrap().get(domain).cloned()
     }
 }

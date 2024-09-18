@@ -15,6 +15,8 @@
 mod rocksdb_ext;
 
 mod database_error;
+mod options;
 
 pub use database_error::*;
+pub use options::*;
 pub use rocksdb_ext::*;

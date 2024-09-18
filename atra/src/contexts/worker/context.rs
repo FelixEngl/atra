@@ -23,11 +23,10 @@ use crate::io::errors::ErrorWithPath;
 use crate::io::fs::{AtraFS, WorkerFileSystemAccess};
 use crate::seed::BasicSeed;
 use crate::stores::warc::ThreadsafeMultiFileWarcWriter;
-use crate::url::{AtraUrlOrigin, UrlWithDepth};
+use crate::url::UrlWithDepth;
 use crate::warc_ext::write_warc;
 use std::collections::HashSet;
 use std::sync::Arc;
-use time::OffsetDateTime;
 use text_processing::stopword_registry::StopWordRegistry;
 
 /// A context for a specific worker
@@ -532,18 +531,18 @@ pub mod test {
             [b'a'; { ByteUnit::Gigabyte(1).as_u64() as usize - 20 }];
 
         let test_data2 = create_test_data(
-            UrlWithDepth::from_seed("https://www.oofsize.de/").unwrap(),
+            UrlWithDepth::from_url("https://www.oofsize.de/").unwrap(),
             Some(RawVecData::from_vec(BIG_DATA.to_vec())),
         );
         let test_data3 = create_test_data(
-            UrlWithDepth::from_seed("https://www.catsanddogs.de/").unwrap(),
+            UrlWithDepth::from_url("https://www.catsanddogs.de/").unwrap(),
             None,
         );
         worker.store_crawled_website(&test_data1).await.unwrap();
         worker.store_crawled_website(&test_data2).await.unwrap();
         worker.store_crawled_website(&test_data3).await.unwrap();
 
-        let x = UrlWithDepth::from_seed("https://www.oofsize.de/").unwrap();
+        let x = UrlWithDepth::from_url("https://www.oofsize.de/").unwrap();
 
         let found = worker.retrieve_slim_crawled_website(&x).await.unwrap();
         println!("{:?}", found);
@@ -581,18 +580,18 @@ pub mod test {
             [b'a'; { ByteUnit::Gigabyte(1).as_u64() as usize - 20 }];
 
         let test_data2 = create_test_data_unknown(
-            UrlWithDepth::from_seed("https://www.oofsize.de/").unwrap(),
+            UrlWithDepth::from_url("https://www.oofsize.de/").unwrap(),
             RawVecData::from_vec(BIG_DATA.to_vec()),
         );
         let test_data3 = create_test_data(
-            UrlWithDepth::from_seed("https://www.catsanddogs.de/").unwrap(),
+            UrlWithDepth::from_url("https://www.catsanddogs.de/").unwrap(),
             None,
         );
         worker.store_crawled_website(&test_data1).await.unwrap();
         worker.store_crawled_website(&test_data2).await.unwrap();
         worker.store_crawled_website(&test_data3).await.unwrap();
 
-        let x = UrlWithDepth::from_seed("https://www.oofsize.de/").unwrap();
+        let x = UrlWithDepth::from_url("https://www.oofsize.de/").unwrap();
 
         let found = worker
             .retrieve_crawled_website(&x)

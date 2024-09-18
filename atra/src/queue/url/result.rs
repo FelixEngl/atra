@@ -14,7 +14,6 @@
 
 use crate::queue::errors::QueueError;
 use crate::queue::url::UrlQueueElement;
-use crate::url::guard::GuardianError;
 use crate::url::UrlWithDepth;
 use std::error::Error;
 use std::fmt::Debug;

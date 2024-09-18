@@ -396,7 +396,7 @@ mod test {
         (
             ResponseData::new(
                 data,
-                UrlWithDepth::from_seed("https://www.example.com").unwrap(),
+                UrlWithDepth::from_url("https://www.example.com").unwrap(),
             ),
             DATA,
         )
@@ -428,7 +428,7 @@ mod test {
         (
             ResponseData::new(
                 data,
-                UrlWithDepth::from_seed("https://www.example.com").unwrap(),
+                UrlWithDepth::from_url("https://www.example.com").unwrap(),
             ),
             DATA,
         )
@@ -456,7 +456,7 @@ mod test {
         (
             ResponseData::new(
                 data,
-                UrlWithDepth::from_seed("https://www.example.com").unwrap(),
+                UrlWithDepth::from_url("https://www.example.com").unwrap(),
             ),
             replaces,
         )
@@ -484,7 +484,7 @@ mod test {
         (
             ResponseData::new(
                 data,
-                UrlWithDepth::from_seed("https://www.example.com").unwrap(),
+                UrlWithDepth::from_url("https://www.example.com").unwrap(),
             ),
             replaces,
         )
@@ -517,7 +517,7 @@ mod test {
         (
             ResponseData::new(
                 data,
-                UrlWithDepth::from_seed("https://www.example.com").unwrap(),
+                UrlWithDepth::from_url("https://www.example.com").unwrap(),
             ),
             replaces,
         )

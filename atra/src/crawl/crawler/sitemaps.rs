@@ -15,8 +15,8 @@
 use crate::client::traits::{AtraClient, AtraResponse};
 use crate::crawl::crawler::intervals::InvervalManager;
 use crate::robots::information::RobotsInformation;
+use crate::toolkit::CaseInsensitiveString;
 use crate::url::UrlWithDepth;
-use case_insensitive_string::CaseInsensitiveString;
 use sitemap::reader::SiteMapEntity;
 use sitemap::structs::{SiteMapEntry, UrlEntry};
 use std::borrow::Cow;
@@ -27,7 +27,6 @@ use std::io::Cursor;
 #[derive(Debug)]
 pub struct ParsedSiteMapEntries {
     pub urls: Vec<UrlEntry>,
-    #[allow(dead_code)]
     pub sitemaps: Vec<SiteMapEntry>,
 }
 

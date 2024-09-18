@@ -18,14 +18,20 @@ mod sitemaps;
 pub(super) mod slim;
 
 #[cfg(test)]
+#[allow(unused_imports)]
 pub use result::test::*;
 
 #[cfg(test)]
+#[allow(unused_imports)]
 pub use crate::blacklist::ManagedBlacklist;
 use crate::blacklist::{Blacklist, BlacklistManager};
 use crate::client::traits::AtraClient;
 use crate::config::BudgetSetting;
-use crate::contexts::traits::{SupportsBlackList, SupportsConfigs, SupportsCrawlResults, SupportsCrawling, SupportsDomainHandling, SupportsFileSystemAccess, SupportsGdbrRegistry, SupportsLinkSeeding, SupportsLinkState, SupportsRobotsManager, SupportsSlimCrawlResults, SupportsUrlQueue};
+use crate::contexts::traits::{
+    SupportsBlackList, SupportsConfigs, SupportsCrawlResults, SupportsCrawling,
+    SupportsDomainHandling, SupportsFileSystemAccess, SupportsGdbrRegistry, SupportsLinkSeeding,
+    SupportsLinkState, SupportsRobotsManager, SupportsSlimCrawlResults, SupportsUrlQueue,
+};
 use crate::crawl::crawler::intervals::InvervalManager;
 use crate::crawl::crawler::result::CrawlResult;
 use crate::crawl::crawler::sitemaps::retrieve_and_parse;
@@ -37,12 +43,13 @@ use crate::format::AtraFileInformation;
 use crate::io::fs::AtraFS;
 use crate::link_state::{IsSeedYesNo, LinkStateKind, LinkStateManager, RecrawlYesNo};
 use crate::queue::{QueueError, UrlQueue, UrlQueueElement};
+use crate::recrawl_management::DomainLastCrawledManager;
 use crate::robots::{GeneralRobotsInformation, RobotsInformation};
 use crate::runtime::ShutdownReceiver;
 use crate::seed::BasicSeed;
 use crate::toolkit::detect_language;
-use crate::url::{AtraOriginProvider, UrlWithDepth};
-use itertools::{Either, Itertools};
+use crate::url::UrlWithDepth;
+use itertools::Itertools;
 use log::LevelFilter;
 use sitemap::structs::Location;
 use smallvec::SmallVec;
@@ -54,7 +61,6 @@ use std::io::Write;
 use std::sync::Arc;
 use strum::EnumString;
 use time::OffsetDateTime;
-use crate::recrawl_management::DomainLastCrawledManager;
 
 /// A crawler for a single website. Starts from the provided `seed` and
 #[derive(Debug)]
@@ -152,26 +158,26 @@ where
     ) -> Result<(), EC::Error>
     where
         Cont: SupportsGdbrRegistry
-        + SupportsConfigs
-        + SupportsRobotsManager
-        + SupportsBlackList
-        + SupportsLinkState
-        + SupportsSlimCrawlResults
-        + SupportsFileSystemAccess
-        + SupportsCrawlResults
-        + SupportsLinkSeeding
-        + SupportsUrlQueue
-        + SupportsCrawling
-        + SupportsDomainHandling,
+            + SupportsConfigs
+            + SupportsRobotsManager
+            + SupportsBlackList
+            + SupportsLinkState
+            + SupportsSlimCrawlResults
+            + SupportsFileSystemAccess
+            + SupportsCrawlResults
+            + SupportsLinkSeeding
+            + SupportsUrlQueue
+            + SupportsCrawling
+            + SupportsDomainHandling,
         Shutdown: ShutdownReceiver,
         E: From<<Cont as SupportsSlimCrawlResults>::Error>
-        + From<<Cont as SupportsLinkSeeding>::Error>
-        + From<<Cont as SupportsCrawlResults>::Error>
-        + From<<<Cont as SupportsLinkState>::LinkStateManager as LinkStateManager>::Error>
-        + From<<Cont as SupportsCrawling>::Error>
-        + From<QueueError>
-        + From<io::Error>
-        + Display,
+            + From<<Cont as SupportsLinkSeeding>::Error>
+            + From<<Cont as SupportsCrawlResults>::Error>
+            + From<<<Cont as SupportsLinkState>::LinkStateManager as LinkStateManager>::Error>
+            + From<<Cont as SupportsCrawling>::Error>
+            + From<QueueError>
+            + From<io::Error>
+            + Display,
         EC: ErrorConsumer<E>,
     {
         let configuration = &context.configs().crawl;
@@ -186,8 +192,8 @@ where
                 self.client.user_agent().to_string(),
                 configuration.max_robots_age.clone(),
             )
-                .bind_to_domain(&self.client, self.seed.url())
-                .await,
+            .bind_to_domain(&self.client, self.seed.url())
+            .await,
         );
 
         let budget = configuration
@@ -230,8 +236,8 @@ where
                 &mut interval_manager,
                 None,
             )
-                .await
-                .urls
+            .await
+            .urls
             {
                 match value.loc {
                     Location::None => {}
@@ -252,30 +258,27 @@ where
         let origin = self.seed.origin();
         let manager = context.get_domain_manager();
 
-        if let Some(recrawl) = configuration
+        if let Some(recrawl_interval) = configuration
             .budget
             .get_budget_for(origin)
             .get_recrawl_interval()
         {
-            if let Some(time) = manager.get_time_for(origin).await {
+            if let Some(time) = manager.get_last_access(origin).await {
                 let time_since_last_access = OffsetDateTime::now_utc() - time;
-                if time_since_last_access.le(recrawl) {
-                    log::debug!("The domain is on cooldown.");
-                    println!("time_since_last_access: {time_since_last_access} - recrawl: {recrawl}");
-                    return match context.url_queue().enqueue(
-                        UrlQueueElement::new(
+                if time_since_last_access.le(recrawl_interval) {
+                    log::debug!("The domain is on cooldown. Last Access: {time_since_last_access}, Recrawl Interval: {recrawl_interval}");
+                    return match context
+                        .url_queue()
+                        .enqueue(UrlQueueElement::new(
                             self.seed.is_original_seed(),
                             0,
                             false,
                             self.seed.url().clone(),
-                        )
-                    ).await {
-                        Ok(_) => {
-                            Ok(())
-                        }
-                        Err(err) => {
-                            consumer.consume_crawl_error(err.into())
-                        }
+                        ))
+                        .await
+                    {
+                        Ok(_) => Ok(()),
+                        Err(err) => consumer.consume_crawl_error(err.into()),
                     };
                 }
             }
@@ -292,8 +295,7 @@ where
                 continue;
             }
 
-
-            manager.register(origin).await;
+            manager.register_access(origin).await;
             match context.retrieve_slim_crawled_website(&target).await {
                 Ok(value) => {
                     if let Some(already_crawled) = value {
@@ -304,10 +306,10 @@ where
                         {
                             println!("RECRAWL: {recrawl}");
 
-                            let time_since_crawled = OffsetDateTime::now_utc() - already_crawled.meta.created_at;
+                            let time_since_crawled =
+                                OffsetDateTime::now_utc() - already_crawled.meta.created_at;
 
-                            if time_since_crawled.ge(recrawl)
-                            {
+                            if time_since_crawled.ge(recrawl) {
                                 log::debug!("The url was already crawled.");
                                 continue;
                             }
@@ -317,7 +319,7 @@ where
                                 &target,
                                 LinkStateKind::ReservedForCrawl,
                             )
-                                .await
+                            .await
                             {
                                 Ok(_) => {}
                                 Err(_) => {
@@ -338,7 +340,7 @@ where
                             Some(is_seed.into()),
                             Some(checker.has_recrawl().into()),
                         )
-                            .await
+                        .await
                         {
                             Ok(_) => {}
                             Err(_) => {
@@ -355,7 +357,6 @@ where
                 }
             }
 
-
             if shutdown.is_shutdown() {
                 return Self::pack_shutdown(consumer, context, &target, LinkStateKind::Discovered)
                     .await;
@@ -368,7 +369,7 @@ where
                 log::trace!("Interval End: {}", OffsetDateTime::now_utc());
             }
             log::info!("Crawl: {}", target);
-            let url_str = target.as_str().into_owned();
+            let url_str = target.try_as_str().into_owned();
             match self.client.retrieve(context, &url_str).await {
                 Ok(page) => {
                     if Self::update_linkstate_no_meta(
@@ -377,8 +378,8 @@ where
                         &target,
                         LinkStateKind::Discovered,
                     )
-                        .await
-                        .is_err()
+                    .await
+                    .is_err()
                     {
                         log::info!("Failed to set link state of {target}.");
                     }
@@ -397,8 +398,8 @@ where
                                     &file_information,
                                     &decoded,
                                 )
-                                    .ok()
-                                    .flatten();
+                                .ok()
+                                .flatten();
 
                                 let result = context
                                     .configs()
@@ -457,7 +458,7 @@ where
                             &target,
                             LinkStateKind::Discovered,
                         )
-                            .await;
+                        .await;
                     }
                     log::debug!(
                         "Number of links in {}: {}",
@@ -493,7 +494,7 @@ where
                                     &target,
                                     LinkStateKind::Discovered,
                                 )
-                                    .await;
+                                .await;
                             }
                         }
                     } else {
@@ -509,7 +510,7 @@ where
                             &target,
                             LinkStateKind::Discovered,
                         )
-                            .await;
+                        .await;
                     }
 
                     log::trace!("CrawlResult {}", response_data.url);
@@ -532,7 +533,7 @@ where
                                 &target,
                                 LinkStateKind::Discovered,
                             )
-                                .await;
+                            .await;
                         }
                         _ => {
                             log::debug!("Stored: {}", result.meta.url);
@@ -545,8 +546,8 @@ where
                         &target,
                         LinkStateKind::ProcessedAndStored,
                     )
-                        .await
-                        .is_err()
+                    .await
+                    .is_err()
                     {
                         log::error!("Failed setting of linkstate of {target}.");
                     }
@@ -560,8 +561,8 @@ where
                         &target,
                         LinkStateKind::InternalError,
                     )
-                        .await
-                        .is_err()
+                    .await
+                    .is_err()
                     {
                         log::error!("Failed recovery of linkstate of {target}.");
                     }
@@ -606,11 +607,11 @@ impl<'a, R: RobotsInformation, B: Blacklist> UrlChecker<'a, R, B> {
         Client: AtraClient,
     {
         let result = !task.links_visited.contains(url)
-            && !self.blacklist.has_match_for(&url.as_str())
+            && !self.blacklist.has_match_for(&url.try_as_str())
             && self
-            .configured_robots
-            .check_if_allowed(&task.client, url)
-            .await
+                .configured_robots
+                .check_if_allowed(&task.client, url)
+                .await
             && self.budget.is_in_budget(url);
 
         match log::max_level() {
@@ -620,7 +621,7 @@ impl<'a, R: RobotsInformation, B: Blacklist> UrlChecker<'a, R, B> {
                     if task.links_visited.contains(url) {
                         reasons.push(NotAllowedReasoning::IsAlreadyVisited);
                     }
-                    if self.blacklist.has_match_for(&url.as_str()) {
+                    if self.blacklist.has_match_for(&url.try_as_str()) {
                         reasons.push(NotAllowedReasoning::BlacklistHasMatch);
                     }
                     if !self
@@ -651,10 +652,18 @@ impl<'a, R: RobotsInformation, B: Blacklist> UrlChecker<'a, R, B> {
 
 #[cfg(test)]
 mod test {
-    use crate::contexts::traits::{SupportsCrawling, SupportsPolling, SupportsUrlQueue};
+    use crate::config::{BudgetSetting, Configs, CrawlConfig};
+    use crate::contexts::traits::{SupportsCrawling, SupportsUrlQueue};
     use crate::crawl::CrawlResult;
+    use crate::data::RawData;
+    use crate::fetching::FetchedRequestData;
+    use crate::queue::UrlQueue;
+    use crate::runtime::ShutdownPhantom;
+    use crate::seed::UnguardedSeed;
+    use crate::test_impls::{FakeClientProvider, FakeResponse, TestContext, TestErrorConsumer};
     use crate::toolkit::header_map_extensions::optional_header_map;
     use crate::toolkit::serde_ext::status_code;
+    use crate::url::AtraOriginProvider;
     use log::LevelFilter;
     use log4rs::append::file::FileAppender;
     use log4rs::config::{Appender, Config, Logger, Root};
@@ -665,15 +674,6 @@ mod test {
     use serde::{Deserialize, Serialize};
     use std::fmt::Debug;
     use time::Duration;
-    use time::ext::NumericalDuration;
-    use crate::config::{BudgetSetting, Configs, CrawlConfig};
-    use crate::data::RawData;
-    use crate::fetching::FetchedRequestData;
-    use crate::queue::UrlQueue;
-    use crate::runtime::ShutdownPhantom;
-    use crate::seed::UnguardedSeed;
-    use crate::test_impls::{FakeClientProvider, FakeResponse, TestContext, TestErrorConsumer};
-    use crate::url::{AtraOriginProvider, AtraUrlOrigin};
 
     fn init() {
         // let stdout = ConsoleAppender::builder().build();
@@ -783,9 +783,6 @@ mod test {
 
     #[tokio::test]
     async fn crawl_a_single_site() {
-
-        // init2();
-
         let mut config: CrawlConfig = CrawlConfig::default();
         config.budget.default = BudgetSetting::SeedOnly {
             depth_on_website: 1,
@@ -803,7 +800,8 @@ mod test {
             FakeClientProvider::new(),
         );
 
-        context.provider().push(
+        context.provider().insert(
+            "https://www.ebay.com/".parse().unwrap(),
             Ok(
                 FakeResponse::new(
                     Some(
@@ -816,64 +814,48 @@ mod test {
                             false,
                         )
                     ),
-                    1,
-                    "https://www.amazon.de/".parse().unwrap(),
+                    1
                 )
             )
         );
 
-
         let mut crawl_task = context
-            .create_crawl_task(
-                UnguardedSeed::from_url("https://www.ebay.com/")
-                    .unwrap()
-            )
+            .create_crawl_task(UnguardedSeed::from_url("https://www.ebay.com/").unwrap())
             .unwrap();
 
-
-        let result = crawl_task.run(
-            &context,
-            ShutdownPhantom::<true>,
-            &TestErrorConsumer::new(),
-        ).await;
+        let result = crawl_task
+            .run(&context, ShutdownPhantom::<true>, &TestErrorConsumer::new())
+            .await;
 
         println!("{:?}", result);
 
         drop(crawl_task);
         drop(result);
 
-        context.provider().push(
-            Ok(
-                FakeResponse::new(
-                    Some(
-                        FetchedRequestData::new(
-                            RawData::from_vec(include_bytes!("../../testdata/samples/Amazon.html").to_vec()),
-                            None,
-                            StatusCode::OK,
-                            None,
-                            None,
-                            false,
-                        )
+        context.provider().insert(
+            "https://www.ebay.com/test".parse().unwrap(),
+            Ok(FakeResponse::new(
+                Some(FetchedRequestData::new(
+                    RawData::from_vec(
+                        include_bytes!("../../testdata/samples/Amazon.html").to_vec(),
                     ),
-                    1,
-                    "https://www.amazon.de/test".parse().unwrap(),
-                )
-            )
+                    None,
+                    StatusCode::OK,
+                    None,
+                    None,
+                    false,
+                )),
+                1,
+            )),
         );
 
         let mut crawl_task = context
-            .create_crawl_task(
-                UnguardedSeed::from_url("https://www.ebay.com/")
-                    .unwrap()
-            )
+            .create_crawl_task(UnguardedSeed::from_url("https://www.ebay.com/").unwrap())
             .unwrap();
 
-
-        let result = crawl_task.run(
-            &context,
-            ShutdownPhantom::<true>,
-            &TestErrorConsumer::new(),
-        ).await;
+        let result = crawl_task
+            .run(&context, ShutdownPhantom::<true>, &TestErrorConsumer::new())
+            .await;
 
         drop(crawl_task);
 
@@ -888,21 +870,23 @@ mod test {
 
         let origin = x.target.atra_origin().unwrap();
         let mut crawl_task = context
-            .create_crawl_task(
-                UnguardedSeed::new(x.target, origin, true)
-                    .unwrap()
-            )
+            .create_crawl_task(UnguardedSeed::new(x.target, origin, true).unwrap())
             .unwrap();
 
-        let result = crawl_task.run(
-            &context,
-            ShutdownPhantom::<true>,
-            &TestErrorConsumer::new(),
-        ).await;
+        let result = crawl_task
+            .run(&context, ShutdownPhantom::<true>, &TestErrorConsumer::new())
+            .await;
 
         println!("{:?}", result);
 
         println!("{}", context.url_queue().len().await);
+
+        let (a, b) = context.get_all_crawled_websites();
+
+        for (k, v) in a {
+            println!("{}\n", &k);
+            println!("{:?}", &v);
+        }
     }
 
     #[tokio::test]

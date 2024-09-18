@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::link_state::{LinkState, LinkStateKind, RawLinkState};
-use rocksdb::{BlockBasedOptions, DBCompressionType, MergeOperands, Options, SliceTransform, DB};
+use crate::database::options::create_open_options;
+#[cfg(test)]
+use rocksdb::Error;
+use rocksdb::{Options, DB};
 use std::fmt::Debug;
 use std::path::Path;
 use thiserror::Error;
@@ -68,32 +70,6 @@ pub fn open_db<P: AsRef<Path>>(path: P) -> Result<DB, OpenDBError> {
     open_db_internal(&db, path, cfs)
 }
 
-#[cfg(test)]
-use rocksdb::Error;
-
-/// Deletes a db
-#[cfg(test)]
-pub fn destroy_db<P: AsRef<Path>>(path: P) -> Result<(), Error> {
-    if path.as_ref().exists() {
-        DB::destroy(&db_options(), path)
-    } else {
-        Ok(())
-    }
-}
-
-/// Creates the open option
-fn create_open_options() -> (Options, [(&'static str, Options); 5]) {
-    let db_options = db_options();
-    let cf_options = [
-        (LINK_STATE_DB_CF, link_state_cf_options()),
-        (CRAWL_DB_CF, crawled_page_cf_options()),
-        (ROBOTS_TXT_DB_CF, robots_txt_cf_options()),
-        (SEED_ID_DB_CF, seed_id_cf_options()),
-        (DOMAIN_MANAGER_DB_CF, domain_manager_cf_options()),
-    ];
-    (db_options, cf_options)
-}
-
 /// A save method to open a [DB] without knowing all the cfs
 fn open_db_internal<P, I, N>(opts: &Options, path: P, cf_options: I) -> Result<DB, OpenDBError>
 where
@@ -108,94 +84,19 @@ where
     Ok(DB::open_cf_with_opts(&opts, path, cf_options)?)
 }
 
+/// Deletes a db
+#[cfg(test)]
+pub fn destroy_db<P: AsRef<Path>>(path: P) -> Result<(), Error> {
+    if path.as_ref().exists() {
+        DB::destroy(&db_options(), path)
+    } else {
+        Ok(())
+    }
+}
+
 fn db_options() -> Options {
-    // May need https://github.com/facebook/rocksdb/wiki/BlobDB#performance-tuning
-
-    let mut options = Options::default();
-    options.create_if_missing(true);
-    options.create_missing_column_families(true);
-    // let max_wal_file_size = match sys_info::mem_info() {
-    //     Ok(result) => {
-    //         min(result.free / 10, (64*20).megabytes().bytes().as_u64())
-    //     }
-    //     Err(_) => {
-    //         (64*20).megabytes().bytes().as_u64()
-    //     }
-    // };
-    // options.set_max_total_wal_size(max_wal_file_size);
-    // options.set_bottommost_compression_options(1.megabytes().bytes().as_u64() as i32, true);
-    // options.com
-    // options.set_bottommost_compression_type(DBCompressionType::Zstd);
-    // options.set_bottommost_zstd_max_train_bytes(1.megabytes().bytes().as_u64() as i32, true);
-    options
+    todo!()
 }
-
-pub fn link_state_cf_options() -> Options {
-    let mut options = Options::default();
-    options.create_if_missing(true);
-    options.create_missing_column_families(true);
-    options.set_merge_operator_associative("merge_linkstate", RawLinkState::merge_linkstate);
-    options
-}
-
-pub fn robots_txt_cf_options() -> Options {
-    let mut options: Options = Default::default();
-    options.create_if_missing(true);
-    options.create_missing_column_families(true);
-    options.set_enable_blob_files(true);
-    options.set_blob_compression_type(DBCompressionType::Zstd);
-    options
-}
-
-pub fn seed_id_cf_options() -> Options {
-    let mut options: Options = Default::default();
-    options.create_if_missing(true);
-    options.create_missing_column_families(true);
-    options
-}
-
-pub fn domain_manager_cf_options() -> Options {
-    let mut options: Options = Default::default();
-    options.create_if_missing(true);
-    options.create_missing_column_families(true);
-    options
-}
-
-pub fn crawled_page_cf_options() -> Options {
-    let mut options: Options = Default::default();
-    options.create_if_missing(true);
-    options.create_missing_column_families(true);
-
-    // https://github.com/facebook/rocksdb/wiki/RocksDB-Bloom-Filter
-    let mut bb_options = BlockBasedOptions::default();
-    bb_options.set_bloom_filter(10.0, true);
-    bb_options.set_whole_key_filtering(true);
-    options.set_block_based_table_factory(&bb_options);
-
-    options.set_prefix_extractor(SliceTransform::create_fixed_prefix(15));
-
-    options
-}
-
-// pub fn crawled_page_body_cf_options() -> Options {
-//     let mut options: Options = Default::default();
-//     options.create_missing_column_families(true);
-//     options.create_if_missing(true);
-//
-//     options.set_enable_blob_files(true);
-//     options.set_blob_compression_type(DBCompressionType::Zstd);
-//
-//     // Alternative??
-//     // // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
-//     // options.set_prefix_extractor(
-//     //     SliceTransform::create(
-//     //         "url_prefix",
-//     //         transform_binary_url_to_prefix_slice,
-//     //         None
-//     //     )
-//     // );
-//     options
-// }
 
 #[cfg(test)]
 mod test {

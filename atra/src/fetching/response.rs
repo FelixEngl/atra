@@ -74,7 +74,6 @@ impl ResponseData {
     }
 
     /// Returns the url used after resolving all redirects
-    #[allow(dead_code)]
     pub fn get_url_final(&self) -> AtraUri {
         if let Some(ref found) = self.final_redirect_destination {
             AtraUri::from_str(found.as_str()).unwrap_or_else(|_| self.url.url.clone())

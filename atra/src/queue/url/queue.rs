@@ -21,9 +21,9 @@ use crate::queue::url::{
 };
 use crate::queue::{EnqueueCalled, RawSupportsForcedQueueElement};
 use crate::url::UrlWithDepth;
-use clap::builder::TypedValueParser;
-use itertools::{Either, Itertools};
-use std::future::Future;
+use itertools::Either;
+#[cfg(test)]
+use itertools::Itertools;
 use std::ops::ControlFlow;
 use std::path::Path;
 use tokio::sync::watch::Receiver;
@@ -46,7 +46,6 @@ impl<T> UrlQueueWrapper<T>
 where
     T: RawAgingQueue + RawSupportsForcedQueueElement,
 {
-    #[allow(dead_code)]
     pub fn into_inner(self) -> T {
         self.inner
     }
@@ -89,7 +88,7 @@ where
 /// An url queue provides a threadsafe way to get values.
 impl<T: RawAgingQueue> UrlQueue<UrlWithDepth> for UrlQueueWrapper<T> {
     #[inline]
-    async fn enqueue(&self, mut entry: UrlQueueElement<UrlWithDepth>) -> Result<(), QueueError> {
+    async fn enqueue(&self, entry: UrlQueueElement<UrlWithDepth>) -> Result<(), QueueError> {
         let mut entry = Either::Left(entry);
         loop {
             unsafe {
@@ -155,6 +154,7 @@ impl<T: RawAgingQueue> UrlQueue<UrlWithDepth> for UrlQueueWrapper<T> {
         }
     }
 
+    #[cfg(test)]
     async fn dequeue_n<'a>(
         &'a self,
         n: usize,
@@ -233,15 +233,15 @@ mod test {
         assert_eq!(3, q.len().await);
         assert_eq!(
             "https://www.test1.de/",
-            q.dequeue().await.unwrap().unwrap().as_ref().as_str()
+            q.dequeue().await.unwrap().unwrap().as_ref().try_as_str()
         );
         assert_eq!(
             "https://www.test2.de/",
-            q.dequeue().await.unwrap().unwrap().as_ref().as_str()
+            q.dequeue().await.unwrap().unwrap().as_ref().try_as_str()
         );
         assert_eq!(
             "https://www.test3.de/",
-            q.dequeue().await.unwrap().unwrap().as_ref().as_str()
+            q.dequeue().await.unwrap().unwrap().as_ref().try_as_str()
         );
     }
 
@@ -251,19 +251,19 @@ mod test {
                 true,
                 0,
                 false,
-                UrlWithDepth::from_seed("https://www.test1.de").unwrap(),
+                UrlWithDepth::from_url("https://www.test1.de").unwrap(),
             ),
             UrlQueueElement::new(
                 true,
                 0,
                 false,
-                UrlWithDepth::from_seed("https://www.test2.de").unwrap(),
+                UrlWithDepth::from_url("https://www.test2.de").unwrap(),
             ),
             UrlQueueElement::new(
                 true,
                 0,
                 false,
-                UrlWithDepth::from_seed("https://www.test3.de").unwrap(),
+                UrlWithDepth::from_url("https://www.test3.de").unwrap(),
             ),
         ])
         .await
@@ -276,14 +276,14 @@ mod test {
             .map(|value| value.take())
             .collect_vec();
 
-        assert_eq!("https://www.test1.de/", values[0].as_ref().as_str());
-        assert_eq!("https://www.test2.de/", values[1].as_ref().as_str());
-        assert_eq!("https://www.test3.de/", values[2].as_ref().as_str());
+        assert_eq!("https://www.test1.de/", values[0].as_ref().try_as_str());
+        assert_eq!("https://www.test2.de/", values[1].as_ref().try_as_str());
+        assert_eq!("https://www.test3.de/", values[2].as_ref().try_as_str());
         q.enqueue(UrlQueueElement::new(
             true,
             0,
             false,
-            UrlWithDepth::from_seed("https://www.test4.de").unwrap(),
+            UrlWithDepth::from_url("https://www.test4.de").unwrap(),
         ))
         .await
         .unwrap();
@@ -292,32 +292,50 @@ mod test {
             true,
             0,
             false,
-            UrlWithDepth::from_seed("https://www.test5.de").unwrap(),
+            UrlWithDepth::from_url("https://www.test5.de").unwrap(),
         ))
         .await
         .unwrap();
 
         assert_eq!(
             "https://www.test4.de/",
-            q.dequeue().await.unwrap().unwrap().take().as_ref().as_str()
+            q.dequeue()
+                .await
+                .unwrap()
+                .unwrap()
+                .take()
+                .as_ref()
+                .try_as_str()
         );
         assert_eq!(
             "https://www.test5.de/",
-            q.dequeue().await.unwrap().unwrap().take().as_ref().as_str()
+            q.dequeue()
+                .await
+                .unwrap()
+                .unwrap()
+                .take()
+                .as_ref()
+                .try_as_str()
         );
 
         q.enqueue(UrlQueueElement::new(
             true,
             0,
             false,
-            UrlWithDepth::from_seed("https://www.test6.de").unwrap(),
+            UrlWithDepth::from_url("https://www.test6.de").unwrap(),
         ))
         .await
         .unwrap();
 
         assert_eq!(
             "https://www.test6.de/",
-            q.dequeue().await.unwrap().unwrap().take().as_ref().as_str()
+            q.dequeue()
+                .await
+                .unwrap()
+                .unwrap()
+                .take()
+                .as_ref()
+                .try_as_str()
         );
     }
 
@@ -327,19 +345,19 @@ mod test {
                 true,
                 0,
                 false,
-                UrlWithDepth::from_seed("https://www.test1.de").unwrap(),
+                UrlWithDepth::from_url("https://www.test1.de").unwrap(),
             ),
             UrlQueueElement::new(
                 true,
                 0,
                 false,
-                UrlWithDepth::from_seed("https://www.test2.de").unwrap(),
+                UrlWithDepth::from_url("https://www.test2.de").unwrap(),
             ),
             UrlQueueElement::new(
                 true,
                 0,
                 false,
-                UrlWithDepth::from_seed("https://www.test3.de").unwrap(),
+                UrlWithDepth::from_url("https://www.test3.de").unwrap(),
             ),
         ])
         .await
@@ -356,9 +374,9 @@ mod test {
         let value4 = q.dequeue().await.unwrap().unwrap();
         assert_eq!(true, q.has_floating_urls());
         assert_eq!(3, q.floating_url_count());
-        assert_eq!("https://www.test2.de/", value2.as_ref().as_str());
-        assert_eq!("https://www.test3.de/", value3.as_ref().as_str());
-        assert_eq!("https://www.test1.de/", value4.as_ref().as_str());
+        assert_eq!("https://www.test2.de/", value2.as_ref().try_as_str());
+        assert_eq!("https://www.test3.de/", value3.as_ref().try_as_str());
+        assert_eq!("https://www.test1.de/", value4.as_ref().try_as_str());
         drop(value2);
         drop(value3);
         drop(value4);

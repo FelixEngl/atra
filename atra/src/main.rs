@@ -32,6 +32,7 @@ mod html;
 mod io;
 mod link_state;
 mod queue;
+mod recrawl_management;
 mod robots;
 mod runtime;
 mod seed;
@@ -43,7 +44,6 @@ mod toolkit;
 mod url;
 mod warc_ext;
 mod web_graph;
-mod recrawl_management;
 
 fn main() {
     exec_args(AtraArgs::parse())

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use crate::seed::error::SeedCreationError;
+#[cfg(test)]
 use crate::seed::unguarded::UnguardedSeed;
 use crate::seed::BasicSeed;
 use crate::url::guard::UrlGuardian;
@@ -39,7 +40,6 @@ unsafe impl<'guard, Guardian> Sync for GuardedSeed<'guard, Guardian> where
 {
 }
 
-#[allow(dead_code)]
 impl<'guard, Guardian> GuardedSeed<'guard, Guardian>
 where
     Guardian: UrlGuardian + 'static,
@@ -94,6 +94,7 @@ where
         self.url_with_guard.is_seed()
     }
 
+    #[cfg(test)]
     #[inline]
     fn create_unguarded(&self) -> UnguardedSeed {
         self.url_with_guard.get_unguarded_seed()

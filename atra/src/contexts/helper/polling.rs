@@ -15,18 +15,16 @@
 use crate::contexts::traits::{
     SupportsConfigs, SupportsLinkState, SupportsPolling, SupportsUrlGuarding, SupportsUrlQueue,
 };
-use crate::link_state::{LinkState, LinkStateKind, LinkStateLike, LinkStateManager};
+use crate::link_state::{LinkStateKind, LinkStateLike, LinkStateManager};
 use crate::queue::{
-    AbortCause, EnqueueCalled, QueueError, QueueExtractionError, UrlQueue, UrlQueueElement,
-    UrlQueueElementRef, UrlQueuePollResult,
+    AbortCause, EnqueueCalled, QueueExtractionError, UrlQueue, UrlQueueElement, UrlQueueElementRef,
+    UrlQueuePollResult,
 };
-use crate::runtime::{ShutdownReceiver, ShutdownReceiverWithWait};
+use crate::runtime::ShutdownReceiverWithWait;
 use crate::sync::barrier::ContinueOrStop;
-use crate::url::guard::{GuardianError, UrlGuard, UrlGuardian};
+use crate::url::guard::{GuardianError, UrlGuardian};
 use crate::url::{AtraOriginProvider, UrlWithDepth, UrlWithGuard};
-use smallvec::SmallVec;
 use std::error::Error;
-use std::future::Future;
 use std::time::Duration;
 use tokio::select;
 use tokio::sync::watch::Receiver;
@@ -132,6 +130,7 @@ where
                             break UrlQueuePollResult::Abort(AbortCause::NoHost(entry.take()))
                         }
                         Err(GuardianError::AlreadyOccupied(_)) => {
+                            missed += 1;
                             missed_host_cache.push(entry);
                         }
                     }
@@ -212,11 +211,9 @@ mod test {
         SupportsConfigs, SupportsLinkState, SupportsPolling, SupportsUrlGuarding, SupportsUrlQueue,
     };
     use crate::contexts::BaseContext;
-    use crate::queue::{
-        AbortCause, QueueExtractionError, UrlQueue, UrlQueueElement, UrlQueuePollResult,
-    };
+    use crate::queue::{QueueExtractionError, UrlQueue, UrlQueueElement, UrlQueuePollResult};
     use crate::test_impls::{InMemoryLinkStateManager, TestUrlQueue};
-    use crate::url::guard::{GuardianError, InMemoryUrlGuardian, UrlGuardian};
+    use crate::url::guard::{InMemoryUrlGuardian, UrlGuardian};
     use crate::url::UrlWithDepth;
     use std::sync::Arc;
     use std::time::Duration;
@@ -302,31 +299,31 @@ mod test {
                     true,
                     0,
                     false,
-                    UrlWithDepth::from_seed("https://www.test1.de").unwrap(),
+                    UrlWithDepth::from_url("https://www.test1.de").unwrap(),
                 ),
                 UrlQueueElement::new(
                     true,
                     0,
                     false,
-                    UrlWithDepth::from_seed("https://www.test2.de").unwrap(),
+                    UrlWithDepth::from_url("https://www.test2.de").unwrap(),
                 ),
                 UrlQueueElement::new(
                     true,
                     0,
                     false,
-                    UrlWithDepth::from_seed("https://www.test3.de").unwrap(),
+                    UrlWithDepth::from_url("https://www.test3.de").unwrap(),
                 ),
                 UrlQueueElement::new(
                     false,
                     0,
                     false,
-                    UrlWithDepth::from_seed("https://www.test2.de/uniform").unwrap(),
+                    UrlWithDepth::from_url("https://www.test2.de/uniform").unwrap(),
                 ),
                 UrlQueueElement::new(
                     false,
                     0,
                     false,
-                    UrlWithDepth::from_seed("https://www.test3.de/katze").unwrap(),
+                    UrlWithDepth::from_url("https://www.test3.de/katze").unwrap(),
                 ),
                 // UrlQueueElement::new(
                 //     true,
@@ -342,9 +339,9 @@ mod test {
         let next2 = fake.poll_next_free_url_no_shutdown(None).await.unwrap();
         let next3 = fake.poll_next_free_url_no_shutdown(None).await.unwrap();
 
-        assert_eq!("https://www.test1.de/", next1.seed_url().as_str());
-        assert_eq!("https://www.test2.de/", next2.seed_url().as_str());
-        assert_eq!("https://www.test3.de/", next3.seed_url().as_str());
+        assert_eq!("https://www.test1.de/", next1.seed_url().try_as_str());
+        assert_eq!("https://www.test2.de/", next2.seed_url().try_as_str());
+        assert_eq!("https://www.test3.de/", next3.seed_url().try_as_str());
         assert_eq!(2, fake.queue.len().await);
 
         let fake2 = fake.clone();
@@ -353,8 +350,8 @@ mod test {
             assert_eq!(2, fake2.queue.len().await);
             match fake2.poll_next_free_url_no_shutdown(None).await {
                 UrlQueuePollResult::Ok(ok) => {
-                    assert_eq!("https://www.test3.de/katze", ok.seed_url().as_str());
-                    println!("Process: {}", ok.seed_url().as_str());
+                    assert_eq!("https://www.test3.de/katze", ok.seed_url().try_as_str());
+                    println!("Process: {}", ok.seed_url().try_as_str());
                 }
                 UrlQueuePollResult::Abort(ab) => {
                     panic!("Abort for {}", ab)
@@ -371,8 +368,8 @@ mod test {
             inp.changed().await.unwrap();
             match fake2.poll_next_free_url_no_shutdown(None).await {
                 UrlQueuePollResult::Ok(ok) => {
-                    assert_eq!("https://www.test2.de/uniform", ok.seed_url().as_str());
-                    println!("Process {}", ok.seed_url().as_str())
+                    assert_eq!("https://www.test2.de/uniform", ok.seed_url().try_as_str());
+                    println!("Process {}", ok.seed_url().try_as_str())
                 }
                 UrlQueuePollResult::Abort(ab) => {
                     panic!("Abort for {}", ab)
@@ -388,13 +385,13 @@ mod test {
             }
         });
 
-        println!("Drop {}", next1.seed_url().as_str());
+        println!("Drop {}", next1.seed_url().try_as_str());
         drop(next1);
         tokio::time::sleep(Duration::from_secs(1)).await;
-        println!("Drop {}", next3.seed_url().as_str());
+        println!("Drop {}", next3.seed_url().try_as_str());
         drop(next3);
         tokio::time::sleep(Duration::from_secs(1)).await;
-        println!("Drop {}", next2.seed_url().as_str());
+        println!("Drop {}", next2.seed_url().try_as_str());
         drop(next2);
         tokio::time::sleep(Duration::from_secs(2)).await;
         // let url = fake.poll_next_free_url_no_shutdown(None).await.unwrap();

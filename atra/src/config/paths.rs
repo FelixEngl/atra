@@ -43,13 +43,11 @@ impl Default for PathsConfig {
 macro_rules! path_constructors {
     ($self: ident.($($root: ident => $name: ident = $path1: ident.$path2: ident;)+)) => {
         $(
-            #[allow(dead_code)]
             pub fn $name(&$self) -> Utf8PathBuf {
                 $self.$root.join(&$self.$path1.$path2)
             }
 
             paste::paste! {
-                #[allow(dead_code)]
                 pub fn [<$name _name>](&$self) -> Option<&str> {
                     $self.$path1.$path2.file_name()
                 }

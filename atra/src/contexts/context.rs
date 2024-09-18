@@ -60,8 +60,11 @@ pub mod traits {
     use crate::io::fs::AtraFS;
     use crate::link_state::LinkStateManager;
     use crate::queue::{SupportsForcedQueueElement, UrlQueue, UrlQueuePollResult};
+    use crate::recrawl_management::DomainLastCrawledManager;
     use crate::robots::RobotsManager;
-    use crate::runtime::{ShutdownPhantom, ShutdownReceiverWithWait};
+    #[cfg(test)]
+    use crate::runtime::ShutdownPhantom;
+    use crate::runtime::ShutdownReceiverWithWait;
     use crate::seed::BasicSeed;
     use crate::url::guard::UrlGuardian;
     use crate::url::{UrlWithDepth, UrlWithGuard};
@@ -69,7 +72,6 @@ pub mod traits {
     use std::collections::HashSet;
     use std::error::Error;
     use text_processing::stopword_registry::StopWordRegistry;
-    use crate::recrawl_management::DomainLastCrawledManager;
 
     /// A marker interface for applying the context trait iff appropriate
     pub trait ContextDelegate {}
@@ -198,7 +200,6 @@ pub mod traits {
         ) -> Result<(), Self::Error>;
     }
 
-    #[allow(dead_code)]
     pub trait SupportsCrawlResults: BaseContext {
         type Error: std::error::Error + Send + Sync;
 

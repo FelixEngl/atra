@@ -21,12 +21,10 @@ macro_rules! html_tags {
     ($($name: ident = $value: literal;)+) => {
 
         #[derive(Serialize, Deserialize, Debug, Display)]
-        #[allow(dead_code)]
         pub enum HtmlTag {
             $($name),+
         }
 
-        #[allow(dead_code)]
         impl HtmlTag {
             pub fn tag(&self) -> &'static str {
                 match self {
@@ -35,7 +33,6 @@ macro_rules! html_tags {
             }
         }
 
-        #[allow(dead_code)]
         impl FromStr for HtmlTag {
             type Err = NotAHtmlTag;
 
@@ -57,7 +54,6 @@ macro_rules! hmtl_tags_categories {
         }
 
         impl HtmlTagCategory {
-            #[allow(dead_code)]
             pub fn tags(&self) -> &'static [HtmlTag] {
                 match self {
                     $(Self::$cat => &[$(HtmlTag::$tag),+]),+
@@ -72,19 +68,6 @@ macro_rules! hmtl_tags_categories {
                 }
             }
         }
-    };
-}
-
-#[cfg(test)]
-macro_rules! has_characteristic {
-    ($($target: ident::$name:ident($pattern:pat $(if $guard:expr)? $(,)?);)+) => {
-        $(
-            impl $target {
-                pub fn $name(&self) -> bool {
-                    matches!(self, $pattern $(if $guard)?)
-                }
-            }
-        )+
     };
 }
 
@@ -219,10 +202,6 @@ html_tags! {
     Video = "video";
     Wbr = "wbr";
 }
-
-// has_characteristic! {
-//     HtmlTag::defines_section(HtmlTag::Div | HtmlTag::Span);
-// }
 
 hmtl_tags_categories!(
     Basic: Html, Head, Title, Body, H1, H2, H3, H4, H5, H6, P, Br, Hr;

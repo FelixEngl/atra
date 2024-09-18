@@ -51,7 +51,6 @@ impl WorkerBarrier {
     }
 
     /// Trigger the cancellation manually
-    #[allow(dead_code)]
     pub fn trigger_cancellation(&self) {
         self.cancellation_token.cancel()
     }

@@ -19,7 +19,6 @@ use thiserror::Error;
 pub mod manager_impl;
 
 /// A manager for a blacklist
-#[allow(dead_code)]
 pub trait BlacklistManager {
     type Blacklist: ManageableBlacklist;
 

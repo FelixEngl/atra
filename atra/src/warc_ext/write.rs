@@ -79,7 +79,7 @@ pub fn write_warc<W: SpecialWarcWriter>(
     log_consume!(builder.warc_type(WarcRecordType::Response));
     let first_id = Uuid::new_v5(
         &Uuid::NAMESPACE_URL,
-        (&content.meta.url).as_str().as_bytes(),
+        (&content.meta.url).try_as_str().as_bytes(),
     )
     .as_urn()
     .to_string();
@@ -95,7 +95,7 @@ pub fn write_warc<W: SpecialWarcWriter>(
         log_consume!(builder.target_uri(urilike));
     } else {
         let urilike_page =
-            unsafe { UriLikeFieldValue::from_string_unchecked(&content.meta.url.as_str()) };
+            unsafe { UriLikeFieldValue::from_string_unchecked(&content.meta.url.try_as_str()) };
         log_consume!(builder.target_uri(urilike_page));
     }
 

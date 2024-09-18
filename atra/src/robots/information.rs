@@ -181,7 +181,7 @@ impl<'a, R: RobotsManager> RobotsInformation for OriginSpecificRobotsInformation
         if let Some(origin) = url.atra_origin() {
             if origin == self.origin {
                 log::trace!("Robots: Fast");
-                return Some(self.origin_cached.allowed(&url.as_str()));
+                return Some(self.origin_cached.allowed(&url.try_as_str()));
             }
         }
         self.general.check_if_allowed_fast(url).await
@@ -195,7 +195,7 @@ impl<'a, R: RobotsManager> RobotsInformation for OriginSpecificRobotsInformation
         if let Some(origin) = url.atra_origin() {
             if origin == self.origin {
                 log::trace!("Robots: Fast");
-                return self.origin_cached.allowed(&url.as_str());
+                return self.origin_cached.allowed(&url.try_as_str());
             }
         }
         self.general.check_if_allowed(client, url).await
@@ -305,7 +305,7 @@ impl<'a, R: RobotsManager> RobotsInformation for GeneralRobotsInformation<'a, R>
         #[error("")]
         struct AnonymousError;
         let found = self.get::<AnonymousError>(url).await.ok().flatten();
-        found.map(|found| found.allowed(&url.as_str()))
+        found.map(|found| found.allowed(&url.try_as_str()))
     }
 
     /// Tries to check in any of the cache-layers, if there is an error it returns false
@@ -317,7 +317,7 @@ impl<'a, R: RobotsManager> RobotsInformation for GeneralRobotsInformation<'a, R>
         match self
             .get_or_retrieve(client, url)
             .await
-            .map(|found| found.allowed(&url.as_str()))
+            .map(|found| found.allowed(&url.try_as_str()))
         {
             Ok(result) => result,
             Err(err) => {

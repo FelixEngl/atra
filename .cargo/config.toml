@@ -1,0 +1,2 @@
+[target.'cfg(not(test))']
+rustflags=["-Adead_code"]

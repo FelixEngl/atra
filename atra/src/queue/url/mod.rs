@@ -12,16 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::queue::errors::{QueueError, RawQueueError};
+use crate::queue::errors::QueueError;
 use crate::queue::url::element::UrlQueueElement;
 use crate::queue::EnqueueCalled;
 use crate::url::UrlWithDepth;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use smallvec::SmallVec;
-use std::fmt::Debug;
-use std::mem::{ManuallyDrop, MaybeUninit};
-use std::ops::Deref;
 use tokio::sync::watch::Receiver;
 
 pub mod element;
@@ -38,7 +34,7 @@ where
     fn force_enqueue(&self, entry: UrlQueueElement<T>) -> Result<(), QueueError>;
 }
 
-/// A traif for an url queue
+/// A trait for an url queue
 pub trait UrlQueue<T>
 where
     T: Serialize + DeserializeOwned + Sized + 'static,
@@ -46,6 +42,7 @@ where
     async fn enqueue(&self, entry: UrlQueueElement<T>) -> Result<(), QueueError>;
 
     #[cfg(test)]
+    #[allow(dead_code)]
     async fn enqueue_borrowed<'a>(&self, entry: UrlQueueElement<&'a T>) -> Result<(), QueueError>;
 
     async fn enqueue_all(
@@ -95,7 +92,7 @@ where
             true,
             0,
             false,
-            UrlWithDepth::from_seed(target)?,
+            UrlWithDepth::from_url(target)?,
         ))
         .await
     }
@@ -107,7 +104,7 @@ where
         self.enqueue_all(
             urls.into_iter()
                 .map(|s| {
-                    UrlWithDepth::from_seed(s.as_ref())
+                    UrlWithDepth::from_url(s.as_ref())
                         .map(|value| UrlQueueElement::new(true, 0, false, value))
                 })
                 .collect::<Result<Vec<_>, _>>()?,

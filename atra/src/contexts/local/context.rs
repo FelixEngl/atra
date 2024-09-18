@@ -30,6 +30,7 @@ use crate::link_state::{
     RecrawlYesNo,
 };
 use crate::queue::{RawAgingQueueFile, UrlQueue, UrlQueueElement, UrlQueueWrapper};
+use crate::recrawl_management::DomainLastCrawledDatabaseManager;
 use crate::robots::OffMemoryRobotsManager;
 use crate::runtime::RuntimeContext;
 use crate::runtime::UnsafeShutdownGuard;
@@ -49,7 +50,6 @@ use std::sync::Arc;
 use text_processing::stopword_registry::StopWordRegistry;
 use text_processing::tf_idf::{Idf, Tf};
 use time::OffsetDateTime;
-use crate::recrawl_management::DomainLastCrawledDatabaseManager;
 
 /// The state of the app
 #[derive(Debug)]
@@ -136,9 +136,7 @@ impl LocalContext {
             None
         };
 
-        let domain_manager = DomainLastCrawledDatabaseManager::new(
-            db.clone()
-        );
+        let domain_manager = DomainLastCrawledDatabaseManager::new(db.clone());
 
         Ok(LocalContext {
             _db: db,
@@ -160,7 +158,6 @@ impl LocalContext {
         })
     }
 
-    #[allow(dead_code)]
     pub fn crawl_db(&self) -> &CrawlDB {
         &self.crawled_data
     }
@@ -178,7 +175,6 @@ impl SupportsStopwordsRegistry for LocalContext {
 }
 impl AsyncContext for LocalContext {}
 
-
 impl SupportsDomainHandling for LocalContext {
     type DomainHandler = DomainLastCrawledDatabaseManager;
 
@@ -186,7 +182,6 @@ impl SupportsDomainHandling for LocalContext {
         &self.domain_manager
     }
 }
-
 
 impl SupportsLinkSeeding for LocalContext {
     type Error = LinkHandlingError;

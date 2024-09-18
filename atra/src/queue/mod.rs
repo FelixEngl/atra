@@ -29,4 +29,5 @@ pub use url::SupportsForcedQueueElement;
 pub use url::SupportsSeeding;
 pub use url::UrlQueue;
 pub use url::UrlQueueElementRef;
+#[cfg(test)]
 pub use url::UrlQueueElementRefCounter;

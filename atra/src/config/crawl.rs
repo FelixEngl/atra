@@ -17,12 +17,13 @@
 use crate::extraction::extractor::Extractor;
 use crate::gdbr::identifier::GdbrIdentifierRegistryConfig;
 use crate::toolkit::header_map_extensions::optional_header_map;
-use crate::url::UrlWithDepth;
-use case_insensitive_string::CaseInsensitiveString;
+use crate::url::{AtraUrlOrigin, UrlWithDepth};
 use reqwest::header::HeaderMap;
 use serde;
 use serde::{Deserialize, Serialize};
+use std::borrow::Borrow;
 use std::collections::HashMap;
+use std::hash::Hash;
 use std::num::NonZeroU64;
 use strum::Display;
 use strum::EnumString;
@@ -110,10 +111,6 @@ pub struct CrawlConfig {
 
     /// Used to configure the gdbr feature
     pub gbdr: Option<GdbrIdentifierRegistryConfig<Tf, Idf>>,
-
-    #[cfg(feature = "chrome")]
-    /// The settings for a chrome instance
-    pub chrome_settings: Option<ChromeSettings>,
 }
 
 impl Default for CrawlConfig {
@@ -148,8 +145,6 @@ impl Default for CrawlConfig {
             decode_big_files_up_to: None,
             stopword_registry: None,
             gbdr: None,
-            #[cfg(feature = "chrome")]
-            chrome_settings: Default::default(),
         }
     }
 }
@@ -158,16 +153,18 @@ impl Default for CrawlConfig {
 #[derive(Debug, Default, Clone, Deserialize, Serialize, Eq, PartialEq)]
 pub struct CookieSettings {
     pub default: Option<String>,
-    pub per_host: Option<HashMap<CaseInsensitiveString, String>>,
+    pub per_host: Option<HashMap<AtraUrlOrigin, String>>,
 }
 
 impl CookieSettings {
     /// Checks if the domain has some kind of configured cookie
-    pub fn get_cookies_for(&self, domain: &impl AsRef<str>) -> Option<&String> {
+    pub fn get_cookies_for<Q: ?Sized>(&self, domain: &Q) -> Option<&String>
+    where
+        AtraUrlOrigin: Borrow<Q>,
+        Q: Hash + Eq,
+    {
         if let Some(ref per_domain) = self.per_host {
-            per_domain
-                .get(&CaseInsensitiveString::from(domain.as_ref()))
-                .or_else(|| self.default.as_ref())
+            per_domain.get(domain).or_else(|| self.default.as_ref())
         } else {
             if let Some(ref default) = self.default {
                 Some(default)
@@ -231,16 +228,18 @@ impl AsRef<str> for UserAgent {
 #[derive(Debug, Default, Clone, Deserialize, Serialize, Eq, PartialEq)]
 pub struct CrawlBudget {
     pub default: BudgetSetting,
-    pub per_host: Option<HashMap<CaseInsensitiveString, BudgetSetting>>,
+    pub per_host: Option<HashMap<AtraUrlOrigin, BudgetSetting>>,
 }
 
 impl CrawlBudget {
-    pub fn get_budget_for(&self, origin: &impl AsRef<str>) -> &BudgetSetting {
+    pub fn get_budget_for<Q: ?Sized>(&self, origin: &Q) -> &BudgetSetting
+    where
+        AtraUrlOrigin: Borrow<Q>,
+        Q: Hash + Eq,
+    {
         match self.per_host {
             None => &self.default,
-            Some(ref found) => found
-                .get(&CaseInsensitiveString::from(origin.as_ref()))
-                .unwrap_or(&self.default),
+            Some(ref found) => found.get(origin).unwrap_or(&self.default),
         }
     }
 }
@@ -447,154 +446,6 @@ impl Default for BudgetSetting {
             depth: 3,
             recrawl_interval: None,
             request_timeout: Some(Duration::seconds(15)),
-        }
-    }
-}
-
-/// Chrome specific settings
-#[cfg(feature = "chrome")]
-#[derive(Serialize, Deserialize, Debug, Clone, Default, Eq, PartialEq)]
-pub struct ChromeSettings {
-    /// Use stealth mode for requests.
-    pub stealth_mode: bool,
-    /// Setup network interception for request.
-    pub intercept_settings: InterceptSettings,
-    /// Overrides default host system timezone with the specified one.
-    pub timezone_id: Option<String>,
-    /// Overrides default host system locale with the specified one.
-    pub locale: Option<String>,
-    /// Configure the viewport for chrome.
-    pub viewport: Option<Viewport>,
-}
-
-/// The intercept settings for chrome
-#[cfg(feature = "chrome")]
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, Eq, PartialEq)]
-pub enum InterceptSettings {
-    /// No intercepting
-    #[default]
-    Off,
-    On {
-        /// Setup network interception for request.
-        chrome_intercept: bool,
-
-        /// Block all images from rendering in Chrome.
-        chrome_intercept_block_visuals: bool,
-    },
-}
-
-#[cfg(feature = "chrome")]
-#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
-/// View port handling for chrome.
-pub struct Viewport {
-    /// Device screen Width
-    pub width: u32,
-    /// Device screen size
-    pub height: u32,
-    /// Device scale factor
-    pub device_scale_factor: Option<f64>,
-    /// Emulating Mobile?
-    pub emulating_mobile: bool,
-    /// Use landscape mode instead of portrait.
-    pub is_landscape: bool,
-    /// Touch screen device?
-    pub has_touch: bool,
-}
-
-#[cfg(feature = "chrome")]
-impl Default for Viewport {
-    fn default() -> Self {
-        Viewport {
-            width: 800,
-            height: 600,
-            device_scale_factor: None,
-            emulating_mobile: false,
-            is_landscape: false,
-            has_touch: false,
-        }
-    }
-}
-
-#[cfg(feature = "chrome")]
-impl From<Viewport> for chromiumoxide::handler::viewport::Viewport {
-    fn from(viewport: spider::configuration::Viewport) -> Self {
-        Self {
-            width: viewport.width,
-            height: viewport.height,
-            device_scale_factor: viewport.device_scale_factor,
-            emulating_mobile: viewport.emulating_mobile,
-            is_landscape: viewport.is_landscape,
-            has_touch: viewport.has_touch,
-        }
-    }
-}
-
-#[cfg(feature = "chrome")]
-#[derive(
-    Debug, Clone, PartialEq, Eq, Hash, Default, EnumString, Display, Serialize, Deserialize,
-)]
-/// Capture screenshot options for chrome.
-pub enum CaptureScreenshotFormat {
-    #[serde(rename = "jpeg")]
-    /// jpeg format
-    Jpeg,
-    #[serde(rename = "png")]
-    #[default]
-    /// png format
-    Png,
-    #[serde(rename = "webp")]
-    /// webp format
-    Webp,
-}
-#[cfg(feature = "chrome")]
-impl From<CaptureScreenshotFormat>
-    for chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotFormat
-{
-    fn from(value: CaptureScreenshotFormat) -> Self {
-        match value {
-            CaptureScreenshotFormat::Jpeg => {
-                chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotFormat::Jpeg
-            }
-            CaptureScreenshotFormat::Png => {
-                chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotFormat::Png
-            }
-            CaptureScreenshotFormat::Webp => {
-                chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotFormat::Webp
-            }
-        }
-    }
-}
-
-#[cfg(feature = "chrome")]
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
-/// The view port clip for screenshots.
-pub struct ClipViewport {
-    #[doc = "X offset in device independent pixels (dip)."]
-    #[serde(rename = "x")]
-    pub x: f64,
-    #[doc = "Y offset in device independent pixels (dip)."]
-    #[serde(rename = "y")]
-    pub y: f64,
-    #[doc = "Rectangle width in device independent pixels (dip)."]
-    #[serde(rename = "width")]
-    pub width: f64,
-    #[doc = "Rectangle height in device independent pixels (dip)."]
-    #[serde(rename = "height")]
-    pub height: f64,
-    #[doc = "Page scale factor."]
-    #[serde(rename = "scale")]
-    pub scale: f64,
-}
-
-#[cfg(feature = "chrome")]
-impl From<ClipViewport> for chromiumoxide::cdp::browser_protocol::page::Viewport {
-    fn from(viewport: ClipViewport) -> Self {
-        Self {
-            x: viewport.x,
-            y: viewport.y,
-            height: viewport.height,
-            width: viewport.width,
-            scale: viewport.scale,
         }
     }
 }

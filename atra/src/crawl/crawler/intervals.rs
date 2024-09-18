@@ -70,11 +70,13 @@ where
                     default.unsigned_abs()
                 } else {
                     log::warn!("Fallback delay 1000ms for {}", url);
-                    #[cfg(test)] {
+                    #[cfg(test)]
+                    {
                         std::time::Duration::from_millis(10)
                     }
 
-                    #[cfg(not(test))] {
+                    #[cfg(not(test))]
+                    {
                         std::time::Duration::from_millis(1000)
                     }
                 };

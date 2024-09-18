@@ -64,7 +64,7 @@ mod test {
         let db = LinkStateRockDB::new(db);
 
         db.set_state(
-            &UrlWithDepth::from_seed("https://google.de").unwrap(),
+            &UrlWithDepth::from_url("https://google.de").unwrap(),
             &LinkState::without_payload(
                 LinkStateKind::Discovered,
                 LinkStateKind::Discovered,
@@ -77,7 +77,7 @@ mod test {
         .unwrap();
 
         db.set_state(
-            &UrlWithDepth::from_seed("https://amazon.de").unwrap(),
+            &UrlWithDepth::from_url("https://amazon.de").unwrap(),
             &LinkState::without_payload(
                 LinkStateKind::Crawled,
                 LinkStateKind::Discovered,
@@ -90,7 +90,7 @@ mod test {
         .unwrap();
 
         db.upsert_state(
-            &UrlWithDepth::from_seed("https://google.de").unwrap(),
+            &UrlWithDepth::from_url("https://google.de").unwrap(),
             &LinkState::without_payload(
                 LinkStateKind::InternalError,
                 LinkStateKind::Discovered,
@@ -104,12 +104,12 @@ mod test {
 
         println!(
             "{:?}",
-            db.get_state(&UrlWithDepth::from_seed("https://amazon.de").unwrap())
+            db.get_state(&UrlWithDepth::from_url("https://amazon.de").unwrap())
                 .unwrap()
         );
         println!(
             "{:?}",
-            db.get_state(&UrlWithDepth::from_seed("https://google.de").unwrap())
+            db.get_state(&UrlWithDepth::from_url("https://google.de").unwrap())
                 .unwrap()
         );
     }
@@ -125,7 +125,7 @@ mod test {
             let db = db.weak();
 
             db.set_state(
-                &UrlWithDepth::from_seed("https://amazon.de").unwrap(),
+                &UrlWithDepth::from_url("https://amazon.de").unwrap(),
                 &LinkState::without_payload(
                     LinkStateKind::Discovered,
                     LinkStateKind::Discovered,
@@ -138,7 +138,7 @@ mod test {
             .unwrap();
 
             db.set_state(
-                &UrlWithDepth::from_seed("https://google.de").unwrap(),
+                &UrlWithDepth::from_url("https://google.de").unwrap(),
                 &LinkState::without_payload(
                     LinkStateKind::Crawled,
                     LinkStateKind::Discovered,
@@ -153,12 +153,12 @@ mod test {
 
         println!(
             "{:?}",
-            db.get_state(&UrlWithDepth::from_seed("https://amazon.de").unwrap())
+            db.get_state(&UrlWithDepth::from_url("https://amazon.de").unwrap())
                 .unwrap()
         );
         println!(
             "{:?}",
-            db.get_state(&UrlWithDepth::from_seed("https://google.de").unwrap())
+            db.get_state(&UrlWithDepth::from_url("https://google.de").unwrap())
                 .unwrap()
         );
     }
@@ -175,7 +175,7 @@ mod test {
             let db = db.weak();
 
             db.update_state_no_payload(
-                &UrlWithDepth::from_seed("https://amazon.de").unwrap(),
+                &UrlWithDepth::from_url("https://amazon.de").unwrap(),
                 LinkStateKind::Discovered,
                 None,
                 None,
@@ -183,7 +183,7 @@ mod test {
             .unwrap();
 
             db.update_state_no_payload(
-                &UrlWithDepth::from_seed("https://google.de").unwrap(),
+                &UrlWithDepth::from_url("https://google.de").unwrap(),
                 LinkStateKind::Discovered,
                 None,
                 None,
@@ -191,7 +191,7 @@ mod test {
             .unwrap();
 
             db.update_state_no_payload(
-                &UrlWithDepth::from_seed("https://google.de").unwrap(),
+                &UrlWithDepth::from_url("https://google.de").unwrap(),
                 LinkStateKind::Crawled,
                 None,
                 None,
@@ -200,22 +200,22 @@ mod test {
 
             println!(
                 "Amazon: {:?}",
-                db.get_state(&UrlWithDepth::from_seed("https://amazon.de").unwrap())
+                db.get_state(&UrlWithDepth::from_url("https://amazon.de").unwrap())
             );
             println!(
                 "Google: {:?}",
-                db.get_state(&UrlWithDepth::from_seed("https://google.de").unwrap())
+                db.get_state(&UrlWithDepth::from_url("https://google.de").unwrap())
             );
         }
 
         println!(
             "{:?}",
-            db.get_state(&UrlWithDepth::from_seed("https://amazon.de").unwrap())
+            db.get_state(&UrlWithDepth::from_url("https://amazon.de").unwrap())
                 .unwrap()
         );
         println!(
             "{:?}",
-            db.get_state(&UrlWithDepth::from_seed("https://google.de").unwrap())
+            db.get_state(&UrlWithDepth::from_url("https://google.de").unwrap())
                 .unwrap()
         );
     }
