@@ -113,7 +113,7 @@ impl AtraFS for FileSystemAccess {
         worker_id: usize,
         recrawl_iteration: usize,
     ) -> Result<WorkerFileSystemAccess, ErrorWithPath> {
-        let _ = self.filesystem_lock.lock();
+        let _unused = self.filesystem_lock.lock();
         WorkerFileSystemAccess::new(
             self.collection_root.clone(),
             self.worker_base.clone(),

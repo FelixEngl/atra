@@ -18,7 +18,7 @@ use std::io;
 use crate::app::consumer::{GlobalError, GlobalErrorConsumer};
 use crate::app::logging::configure_logging;
 use crate::config::Config;
-use crate::contexts::local::{LocalContext, LocalContextInitError};
+use crate::contexts::local::LocalContext;
 use crate::contexts::traits::*;
 use crate::contexts::worker::WorkerContext;
 use crate::crawl::{crawl, ErrorConsumer, ExitState};
@@ -31,11 +31,8 @@ use cfg_if::cfg_if;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 use time::OffsetDateTime;
 use tokio::task::JoinSet;
-use crate::app::context::{AtraRunContext, AtraRunContextError, AtraContext, AtraContextProvider};
-use crate::app::errors::AtraError;
 use crate::contexts::Context;
 
 cfg_if! {
@@ -77,9 +74,6 @@ pub struct Atra {
     shutdown: GracefulShutdown,
 }
 
-unsafe impl Send for Atra {}
-unsafe impl Sync for Atra {}
-
 /// From tokio
 fn num_cpus() -> NonZeroUsize {
     const ENV_WORKER_THREADS: &str = "TOKIO_WORKER_THREADS";
@@ -105,7 +99,6 @@ fn num_cpus() -> NonZeroUsize {
         }
     }
 }
-
 
 impl Atra {
     pub fn new(
@@ -178,38 +171,56 @@ impl Atra {
     // }
 
     /// Start the application
-    pub async fn run<P: AtraContextProvider, const LOGGING: bool>(
-        &self,
-        configs: Config,
+    pub async fn run(
+        &mut self,
         seeds: SeedDefinition,
-    ) -> Result<(), AtraError<P::Error, <P::AtraContext as AtraContext>::Error>> {
+        configs: Config,
+    ) -> Result<(), anyhow::Error> {
+        configure_logging(&configs);
+        self.run_without_logger(seeds, configs).await
+    }
 
-        if LOGGING {
-            configure_logging(&configs);
-        }
-        let shutdown_and_handle = RuntimeContext::new(
-            self.shutdown.guard(),
-            self.handle.clone(),
-        );
-        let context = P::create(configs, &shutdown_and_handle)
+    /// Returns true if there are more thins to crawl
+    async fn try_recrawls<C>(&self, context: &C) -> bool
+    where
+        C: SupportsUrlQueue + SupportsLinkState,
+    {
+        log::info!("Start to check if we have some kind of recrawl.");
+
+        if context
+            .get_link_state_manager()
+            .check_if_there_are_any_recrawlable_links()
             .await
-            .map_err(AtraError::Initialisation)?;
-        seeds.fill_queue(context.url_queue()).await;
-        Ok(
-            self
-                .run_context(context)
-                .await
-                .map_err(AtraError::Execution)?
-        )
+        {
+            let queue = context.url_queue();
+            context
+                .get_link_state_manager()
+                .collect_recrawlable_links(|is_seed, url| {
+                    queue
+                        .force_enqueue(UrlQueueElement::new(is_seed.is_yes(), 0, false, url))
+                        .unwrap()
+                })
+                .await;
+            log::info!("Finished refilling queue with data.");
+            !queue.is_empty().await
+        } else {
+            false
+        }
     }
 
 
-    pub async fn run_context<C>(
+
+    async fn run_without_logger(
         &self,
-        context: C,
-    ) -> Result<(), C::Error> where
-        C: AtraContext,
-    {
+        seeds: SeedDefinition,
+        configs: Config,
+    ) -> Result<(), anyhow::Error> {
+        let shutdown_and_handle = RuntimeContext::new(
+            self.shutdown.new_guard_instance().to_unsafe(),
+            self.handle.clone(),
+        );
+        let context = Arc::new(LocalContext::new(configs, &shutdown_and_handle)?);
+        seeds.fill_queue(context.url_queue()).await;
         match self.mode {
             ApplicationMode::Single => {
                 let start = OffsetDateTime::now_utc();
@@ -217,12 +228,13 @@ impl Atra {
                 loop {
                     let barrier = WorkerBarrier::new(unsafe { NonZeroUsize::new_unchecked(1) });
 
-                    let value = context.run_crawl_task(
-                        0,
-                        recrawl_ct,
-                        Arc::new(barrier),
+                    let value = crawl(
+                        WorkerContext::create(0, recrawl_ct, context.clone())?,
                         self.shutdown.clone(),
-                    ).await?;
+                        Arc::new(barrier),
+                        GlobalErrorConsumer::new(),
+                    )
+                        .await?;
 
                     let time_needed = OffsetDateTime::now_utc() - start;
                     log::info!(
@@ -248,7 +260,7 @@ impl Atra {
                         ExitState::NoMoreElements => {}
                     }
 
-                    if self.try_recrawls(&context).await {
+                    if self.try_recrawls(context.as_ref()).await {
                         recrawl_ct += 1;
                     } else {
                         break;
@@ -260,26 +272,48 @@ impl Atra {
             ApplicationMode::Multi(worker) => {
                 let start = OffsetDateTime::now_utc();
                 let mut recrawl_ct = 0;
-                let context = Arc::new(context);
+
                 loop {
                     let mut set = JoinSet::new();
                     let worker_count = worker.unwrap_or(num_cpus());
                     let barrier = Arc::new(WorkerBarrier::new(worker_count));
                     for i in 0..worker_count.get() {
                         log::info!("Spawn Worker: {i}");
-                        set.spawn(
-                            Self::execute(
-                                i,
-                                recrawl_ct,
-                                context.clone(),
-                                barrier.clone(),
-                                self.shutdown.clone()
-                            )
-                        );
+                        let b = barrier.clone();
+                        let s = self.shutdown.clone();
+                        let context = WorkerContext::create(i, recrawl_ct, context.clone())?;
+                        set.spawn(async move {
+                            let context = context;
+                            let (i, state) = loop {
+                                if context.can_poll().await {
+                                    match crawl(
+                                        context.clone(),
+                                        s.clone(),
+                                        b.clone(),
+                                        GlobalErrorConsumer::new(),
+                                    )
+                                        .await
+                                    {
+                                        Ok(s) => {
+                                            log::info!("Exit {i} with {s}.");
+                                            break (i, s);
+                                        }
+                                        Err(_) => {
+                                            log::error!("Encountered some errors.");
+                                        }
+                                    }
+                                } else {
+                                    break (i, ExitState::NoMoreElements);
+                                }
+                            };
+
+                            b.trigger_cancellation();
+                            (i, state)
+                        });
                     }
                     let mut is_stop = false;
                     while let Some(res) = set.join_next().await {
-                        if let Ok((i, s, _)) = res {
+                        if let Ok((i, s)) = res {
                             log::info!("Stopped worker {i}.");
                             if matches!(s, ExitState::Shutdown) {
                                 is_stop = true
@@ -320,72 +354,8 @@ impl Atra {
             }
         }
     }
-
-
-    async fn execute<C: AtraContext + Sync + Send, S: ShutdownReceiverWithWait>(
-        worker_id: usize,
-        recrawl: usize,
-        context: Arc<C>,
-        barrier: Arc<WorkerBarrier>,
-        shutdown: S
-    ) -> (usize, ExitState, Vec<<C as AtraContext>::Error>) {
-        let mut errors = Vec::with_capacity(0);
-        let (i, state) = loop {
-            if context.can_poll().await {
-                match context.run_crawl_task(
-                    worker_id,
-                    recrawl,
-                    barrier.clone(),
-                    shutdown.clone(),
-                ).await
-                {
-                    Ok(s) => {
-                        log::info!("Exit {worker_id} with {s}.");
-                        break (worker_id, s);
-                    }
-                    Err(err) => {
-                        log::error!("Encountered some errors.");
-                        errors.push(err);
-                    }
-                }
-            } else {
-                break (worker_id, ExitState::NoMoreElements);
-            }
-        };
-
-        barrier.trigger_cancellation();
-        (i, state, errors)
-    }
-
-
-    /// Returns true if there are more thins to crawl
-    async fn try_recrawls<C>(&self, context: &C) -> bool
-    where
-        C: SupportsUrlQueue + SupportsLinkState,
-    {
-        log::info!("Start to check if we have some kind of recrawl.");
-
-        if context
-            .get_link_state_manager()
-            .check_if_there_are_any_recrawlable_links()
-            .await
-        {
-            let queue = context.url_queue();
-            context
-                .get_link_state_manager()
-                .collect_recrawlable_links(|is_seed, url| {
-                    queue
-                        .force_enqueue(UrlQueueElement::new(is_seed.is_yes(), 0, false, url))
-                        .unwrap()
-                })
-                .await;
-            log::info!("Finished refilling queue with data.");
-            !queue.is_empty().await
-        } else {
-            false
-        }
-    }
 }
+
 
 
 /// The mode of the application
@@ -414,7 +384,6 @@ mod test {
     use std::io::Read;
     use std::path::{Path, PathBuf};
     use time::Duration;
-    use crate::app::context::{AtraRunContext, AtraRunContextProvider};
 
     fn recurse(path: impl AsRef<Path>) -> Vec<PathBuf> {
         let Ok(entries) = read_dir(path) else {
@@ -491,9 +460,7 @@ mod test {
             config,
         );
 
-
-        app.run::<AtraRunContextProvider, false>(
-            configs,
+        app.run_without_logger(
             SeedDefinition::Multi(vec![
                 "http://www.antsandelephants.de".to_string(),
                 "http://www.aperco.info".to_string(),
@@ -501,9 +468,10 @@ mod test {
                 "http://www.carefornetworks.de/".to_string(),
                 "https://ticktoo.com/".to_string(),
             ]),
+            configs,
         )
-            .await
-            .expect("no errors");
+        .await
+        .expect("no errors");
 
         drop(app);
         barrier.wait().await;

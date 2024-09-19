@@ -564,6 +564,9 @@ pub struct TestUrlQueue {
     counter: crate::queue::UrlQueueElementRefCounter,
 }
 
+unsafe impl Send for TestUrlQueue{}
+unsafe impl Sync for TestUrlQueue{}
+
 impl TestUrlQueue {
     fn wrap(&self, value: UrlQueueElement<UrlWithDepth>) -> UrlQueueElementRef<UrlWithDepth> {
         let no = self.counter.create_drop_notifyer();

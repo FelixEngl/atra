@@ -156,7 +156,7 @@ pub mod traits {
         type UrlQueue: UrlQueue<UrlWithDepth> + SupportsForcedQueueElement<UrlWithDepth> + Send + Sync;
 
         /// Returns true if poll possible
-        fn can_poll(&self) -> impl std::future::Future<Output = bool> + Send;
+        async fn can_poll(&self) -> bool;
 
 
         /// Get the instance of the url queue.
