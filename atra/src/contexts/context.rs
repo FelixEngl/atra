@@ -79,6 +79,7 @@ pub mod traits {
     use crate::web_graph::WebGraphManager;
     use std::collections::HashSet;
     use std::error::Error;
+    use std::future::Future;
     use text_processing::stopword_registry::StopWordRegistry;
 
     /// A marker interface for applying the context trait iff appropriate
@@ -150,12 +151,13 @@ pub mod traits {
         fn configs(&self) -> &Config;
     }
 
-    pub trait SupportsUrlQueue: BaseContext {
+    pub trait SupportsUrlQueue: BaseContext + Send + Sync {
         /// The url queue used by this
-        type UrlQueue: UrlQueue<UrlWithDepth> + SupportsForcedQueueElement<UrlWithDepth>;
+        type UrlQueue: UrlQueue<UrlWithDepth> + SupportsForcedQueueElement<UrlWithDepth> + Send + Sync;
 
         /// Returns true if poll possible
-        async fn can_poll(&self) -> bool;
+        fn can_poll(&self) -> impl std::future::Future<Output = bool> + Send;
+
 
         /// Get the instance of the url queue.
         fn url_queue(&self) -> &Self::UrlQueue;

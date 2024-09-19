@@ -44,6 +44,7 @@ mod toolkit;
 mod url;
 mod warc_ext;
 mod web_graph;
+mod recovery;
 
 fn main() {
     exec_args(AtraArgs::parse())

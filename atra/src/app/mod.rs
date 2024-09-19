@@ -27,9 +27,13 @@ mod logging;
 #[cfg(test)]
 mod terminal;
 mod config;
+mod context;
+mod errors;
 
-use crate::app::atra::{ApplicationMode, Atra};
 pub use args::AtraArgs;
+pub use atra::ApplicationMode;
+pub use crate::app::atra::Atra;
+use crate::app::context::AtraRunContextProvider;
 
 pub fn exec_args(args: AtraArgs) {
     match consume_args(args) {
@@ -46,11 +50,11 @@ pub fn exec_args(args: AtraArgs) {
 /// Execute the
 fn execute(application_mode: ApplicationMode, seed_definition: SeedDefinition, configs: Config) {
     let (notify, shutdown, mut barrier) = graceful_shutdown();
-    let (mut atra, runtime) = Atra::build_with_runtime(application_mode, notify, shutdown);
+    let (atra, runtime) = Atra::build_with_runtime(application_mode, notify, shutdown);
     let signal_handler = tokio::signal::ctrl_c();
     runtime.block_on(async move {
         tokio::select! {
-            res = atra.run(seed_definition, configs) => {
+            res = atra.run::<AtraRunContextProvider, true>(configs,seed_definition) => {
                 if let Err(err) = res {
                     log::error!("Error: {err}");
                 }
@@ -68,7 +72,7 @@ fn execute(application_mode: ApplicationMode, seed_definition: SeedDefinition, c
 #[cfg(test)]
 mod test {
     use crate::app::args::RunMode;
-    use crate::app::atra::ApplicationMode;
+    use crate::app::ApplicationMode;
     use crate::app::{execute, AtraArgs};
     use crate::config::crawl::UserAgent;
     use crate::config::{BudgetSetting, Config, CrawlConfig};

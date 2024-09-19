@@ -1,4 +1,4 @@
-// Copyright 2024 Felix Engl
+// Copyright 2024. Felix Engl
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,24 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod lists;
-mod manage;
-mod manager;
-mod traits;
+use crate::app::ApplicationMode;
 
-use cfg_if::cfg_if;
-pub use manage::*;
-pub use manager::manager_impl::InMemoryBlacklistManager;
-pub use manager::manager_impl::InMemoryBlacklistManagerInitialisationError;
-#[cfg(test)]
-pub use manager::BlacklistError;
-pub use manager::BlacklistManager;
-pub use traits::*;
+pub struct RecoveryManager {
+    mode: ApplicationMode
+}
 
-cfg_if! {
-    if #[cfg(test)] {
-        pub use lists::*;
-    } else {
-        pub use lists::PolyBlackList;
-    }
+pub struct SharedState {
+    ct_discovered_websites: usize
+}
+
+
+pub struct WorkerState {
+    worker_id: usize,
+
 }

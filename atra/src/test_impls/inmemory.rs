@@ -738,6 +738,17 @@ impl LinkStateManager for InMemoryLinkStateManager {
             }
         }
     }
+
+    async fn collect_all_links<F: Fn(IsSeedYesNo, UrlWithDepth) -> ()>(
+        &self,
+        collector: F,
+    ) {
+        let lock = self.state.read().unwrap();
+        for (k, v) in lock.iter() {
+            let raw = RawLinkState::from_slice(v.as_ref()).unwrap();
+            collector(raw.is_seed(), UrlWithDepth::new(k.clone(), raw.depth()))
+        }
+    }
 }
 
 #[derive(Clone, Default, Debug)]

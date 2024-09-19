@@ -35,6 +35,9 @@ pub struct UrlQueueWrapper<T: RawAgingQueue> {
     counter: UrlQueueElementRefCounter,
 }
 
+unsafe impl<T> Send for UrlQueueWrapper<T> where T: RawAgingQueue{}
+unsafe impl<T> Sync for UrlQueueWrapper<T> where T: RawAgingQueue{}
+
 impl UrlQueueWrapper<RawAgingQueueFile> {
     /// Opens as a raw file
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, queue_file::Error> {

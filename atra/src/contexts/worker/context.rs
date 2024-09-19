@@ -51,15 +51,14 @@ impl<T> WorkerContext<T>
 where
     T: SupportsFileSystemAccess,
 {
-    pub async fn create(
+    pub fn create(
         worker_id: usize,
         recrawl_number: usize,
         inner: Arc<T>,
     ) -> Result<Self, ErrorWithPath> {
         let worker_warc_system = inner
             .fs()
-            .create_worker_file_provider(worker_id, recrawl_number)
-            .await?;
+            .create_worker_file_provider(worker_id, recrawl_number)?;
         Ok(Self::new(worker_id, inner, worker_warc_system)?)
     }
 
@@ -483,7 +482,7 @@ pub mod test {
         .unwrap();
 
         let wwr = ThreadsafeMultiFileWarcWriter::new_for_worker(Arc::new(
-            fs.create_worker_file_provider(0, 0).await.unwrap(),
+            fs.create_worker_file_provider(0, 0).unwrap(),
         ))
         .unwrap();
 
@@ -523,9 +522,9 @@ pub mod test {
         let mut cfg = Config::default();
         cfg.paths.root = "test".parse().unwrap();
 
-        let local = Arc::new(LocalContext::new(cfg, RuntimeContext::unbound()).unwrap());
+        let local = Arc::new(LocalContext::new(cfg, &RuntimeContext::unbound()).unwrap());
 
-        let worker = WorkerContext::create(0, 0, local.clone()).await.unwrap();
+        let worker = WorkerContext::create(0, 0, local.clone()).unwrap();
         let test_data1 = create_testdata_with_on_seed(None);
         const BIG_DATA: [u8; ByteUnit::Gigabyte(1).as_u64() as usize - 20] =
             [b'a'; { ByteUnit::Gigabyte(1).as_u64() as usize - 20 }];
@@ -572,9 +571,9 @@ pub mod test {
         let mut cfg = Config::default();
         cfg.paths.root = "test".parse().unwrap();
 
-        let local = Arc::new(LocalContext::new(cfg, RuntimeContext::unbound()).unwrap());
+        let local = Arc::new(LocalContext::new(cfg, &RuntimeContext::unbound()).unwrap());
 
-        let worker = WorkerContext::create(0, 0, local.clone()).await.unwrap();
+        let worker = WorkerContext::create(0, 0, local.clone()).unwrap();
         let test_data1 = create_testdata_with_on_seed(None);
         const BIG_DATA: [u8; ByteUnit::Gigabyte(1).as_u64() as usize - 20] =
             [b'a'; { ByteUnit::Gigabyte(1).as_u64() as usize - 20 }];

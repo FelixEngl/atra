@@ -54,6 +54,10 @@ pub enum TestGlobalError {
 impl ErrorConsumer<TestGlobalError> for TestErrorConsumer {
     type Error = TestGlobalError;
 
+    fn consume_init_error(&self, e: TestGlobalError) -> Result<(), Self::Error> {
+        self.consume_crawl_error(e)
+    }
+
     fn consume_crawl_error(&self, err: TestGlobalError) -> Result<(), Self::Error> {
         /// true = return OK
         fn handle_db_error(e: &DatabaseError) -> bool {

@@ -47,9 +47,13 @@ pub enum ExitState {
     NoMoreElements,
 }
 
+unsafe impl Send for ExitState{}
+unsafe impl Sync for ExitState{}
+
 /// A consumer for some kind of error. Allows to return an error if necessary to stop the crawling.
 pub trait ErrorConsumer<E> {
     type Error;
+    fn consume_init_error(&self, e: E) -> Result<(), Self::Error>;
     fn consume_crawl_error(&self, e: E) -> Result<(), Self::Error>;
     fn consume_poll_error(&self, e: E) -> Result<(), Self::Error>;
 }

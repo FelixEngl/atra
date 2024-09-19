@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::io::serial::{NoSerial, SerialProvider};
+use crate::io::serial::{SerialProvider};
 use crate::io::templating::TemplateError::ArgumentMissing;
 use data_encoding::BASE64URL_NOPAD;
 use std::borrow::{Borrow, Cow};
@@ -77,6 +77,18 @@ macro_rules! file_name_template_element {
             Err(res) => {
                 Err(res)
             }
+        }
+        crate::io::templating::file_name_template_element!($result, $($tt)*);
+    };
+    ($result: ident, serial(start=$serial:expr) $($tt:tt)*) => {
+        if let Ok(res) = $result.as_mut() {
+            res.push($crate::io::templating::FileNameTemplateElement::CustomSerial($crate::io::serial::SerialProvider::with_initial_state($serial)));
+        }
+        crate::io::templating::file_name_template_element!($result, $($tt)*);
+    };
+    ($result: ident, serial(kind=$serial:ident) $($tt:tt)*) => {
+        if let Ok(res) = $result.as_mut() {
+            res.push($crate::io::templating::FileNameTemplateElement::CustomSerial($crate::io::serial::SerialProviderKind::$serial));
         }
         crate::io::templating::file_name_template_element!($result, $($tt)*);
     };
@@ -156,7 +168,7 @@ impl FileNameTemplate {
     pub fn write(
         &self,
         f: &mut impl Write,
-        serial_provider: &impl SerialProvider,
+        serial_provider: &SerialProvider,
         args: Option<&FileNameTemplateArgs>,
     ) -> Result<bool, TemplateError> {
         let mut wrote_something = false;
@@ -169,7 +181,7 @@ impl FileNameTemplate {
 
 impl Display for FileNameTemplate {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if let Ok(_) = self.write(f, &NoSerial::<u8>::default(), None) {
+        if let Ok(_) = self.write(f, &SerialProvider::NoSerial, None) {
             Ok(())
         } else {
             Err(std::fmt::Error)
@@ -242,6 +254,7 @@ pub enum FileNameTemplateElement {
     UnixTimestamp(bool),
     FormattedTimestamp(OwnedFormatItem),
     Serial,
+    CustomSerial(SerialProvider),
     FileNameTemplate(FileNameTemplate),
 }
 
@@ -266,7 +279,7 @@ impl FileNameTemplateElement {
     pub fn write(
         &self,
         f: &mut impl Write,
-        serial_provider: &impl SerialProvider,
+        serial_provider: &SerialProvider,
         args: Option<&FileNameTemplateArgs>,
     ) -> Result<bool, TemplateError> {
         match self {
@@ -289,6 +302,13 @@ impl FileNameTemplateElement {
             }
             FileNameTemplateElement::Serial => {
                 if let Some(serial) = serial_provider.provide_serial() {
+                    write!(f, "{serial}")?
+                } else {
+                    return Ok(false);
+                }
+            }
+            FileNameTemplateElement::CustomSerial(provider) => {
+                if let Some(serial) = provider.provide_serial() {
                     write!(f, "{serial}")?
                 } else {
                     return Ok(false);
@@ -347,12 +367,12 @@ impl From<&'static str> for FileNameTemplateElement {
 
 #[cfg(test)]
 mod test {
-    use crate::io::serial::DefaultSerialProvider;
+    use crate::io::serial::SerialProvider;
     use crate::io::templating::FileNameTemplateArgs;
 
     #[test]
     fn can_build() {
-        let serial_provider = DefaultSerialProvider::default();
+        let serial_provider = SerialProvider::default();
 
         let template1 = file_name_template!(
             "wasser" _ "<ist>" _ "nass"

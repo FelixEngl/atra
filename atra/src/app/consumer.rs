@@ -19,6 +19,7 @@ use crate::database::DatabaseError;
 use crate::link_state::{LinkStateDBError, LinkStateError};
 use crate::queue::QueueError;
 use thiserror::Error;
+use crate::io::errors::ErrorWithPath;
 
 pub struct GlobalErrorConsumer;
 
@@ -47,11 +48,17 @@ pub enum GlobalError {
     #[error(transparent)]
     IOError(#[from] std::io::Error),
     #[error(transparent)]
+    IOWithPathError(#[from] ErrorWithPath),
+    #[error(transparent)]
     RequestError(#[from] reqwest::Error),
 }
 
 impl ErrorConsumer<GlobalError> for GlobalErrorConsumer {
     type Error = GlobalError;
+
+    fn consume_init_error(&self, e: GlobalError) -> Result<(), Self::Error> {
+        self.consume_crawl_error(e)
+    }
 
     fn consume_crawl_error(&self, err: GlobalError) -> Result<(), Self::Error> {
         /// true = return OK
@@ -188,6 +195,10 @@ impl ErrorConsumer<GlobalError> for GlobalErrorConsumer {
                 true
             }
             GlobalError::RequestError(err) => {
+                log::debug!("{err}");
+                true
+            }
+            GlobalError::IOWithPathError(err) => {
                 log::debug!("{err}");
                 true
             }

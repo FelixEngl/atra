@@ -129,6 +129,18 @@ impl<DB: LinkStateDB> LinkStateManager for DatabaseLinkStateManager<DB> {
             }
         })
     }
+
+    async fn collect_all_links<F: Fn(IsSeedYesNo, UrlWithDepth) -> ()>(
+        &self,
+        collector: F,
+    ) {
+        self.db.collect_values(|_, k, v| {
+            let raw = unsafe { RawLinkState::from_slice_unchecked(v.as_ref()) };
+            let uri: AtraUri = String::from_utf8_lossy(k).parse().unwrap();
+            collector(raw.is_seed(), UrlWithDepth::new(uri, raw.depth()));
+            true
+        })
+    }
 }
 
 #[cfg(test)]

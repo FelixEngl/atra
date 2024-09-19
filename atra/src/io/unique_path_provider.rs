@@ -12,61 +12,44 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::io::serial::{DefaultSerialProvider, NoSerial, SerialProvider};
+use crate::io::serial::{SerialProviderKind, SerialProvider};
 use crate::io::templating::{FileNameTemplate, FileNameTemplateArgs, TemplateError};
 use camino::{Utf8Path, Utf8PathBuf};
 use std::fmt::Debug;
 
 /// Provides a unique path under the `root`
 #[derive(Debug, Clone)]
-pub struct UniquePathProvider<S = DefaultSerialProvider> {
+pub struct UniquePathProvider {
     root: Utf8PathBuf,
-    serial_provider: S,
+    serial_provider: SerialProvider,
 }
 
-impl<S> UniquePathProvider<S> {
+impl UniquePathProvider {
     #[cfg(test)]
     pub fn root(&self) -> &Utf8Path {
         &self.root
     }
 
-    pub fn with_provider(root: impl AsRef<Utf8Path>, provider: S) -> Self {
+    pub fn new(root: impl AsRef<Utf8Path>, serial_provider: SerialProvider) -> Self {
         Self {
             root: root.as_ref().to_path_buf(),
-            serial_provider: provider,
+            serial_provider,
         }
     }
 
-    pub fn with_template(self, template: FileNameTemplate) -> UniquePathProviderWithTemplate<S> {
+    pub fn with_template(self, template: FileNameTemplate) -> UniquePathProviderWithTemplate {
         UniquePathProviderWithTemplate::new(self, template)
     }
-}
 
-impl<S> UniquePathProvider<S>
-where
-    S: Default,
-{
-    pub fn new_with(root: impl AsRef<Utf8Path>) -> Self {
-        Self::with_provider(root, S::default())
-    }
-}
-
-impl UniquePathProvider {
-    pub fn new(root: impl AsRef<Utf8Path>) -> Self {
-        Self::new_with(root)
-    }
-}
-
-impl UniquePathProvider<NoSerial<u8>> {
     #[cfg(test)]
     pub fn without_provider(root: impl AsRef<Utf8Path>) -> Self {
-        Self::with_provider(root, NoSerial::<u8>::default())
+        Self::new(root, SerialProvider::NoSerial)
     }
 }
 
-impl<S> UniquePathProvider<S>
-where
-    S: SerialProvider,
+
+
+impl UniquePathProvider
 {
     pub fn provide_path(
         &self,
@@ -81,25 +64,20 @@ where
 
 /// Provides a path based on a given template
 #[derive(Debug, Clone)]
-pub struct UniquePathProviderWithTemplate<S = DefaultSerialProvider> {
-    provider: UniquePathProvider<S>,
+pub struct UniquePathProviderWithTemplate {
+    provider: UniquePathProvider,
     template: FileNameTemplate,
 }
 
-impl<S> UniquePathProviderWithTemplate<S> {
-    pub fn new(provider: UniquePathProvider<S>, template: FileNameTemplate) -> Self {
+impl UniquePathProviderWithTemplate {
+    pub fn new(provider: UniquePathProvider, template: FileNameTemplate) -> Self {
         Self { provider, template }
     }
 
     pub fn root(&self) -> &Utf8Path {
         &self.provider.root
     }
-}
 
-impl<S> UniquePathProviderWithTemplate<S>
-where
-    S: SerialProvider,
-{
     #[cfg(test)]
     pub fn provide_path(
         &self,

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::blacklist::{InMemoryBlacklistManager, PolyBlackList};
+use crate::blacklist::{InMemoryBlacklistManager, InMemoryBlacklistManagerInitialisationError, PolyBlackList};
 use crate::client::{build_classic_client, ClientWithUserAgent};
 use crate::config::configs::Config;
 use crate::contexts::local::errors::LinkHandlingError;
@@ -20,7 +20,7 @@ use crate::contexts::traits::*;
 use crate::contexts::BaseContext;
 use crate::crawl::db::CrawlDB;
 use crate::crawl::{CrawlTask, SlimCrawlResult};
-use crate::database::open_db;
+use crate::database::{open_db, OpenDBError};
 use crate::database::DatabaseError;
 use crate::extraction::ExtractedLink;
 use crate::gdbr::identifier::{GdbrIdentifierRegistry, InitHelper};
@@ -37,7 +37,7 @@ use crate::runtime::UnsafeShutdownGuard;
 use crate::seed::BasicSeed;
 use crate::url::guard::InMemoryUrlGuardian;
 use crate::url::{AtraOriginProvider, UrlWithDepth};
-use crate::web_graph::{QueuingWebGraphManager, WebGraphEntry, WebGraphManager};
+use crate::web_graph::{LinkNetError, QueuingWebGraphManager, WebGraphEntry, WebGraphManager};
 use liblinear::solver::L2R_L2LOSS_SVR;
 use rand::distributions::Alphanumeric;
 use rand::Rng;
@@ -47,10 +47,14 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use thiserror::Error;
 use text_processing::stopword_registry::StopWordRegistry;
 use text_processing::tf_idf::{Idf, Tf};
 use time::OffsetDateTime;
+use svm::error::SvmCreationError;
 use crate::app::consumer::{GlobalError, GlobalErrorConsumer};
+use crate::contexts::local::LocalContextInitError;
+use crate::io::errors::ErrorWithPath;
 
 /// The state of the app
 #[derive(Debug)]
@@ -75,7 +79,7 @@ pub struct LocalContext {
 
 impl LocalContext {
     /// Creates the state for Atra.
-    pub fn new(configs: Config, runtime_context: RuntimeContext) -> anyhow::Result<Self> {
+    pub fn new(configs: Config, runtime_context: &RuntimeContext) -> Result<Self, LocalContextInitError> {
         let output_path = configs.paths.root_path();
         if !output_path.exists() {
             std::fs::create_dir_all(output_path)?;

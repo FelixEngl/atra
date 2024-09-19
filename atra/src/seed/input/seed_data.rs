@@ -28,9 +28,11 @@ use nom::IResult;
 use nom::Parser;
 use std::convert::Infallible;
 use std::str::FromStr;
+use serde::{Deserialize, Serialize};
 
 /// Defines what kind of seed is used
 /// CLI Syntax:
+/// ```text
 /// - command... file: path to a file>
 /// - command... single: url
 /// - command... single: "url"
@@ -39,7 +41,8 @@ use std::str::FromStr;
 /// - command... url
 /// - command... "url"
 /// - command... "url","url"....
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SeedDefinition {
     Single(String),
     Multi(Vec<String>),

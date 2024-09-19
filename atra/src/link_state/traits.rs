@@ -85,6 +85,7 @@ pub trait LinkStateManager {
 
     /// Returns the recrawlable links.
     async fn collect_recrawlable_links<F: Fn(IsSeedYesNo, UrlWithDepth) -> ()>(&self, collector: F);
+    async fn collect_all_links<F: Fn(IsSeedYesNo, UrlWithDepth) -> ()>(&self, collector: F);
 }
 
 pub trait LinkStateDB {

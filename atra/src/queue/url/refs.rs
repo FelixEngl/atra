@@ -27,6 +27,9 @@ pub struct UrlQueueElementRefCounter {
     sender: Sender<UrlQueueElementRefCounterEvent>,
 }
 
+unsafe impl Send for UrlQueueElementRefCounter {}
+unsafe impl Sync for UrlQueueElementRefCounter {}
+
 impl UrlQueueElementRefCounter {
     pub fn new() -> Self {
         let (sender, receiver) = channel(UrlQueueElementRefCounterEvent::new(0));

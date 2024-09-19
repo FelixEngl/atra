@@ -12,17 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::cmp::max;
 use crate::io::errors::{ErrorWithPath, ToErrorWithPath};
 use crate::io::templating::{file_name_template, FileNameTemplate, FileNameTemplateArgs};
 use crate::io::unique_path_provider::{UniquePathProvider, UniquePathProviderWithTemplate};
 use crate::stores::warc::WarcFilePathProvider;
 use camino::{Utf8Path, Utf8PathBuf};
 use std::fmt::Debug;
+use std::fs::FileType;
 use std::hash::Hash;
 use std::io;
 use std::io::ErrorKind;
-use tokio::sync::Mutex;
+use std::sync::LazyLock;
+use regex::Regex;
+use std::sync::Mutex;
 use twox_hash::xxh3::HasherExt;
+use crate::io::serial::{SerialProvider, SerialProviderKind, SerialValue};
 
 pub trait AtraFS {
     /// Creates a unique path to a fresh data file.
@@ -34,7 +39,7 @@ pub trait AtraFS {
     /// Deletes a datafile
     fn cleanup_data_file(&self, name: impl AsRef<Utf8Path> + Debug) -> io::Result<()>;
 
-    async fn create_worker_file_provider(
+    fn create_worker_file_provider(
         &self,
         worker_id: usize,
         recrawl_iteration: usize,
@@ -69,7 +74,7 @@ impl FileSystemAccess {
             std::fs::create_dir_all(&big_file_folder).to_error_with_path(&collection_root)?;
         }
 
-        let path_provider_big_file = UniquePathProvider::new(big_file_folder)
+        let path_provider_big_file = UniquePathProvider::new(big_file_folder, Default::default())
             .with_template(file_name_template!(arg!@"url" _ timestamp64 _ serial ".dat").unwrap());
 
         Ok(Self {
@@ -103,12 +108,12 @@ impl AtraFS for FileSystemAccess {
         std::fs::remove_file(path)
     }
 
-    async fn create_worker_file_provider(
+    fn create_worker_file_provider(
         &self,
         worker_id: usize,
         recrawl_iteration: usize,
     ) -> Result<WorkerFileSystemAccess, ErrorWithPath> {
-        let _ = self.filesystem_lock.lock().await;
+        let _ = self.filesystem_lock.lock();
         WorkerFileSystemAccess::new(
             self.collection_root.clone(),
             self.worker_base.clone(),
@@ -124,6 +129,27 @@ pub struct WorkerFileSystemAccess {
     provider: UniquePathProviderWithTemplate,
 }
 
+static FILE_NAME: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new("rc_(\\d+)_(\\d+)\\.warc").unwrap()
+});
+
+#[cfg(test)]
+mod test {
+    use crate::io::fs::FILE_NAME;
+
+    #[test]
+    fn can_properly_parse(){
+        const TEST: &str = "atra_0_0_rc_42_123.warc";
+        let cap = FILE_NAME.captures(TEST).expect("Can read fn");
+        println!("{}", &cap[1]);
+        println!("{}", &cap[2]);
+        let recrawl_read: u64 = (&cap[1]).parse().expect("Expected a read recrawl info");
+        assert_eq!(42, recrawl_read, "Failed recrawl read: {recrawl_read}");
+        let serial_read: u64 = (&cap[2]).parse().expect("Expected a serial info");
+        assert_eq!(123, serial_read, "Failed serial read: {recrawl_read}");
+    }
+}
+
 impl WorkerFileSystemAccess {
     pub fn new(
         collection_root: Utf8PathBuf,
@@ -132,16 +158,48 @@ impl WorkerFileSystemAccess {
         recrawl_iteration: usize,
     ) -> Result<Self, ErrorWithPath> {
         let worker_root = collection_root.join(format!("worker_{worker_id}"));
-        if !worker_root.exists() {
+        let provider = if !worker_root.exists() {
             std::fs::create_dir_all(&worker_root).to_error_with_path(&worker_root)?;
-        }
-        let provider = UniquePathProvider::new(&worker_root).with_template(
-            file_name_template!(ref worker_base _ worker_id _ "rc" _ recrawl_iteration _ serial ".warc")
-                .unwrap(),
-        );
+            UniquePathProvider::new(&worker_root, SerialProviderKind::Long.into()).with_template(
+                file_name_template!(ref worker_base _ worker_id _ "rc" _ recrawl_iteration _ serial ".warc")
+                    .unwrap(),
+            )
+        } else {
+            let regex = FILE_NAME.clone();
+            let mut last_serial = 0;
+            for file in worker_root.read_dir_utf8().to_error_with_path(&worker_root)? {
+                if let Ok(file) = file {
+                    let ft = file.file_type().to_error_with_path(&worker_root)?;
+                    if ft.is_file() {
+                        if let Some(cap) = regex.captures(file.file_name()) {
+                            let recrawl_read: u64 = if let Ok(value) = cap[1].parse() {
+                                value
+                            } else {
+                                continue
+                            };
+                            if recrawl_read as usize != recrawl_iteration {
+                                continue
+                            }
+
+                            let serial_read: u64 = if let Ok(value) = cap[2].parse::<u64>() {
+                                value + 1
+                            } else {
+                                continue
+                            };
+                            last_serial = max(last_serial, serial_read as usize);
+                        }
+                    }
+                }
+            }
+
+            UniquePathProvider::new(&worker_root, SerialProvider::with_initial_state(
+                SerialValue::Long(last_serial as u64)
+            )).with_template(
+                file_name_template!(ref worker_base _ worker_id _ "rc" _ recrawl_iteration _ serial ".warc")
+                    .unwrap(),
+            )
+        };
         Ok(Self {
-            // worker_root,
-            // worker_base,
             provider,
         })
     }
