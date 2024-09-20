@@ -40,7 +40,7 @@ where
 
     async fn poll_next_free_url<'a>(
         &'a self,
-        mut shutdown_handle: impl ShutdownReceiverWithWait,
+        shutdown_handle: impl ShutdownReceiverWithWait,
         max_miss: Option<u64>,
     ) -> UrlQueuePollResult<UrlWithGuard<'a, Self::Guardian>, Self::Error> {
         let queue = self.url_queue();

@@ -19,7 +19,7 @@ use crate::link_state::{
     RawLinkState, RecrawlYesNo,
 };
 use crate::url::{AtraUri, UrlWithDepth};
-use rocksdb::{DBIteratorWithThreadMode, DBWithThreadMode, IteratorMode, MultiThreaded, ReadOptions, DB};
+use rocksdb::{DBIteratorWithThreadMode, DBWithThreadMode, MultiThreaded, DB};
 use std::sync::Arc;
 use std::time::Duration;
 use time::OffsetDateTime;

@@ -41,7 +41,7 @@ use crate::fetching::ResponseData;
 use crate::format::supported::InterpretedProcessibleFileFormat;
 use crate::format::AtraFileInformation;
 use crate::io::fs::AtraFS;
-use crate::link_state::{IsSeedYesNo, LinkStateKind, LinkStateLike, LinkStateManager, RawLinkState, RecrawlYesNo};
+use crate::link_state::{IsSeedYesNo, LinkStateKind, LinkStateLike, LinkStateManager, RecrawlYesNo};
 use crate::queue::{QueueError, UrlQueue, UrlQueueElement};
 use crate::recrawl_management::DomainLastCrawledManager;
 use crate::robots::{GeneralRobotsInformation, RobotsInformation};

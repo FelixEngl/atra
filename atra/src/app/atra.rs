@@ -22,26 +22,24 @@ use crate::contexts::worker::WorkerContext;
 use crate::crawl::{crawl, ErrorConsumer, ExitState};
 use crate::link_state::{LinkStateLike, LinkStateManager, RawLinkState};
 use crate::queue::{QueueError, SupportsForcedQueueElement, UrlQueue, UrlQueueElement};
-use crate::runtime::{AtraRuntime, GracefulShutdown, OptionalAtraHandle, RuntimeContext, ShutdownReceiver, ShutdownReceiverWithWait, Shutdown};
+use crate::runtime::{AtraRuntime, GracefulShutdown, OptionalAtraHandle, RuntimeContext, ShutdownReceiver, ShutdownReceiverWithWait};
 use crate::sync::barrier::{ContinueOrStop, WorkerBarrier};
 use cfg_if::cfg_if;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
-use tokio::runtime::Handle;
 use tokio::select;
-use tokio::sync::Notify;
 use tokio::task::JoinSet;
 use crate::app::instruction::RunInstruction;
 use crate::contexts::Context;
 use crate::url::{AtraUri, UrlWithDepth};
 
-// cfg_if! {
-//     if #[cfg(test)] {
-//         use crate::runtime::{graceful_shutdown, GracefulShutdownBarrier};
-//     }
-// }
+cfg_if! {
+    if #[cfg(test)] {
+        use crate::runtime::{Shutdown};
+    }
+}
 
 
 
@@ -204,7 +202,7 @@ impl Atra {
 
                     let value = crawl(
                         WorkerContext::create(0, recrawl_ct, context.clone())?,
-                        self.shutdown.clone(),
+                        self.shutdown.create_shutdown(),
                         Arc::new(barrier),
                         GlobalErrorConsumer::new(),
                     ).await?;
@@ -278,7 +276,7 @@ impl Atra {
                                         }
                                     }
                                 } else {
-                                    let mut stop = s.clone();
+                                    let stop = s.clone();
                                     log::debug!("Wait for all stopping.");
                                     let result = select! {
                                         _ = stop.wait() => {

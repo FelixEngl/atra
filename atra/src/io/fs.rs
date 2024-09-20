@@ -22,7 +22,7 @@ use std::fmt::Debug;
 use std::fs::{File};
 use std::hash::Hash;
 use std::io;
-use std::io::{BufRead, BufReader, BufWriter, ErrorKind, Write};
+use std::io::{BufRead, BufReader, BufWriter, ErrorKind};
 use std::sync::{Arc, LazyLock};
 use regex::Regex;
 use std::sync::Mutex;

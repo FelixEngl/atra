@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::runtime::{GracefulShutdown, OptionalAtraHandle, Shutdown};
+use crate::runtime::{GracefulShutdown, OptionalAtraHandle};
 
 /// A context holding informations about the runtime
 #[derive(Debug, Clone)]
