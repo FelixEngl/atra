@@ -89,6 +89,7 @@ where
                 .wait_for_is_cancelled(&context, Ok(ExitState::Shutdown))
                 .await
             {
+                log::info!("Worker task stopping due to.");
                 return value;
             }
         }
@@ -117,6 +118,7 @@ where
                         .wait_for_is_cancelled(&context, Ok(ExitState::NoMoreElements))
                         .await
                     {
+                        log::debug!("Shutting down worker due to patience!");
                         return value;
                     }
                 } else {

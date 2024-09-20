@@ -19,7 +19,7 @@ use crate::crawl::StoredDataHint;
 use crate::crawl::{CrawlResult, CrawlTask, SlimCrawlResult};
 use crate::data::RawVecData;
 use crate::extraction::ExtractedLink;
-use crate::io::errors::ErrorWithPath;
+use crate::io::errors::{ErrorWithPath};
 use crate::io::fs::{AtraFS, WorkerFileSystemAccess};
 use crate::seed::BasicSeed;
 use crate::stores::warc::ThreadsafeMultiFileWarcWriter;

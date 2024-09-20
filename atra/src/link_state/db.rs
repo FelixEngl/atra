@@ -13,13 +13,13 @@
 // limitations under the License.
 
 use crate::database::DBActionType::{Merge, Read, Write};
-use crate::database::{DBActionType, RawDatabaseError, LINK_STATE_DB_CF};
+use crate::database::{execute_iter, get_len, DBActionType, RawDatabaseError, LINK_STATE_DB_CF};
 use crate::link_state::{
     LinkStateDB, LinkStateDBError, LinkStateKind, LinkStateLike, RawLinkState,
 };
 use crate::url::UrlWithDepth;
 use crate::{db_health_check, declare_column_families};
-use rocksdb::{BoundColumnFamily, ReadOptions, DB};
+use rocksdb::{BoundColumnFamily, DBIteratorWithThreadMode, DBWithThreadMode, IteratorMode, MultiThreaded, ReadOptions, DB};
 use std::ops::RangeBounds;
 use std::sync::Arc;
 use tokio::task::yield_now;
@@ -141,9 +141,19 @@ impl LinkStateRockDB {
             cf: self.cf_handle(),
         }
     }
+
+    pub fn len(&self) -> usize {
+        get_len(&self.db, self.cf_handle())
+    }
+
+    pub fn iter(&self) -> DBIteratorWithThreadMode<DBWithThreadMode<MultiThreaded>> {
+        execute_iter(&self.db, self.cf_handle())
+    }
 }
 
 impl LinkStateDB for LinkStateRockDB {
+
+
     fn set_state(
         &self,
         url: &UrlWithDepth,

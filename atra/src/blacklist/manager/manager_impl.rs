@@ -17,7 +17,6 @@ use crate::blacklist::manager::BlacklistError;
 use crate::blacklist::traits::{Blacklist, BlacklistType, ManageableBlacklist};
 use crate::blacklist::{create_managed_blacklist, BlacklistManager, ManagedBlacklistSender};
 use crate::io::simple_line::SupportsSimpleLineReader;
-use crate::runtime::UnsafeShutdownGuard;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use regex::RegexSet;
@@ -30,6 +29,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use thiserror::Error;
 use tokio::sync::RwLock;
+use crate::runtime::GracefulShutdown;
 
 #[derive(Debug, Error)]
 pub enum InMemoryBlacklistManagerInitialisationError<T: ManageableBlacklist> {
@@ -48,7 +48,7 @@ where
     inner: RwLock<InnerBlacklistManager>,
     sender: ManagedBlacklistSender<T>,
     managed: ManagedBlacklist<T>,
-    _shutdown_guard: UnsafeShutdownGuard,
+    _shutdown_guard: GracefulShutdown,
 }
 
 impl<T> InMemoryBlacklistManager<T>
@@ -57,7 +57,7 @@ where
 {
     pub fn open<P: AsRef<Path>>(
         path: P,
-        shutdown_guard: UnsafeShutdownGuard,
+        shutdown_guard: GracefulShutdown,
     ) -> Result<Self, InMemoryBlacklistManagerInitialisationError<T>> {
         let inner = RwLock::new(InnerBlacklistManager::open(path)?);
         let lock = inner.try_read().unwrap();

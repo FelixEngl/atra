@@ -77,6 +77,10 @@ where
             counter: UrlQueueElementRefCounter::new(),
         }
     }
+
+    pub fn len_blocking(&self) -> usize {
+        self.inner.len()
+    }
 }
 
 impl<T> SupportsForcedQueueElement<UrlWithDepth> for UrlQueueWrapper<T>

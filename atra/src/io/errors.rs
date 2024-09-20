@@ -18,6 +18,15 @@ use thiserror::Error;
 
 type Result<T> = std::result::Result<T, ErrorWithPath>;
 
+
+#[derive(Debug, Error)]
+pub enum WorkerFileSystemInitError {
+    #[error(transparent)]
+    IOError(#[from] ErrorWithPath),
+    #[error(transparent)]
+    JournalError(#[from] serde_json::Error)
+}
+
 /// An error with a path
 #[derive(Debug, Error)]
 #[error("Failed for file '{path}' with:\n{source}")]

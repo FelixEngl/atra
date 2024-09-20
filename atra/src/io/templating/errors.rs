@@ -1,4 +1,4 @@
-// Copyright 2024 Felix Engl
+// Copyright 2024. Felix Engl
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,39 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::app::{exec_args, AtraArgs};
-use clap::Parser;
+use thiserror::Error;
 
-mod app;
-mod blacklist;
-mod client;
-mod config;
-mod contexts;
-mod crawl;
-mod data;
-mod database;
-mod decoding;
-mod extraction;
-mod fetching;
-mod format;
-mod gdbr;
-mod html;
-mod io;
-mod link_state;
-mod queue;
-mod recrawl_management;
-mod robots;
-mod runtime;
-mod seed;
-mod stores;
-mod sync;
-#[cfg(test)]
-mod test_impls;
-mod toolkit;
-mod url;
-mod warc_ext;
-mod web_graph;
-
-fn main() {
-    exec_args(AtraArgs::parse())
+#[derive(Debug, Error)]
+pub enum TemplateError {
+    #[error(transparent)]
+    Time(#[from] time::error::Format),
+    #[error(transparent)]
+    Fmt(#[from] std::fmt::Error),
+    #[error("The required argument value {0:?} is missing!")]
+    ArgumentMissing(&'static str),
 }
+

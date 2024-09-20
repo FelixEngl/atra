@@ -169,17 +169,27 @@ impl QueuingWebGraphManager {
                 if let Ok(value) = value {
                     if value.starts_with("@prefix") {
                         graph_prefix =
-                            value.contains(" : ") && value.contains("http://atra.de/graph#");
-                        domain_prefix = value.contains(" o: ")
-                            && value.contains("http://atra.de/graph/origin#");
-                        domain_label_prefix = value.contains(" ol: ")
-                            && value.contains("http://atra.de/graph/origin-label#");
-                        rnfs_prefix = value.contains(" rdfs: ")
-                            && value.contains("http://www.w3.org/2000/01/rdf-schema#");
+                            graph_prefix
+                                || (value.contains(" : ") && value.contains("http://atra.de/graph#"));
+                        domain_prefix =
+                            domain_prefix
+                                || (value.contains(" o: ") && value.contains("http://atra.de/graph/origin#"));
+                        domain_label_prefix =
+                            domain_label_prefix
+                                || (value.contains(" ol: ") && value.contains("http://atra.de/graph/origin-label#"));
+                        rnfs_prefix =
+                            rnfs_prefix
+                                || (value.contains(" rdfs: ") && value.contains("http://www.w3.org/2000/01/rdf-schema#"));
                     }
+                }
+                if graph_prefix && domain_prefix && domain_label_prefix && rnfs_prefix {
+                    break
                 }
             }
             if !graph_prefix || !domain_prefix || !domain_label_prefix || !rnfs_prefix {
+                log::error!(
+                    "graph_prefix: {graph_prefix} domain_prefix: {domain_prefix} domain_label_prefix: {domain_label_prefix} rnfs_prefix: {rnfs_prefix}"
+                );
                 return Err(LinkNetError::InvalidFile(
                     path.as_ref().as_os_str().to_os_string(),
                 ));
@@ -271,9 +281,6 @@ impl WebGraphManager for QueuingWebGraphManager {
 
 #[cfg(test)]
 mod test {
-    use crate::runtime::{
-        graceful_shutdown, OptionalAtraHandle, RuntimeContext, UnsafeShutdownGuard,
-    };
     use crate::url::AtraUri;
     use crate::web_graph::{QueuingWebGraphManager, WebGraphEntry, WebGraphManager};
     use log::LevelFilter;
@@ -285,14 +292,13 @@ mod test {
     use std::sync::Arc;
     use tokio::sync::Barrier;
     use tokio::task::JoinSet;
+    use crate::runtime::{GracefulShutdown, OptionalAtraHandle, RuntimeContext, ShutdownReceiverWithWait};
 
     #[tokio::test]
     async fn can_write_propery() {
         scopeguard::defer! {
             let _ = std::fs::remove_file(Path::new("./atra_data/example.ttl"));
         }
-
-        let (_, b, mut guard) = graceful_shutdown();
 
         let console_logger = ConsoleAppender::builder()
             .encoder(Box::new(PatternEncoder::new("{l}{I} - {d} - {m}{n}")))
@@ -306,14 +312,14 @@ mod test {
 
         let _ = log4rs::init_config(config).unwrap();
 
+        let guard = GracefulShutdown::new();
+        let s = guard.create_shutdown();
         let writer = Arc::new(
             QueuingWebGraphManager::new(
                 10.try_into().unwrap(),
                 "./atra_data/example.ttl",
                 &RuntimeContext::new(
-                    UnsafeShutdownGuard::Guarded {
-                        _guard: b.into_inner().1,
-                    },
+                    guard,
                     OptionalAtraHandle::None,
                 ),
             )
@@ -350,7 +356,7 @@ mod test {
         }
         drop(writer);
         log::info!("Waiting!");
-        guard.wait().await;
+        s.wait().await;
         let read = std::fs::read_to_string(Path::new("./atra_data/example.ttl")).unwrap();
         println!("Turtle-File:\n\n{read}")
     }

@@ -12,14 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::iter::Map;
 use crate::config::Config;
 use crate::crawl::SlimCrawlResult;
 use crate::database::DBActionType::{Read, Write};
-use crate::database::{DatabaseError, RawDatabaseError, RawIOError};
+use crate::database::{execute_iter, get_len, DatabaseError, RawDatabaseError, RawIOError};
 use crate::db_health_check;
 use crate::declare_column_families;
-use crate::url::UrlWithDepth;
-use rocksdb::DB;
+use crate::url::{AtraUri, UrlWithDepth};
+use rocksdb::{DBCommon, DBIteratorWithThreadMode, DBRawIteratorWithThreadMode, DBWithThreadMode, IteratorMode, MultiThreaded, ReadOptions, DB};
 use std::sync::Arc;
 
 /// Manages the crawled websites in a database until it is flushed
@@ -79,5 +80,13 @@ impl CrawlDB {
         } else {
             Ok(None)
         }
+    }
+
+    pub fn len(&self) -> usize {
+        get_len(&self.db, self.cf_handle())
+    }
+
+    pub fn iter(&self) -> DBIteratorWithThreadMode<DBWithThreadMode<MultiThreaded>> {
+        execute_iter(&self.db, self.cf_handle())
     }
 }

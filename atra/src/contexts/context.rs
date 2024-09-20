@@ -61,7 +61,7 @@ pub mod traits {
     use crate::client::traits::AtraClient;
     use crate::config::Config;
     use crate::contexts::BaseContext;
-    use crate::crawl::{ErrorConsumer, SlimCrawlResult};
+    use crate::crawl::{SlimCrawlResult};
     use crate::crawl::{CrawlResult, CrawlTask};
     use crate::extraction::ExtractedLink;
     use crate::gdbr::identifier::GdbrRegistry;
@@ -79,7 +79,6 @@ pub mod traits {
     use crate::web_graph::WebGraphManager;
     use std::collections::HashSet;
     use std::error::Error;
-    use std::future::Future;
     use text_processing::stopword_registry::StopWordRegistry;
 
     /// A marker interface for applying the context trait iff appropriate

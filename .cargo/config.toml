@@ -1,2 +1,2 @@
-[target.'cfg(not(test))']
+[target.'cfg(all(not(test), not(release_with_deadcode)))']
 rustflags=["-Adead_code"]

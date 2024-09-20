@@ -18,6 +18,7 @@ use crate::url::guard::UrlGuardian;
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::select;
+use tokio::task::yield_now;
 use tokio_util::sync::CancellationToken;
 
 /// The result of the [WorkerBarrier]
@@ -147,5 +148,7 @@ impl WorkerBarrier {
                 self.subscription_triggered(context, cause_provider, "guardian")
             }
         }
+
+
     }
 }

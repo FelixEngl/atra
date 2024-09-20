@@ -12,10 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::app::args::{consume_args, ConsumedArgs};
-use crate::config::Config;
-use crate::runtime::graceful_shutdown;
-use crate::seed::SeedDefinition;
 use log::info;
 
 mod args;
@@ -27,41 +23,46 @@ mod logging;
 #[cfg(test)]
 mod terminal;
 mod config;
+mod instruction;
 
 use atra::{Atra};
 pub use args::AtraArgs;
 pub use atra::ApplicationMode;
+use crate::app::instruction::{prepare_instruction, Instruction, RunInstruction};
+use crate::runtime::{GracefulShutdown, ShutdownReceiverWithWait, Shutdown};
 
 pub fn exec_args(args: AtraArgs) {
-    match consume_args(args) {
-        ConsumedArgs::RunConfig(mode, seeds, configs) => {
-            execute(mode, seeds, configs);
+    match prepare_instruction(args) {
+        Ok(Instruction::RunInstruction(instruction)) => {
+            execute(instruction);
         }
-        ConsumedArgs::Nothing => {}
-        ConsumedArgs::RecoverConfig(_, _) => {
-            todo!()
+        Ok(Instruction::Nothing) => {}
+        Err(err) => {
+            log::error!("Failed with: {err}");
         }
     }
 }
 
 /// Execute the
-fn execute(application_mode: ApplicationMode, seed_definition: SeedDefinition, configs: Config) {
-    let (notify, shutdown, mut barrier) = graceful_shutdown();
-    let (mut atra, runtime) = Atra::build_with_runtime(application_mode, notify, shutdown);
+fn execute(instruction: RunInstruction) {
+    let shutdown_with_guard = GracefulShutdown::new();
+    let shutdown = shutdown_with_guard.create_shutdown();
+    let (mut atra, runtime) = Atra::build_with_runtime(instruction.mode, shutdown_with_guard);
     let signal_handler = tokio::signal::ctrl_c();
     runtime.block_on(async move {
         tokio::select! {
-            res = atra.run(seed_definition, configs) => {
+            res = atra.run(instruction) => {
                 if let Err(err) = res {
                     log::error!("Error: {err}");
                 }
             }
             _ = signal_handler => {
                 log::info!("Shutting down.");
+                shutdown.shutdown();
             }
         }
         drop(atra);
-        barrier.wait().await;
+        shutdown.wait().await;
     });
     info!("Exit application.")
 }
@@ -75,6 +76,7 @@ mod test {
     use crate::config::{BudgetSetting, Config, CrawlConfig};
     use crate::seed::SeedDefinition;
     use time::Duration;
+    use crate::app::instruction::RunInstruction;
 
     #[test]
     pub fn can_generate_example_config() {
@@ -117,20 +119,25 @@ mod test {
         config.user_agent = UserAgent::Custom("TestCrawl/Atra/v0.1.0".to_string());
 
         execute(
-            ApplicationMode::Multi(None),
-            SeedDefinition::Multi(vec![
-                "http://www.antsandelephants.de".to_string(),
-                "http://www.aperco.info".to_string(),
-                "http://www.applab.de/".to_string(),
-                "http://www.carefornetworks.de/".to_string(),
-                "https://ticktoo.com/".to_string(),
-            ]),
-            Config::new(
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                config,
-            ),
+            RunInstruction {
+                mode: ApplicationMode::Multi(None),
+                config: Config::new(
+                    Default::default(),
+                    Default::default(),
+                    Default::default(),
+                    config,
+                ),
+                seeds: Some(
+                    SeedDefinition::Multi(vec![
+                        "http://www.antsandelephants.de".to_string(),
+                        "http://www.aperco.info".to_string(),
+                        "http://www.applab.de/".to_string(),
+                        "http://www.carefornetworks.de/".to_string(),
+                        "https://ticktoo.com/".to_string(),
+                    ])
+                ),
+                recover_mode: false
+            }
         )
     }
 }

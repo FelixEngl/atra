@@ -17,6 +17,48 @@ mod rocksdb_ext;
 mod database_error;
 mod options;
 
+use rocksdb::{DBIteratorWithThreadMode, DBWithThreadMode, IteratorMode, MultiThreaded, ReadOptions, DB};
 pub use database_error::*;
 pub use options::*;
 pub use rocksdb_ext::*;
+
+
+pub fn get_len(db: &DB, handle: std::sync::Arc<rocksdb::BoundColumnFamily>) -> usize {
+    let mut options = ReadOptions::default();
+    options.fill_cache(false);
+    match db.flush_cf(&handle) {
+        Ok(_) => {}
+        Err(err) => {
+            log::warn!("Failed to flush before scanning {err}");
+        }
+    };
+
+    let mut iter = db.raw_iterator_cf_opt(
+        &handle,
+        options
+    );
+    iter.seek_to_first();
+    let mut ct: usize = 0;
+    while iter.valid() {
+        ct += 1;
+        iter.next();
+    }
+    ct
+}
+
+pub fn execute_iter<'a>(db: &'a DB, handle: std::sync::Arc<rocksdb::BoundColumnFamily<'a>>) -> DBIteratorWithThreadMode<'a, DBWithThreadMode<MultiThreaded>> {
+    let mut options = ReadOptions::default();
+    options.fill_cache(false);
+    match db.flush_cf(&handle) {
+        Ok(_) => {}
+        Err(err) => {
+            log::warn!("Failed to flush before scanning {err}");
+        }
+    };
+
+    db.iterator_cf_opt(
+        &handle,
+        options,
+        IteratorMode::Start
+    )
+}

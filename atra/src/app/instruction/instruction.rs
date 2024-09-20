@@ -13,17 +13,22 @@
 // limitations under the License.
 
 use crate::app::ApplicationMode;
+use crate::config::Config;
+use crate::seed::SeedDefinition;
 
-pub struct RecoveryManager {
-    mode: ApplicationMode
+/// The kind of instruction provided by the args.
+#[derive(Debug)]
+pub enum Instruction {
+    RunInstruction(RunInstruction),
+    Nothing,
 }
 
-pub struct SharedState {
-    ct_discovered_websites: usize
+/// The instruction to run atra.
+#[derive(Debug)]
+pub struct RunInstruction {
+    pub mode: ApplicationMode,
+    pub config: Config,
+    pub seeds: Option<SeedDefinition>,
+    pub recover_mode: bool
 }
 
-
-pub struct WorkerState {
-    worker_id: usize,
-
-}

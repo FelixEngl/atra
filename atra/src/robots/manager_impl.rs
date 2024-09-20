@@ -21,117 +21,12 @@ use crate::url::{AtraOriginProvider, AtraUrlOrigin};
 use crate::{db_health_check, declare_column_families};
 use rocksdb::{BoundColumnFamily, DB};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::error::Error;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use texting_robots::{get_robots_url, Robot};
 use time::{Duration, OffsetDateTime};
 use tokio::task::yield_now;
-
-/// An in memory variant of a robots.txt manager
-/// Ideal for smaller crawls
-#[derive(Debug, Default)]
-pub struct InMemoryRobotsManager {
-    cache: tokio::sync::RwLock<HashMap<AtraUrlOrigin, Arc<CachedRobots>>>,
-}
-
-impl InMemoryRobotsManager {
-    #[cfg(test)]
-    pub fn new() -> Self {
-        Self {
-            cache: tokio::sync::RwLock::new(HashMap::new()),
-        }
-    }
-}
-
-impl RobotsManager for InMemoryRobotsManager {
-    async fn get<E: Error>(
-        &self,
-        _: &str,
-        url: &UrlWithDepth,
-        max_age: Option<&Duration>,
-    ) -> Result<Option<Arc<CachedRobots>>, RobotsError<E>> {
-        let domain = url.atra_origin().ok_or(RobotsError::NoDomainForUrl)?;
-        let cache = self.cache.read().await;
-        let found = if let Some(found) = cache.get(&domain) {
-            if let Some(max_age) = max_age {
-                if (OffsetDateTime::now_utc() - found.retrieved_at()).le(max_age) {
-                    Some(found.clone())
-                } else {
-                    drop(cache);
-                    let mut cache = self.cache.write().await;
-                    cache.remove(&domain);
-                    None
-                }
-            } else {
-                Some(found.clone())
-            }
-        } else {
-            None
-        };
-        Ok(found)
-    }
-
-    async fn get_or_retrieve<C: AtraClient>(
-        &self,
-        client: &C,
-        agent: &str,
-        url: &UrlWithDepth,
-        max_age: Option<&Duration>,
-    ) -> Result<Arc<CachedRobots>, RobotsError<C::Error>> {
-        if let Some(found) = self.get(agent, url, max_age).await? {
-            return Ok(found);
-        }
-        // Later used but cheaper than downloading and then recognizing invalidity for manager.
-        let origin = url.atra_origin().ok_or(RobotsError::NoDomainForUrl)?;
-        let result = client
-            .get(&get_robots_url(&url.try_as_str())?)
-            .await
-            .map_err(RobotsError::ClientWasNotAbleToSend)?;
-        let retrieved_at = OffsetDateTime::now_utc();
-        let status_code = result.status();
-        let result = result.bytes().await;
-
-        let retrieved = if let Ok(result) = result {
-            if status_code.is_client_error() || status_code.is_server_error() {
-                CachedRobots::NoRobots {
-                    retrieved_at,
-                    _status_code: status_code,
-                }
-            } else {
-                let robot =
-                    Robot::new(agent, result.as_ref()).map_err(RobotsError::InvalidRobotsTxt)?;
-                CachedRobots::HasRobots {
-                    robot,
-                    retrieved_at,
-                }
-            }
-        } else {
-            CachedRobots::NoRobots {
-                retrieved_at,
-                _status_code: status_code,
-            }
-        };
-
-        let retrieved = Arc::new(retrieved);
-        let mut cache = self.cache.write().await;
-        let retrieved = if let Some(found) = cache.remove(&origin) {
-            if found.retrieved_at() < retrieved.retrieved_at() {
-                cache.insert(origin, retrieved.clone());
-                retrieved
-            } else {
-                cache.insert(origin, found.clone());
-                found
-            }
-        } else {
-            cache.insert(origin, retrieved.clone());
-            retrieved
-        };
-        drop(cache);
-        Ok(retrieved)
-    }
-}
 
 /// A manager for robots.txt, threadsafe, with some caching
 #[derive(Debug)]

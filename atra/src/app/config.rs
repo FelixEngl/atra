@@ -16,17 +16,18 @@ use camino::Utf8Path;
 use config::Config;
 use crate::config::Config as AtraConfig;
 
-pub fn load_from<P: AsRef<Utf8Path>>(folder: P) -> Result<AtraConfig, config::ConfigError> {
+pub fn try_load_from_path<P: AsRef<Utf8Path>>(path: P) -> Result<AtraConfig, config::ConfigError> {
     Config::builder()
         .add_source(config::File::with_name("./config").required(false))
         .add_source(config::File::with_name("./atra").required(false))
-        .add_source(config::File::with_name(folder.as_ref().join("atra").as_str(), ).required(false))
-        .add_source(config::File::with_name(folder.as_ref().join("config").as_str(), ).required(false))
+        .add_source(config::File::with_name(path.as_ref().join("atra").as_str()).required(false))
+        .add_source(config::File::with_name(path.as_ref().join("config").as_str()).required(false))
         .add_source(config::Environment::with_prefix("ATRA").separator("."))
         .build()?
         .try_deserialize()
 }
 
+/// Tries to find a config at the default configs
 pub fn discover_or_default() -> Result<AtraConfig, config::ConfigError> {
     match Config::builder()
         .add_source(config::File::with_name("./config").required(false))
@@ -59,11 +60,11 @@ mod test {
     use std::fs::File;
     use std::io::Read;
     use std::io::{BufReader, BufWriter, Write};
-    use crate::app::config::load_from;
+    use crate::app::config::try_load_from_path;
 
     #[test]
     fn test_loading(){
-        let loaded = load_from("testdata/configs/sub").unwrap();
+        let loaded = try_load_from_path("testdata/configs/sub").unwrap();
         println!("{}", loaded.system.robots_cache_size)
     }
 
