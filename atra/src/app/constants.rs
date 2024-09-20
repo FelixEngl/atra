@@ -31,7 +31,7 @@ use text_processing::stopword_registry::StopWordRepository;
 use time::Duration;
 use ubyte::ToByteUnit;
 
-pub const ATRA_LOGO: &'static str = include_str!("../../../logo.txt");
+pub const ATRA_LOGO: &'static str = include_str!("logo_small.txt");
 pub const ATRA_WELCOME: &'static str = include_str!("welcome.txt");
 
 pub fn create_example_config() -> crate::config::configs::Config {
