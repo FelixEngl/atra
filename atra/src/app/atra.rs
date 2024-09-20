@@ -14,7 +14,7 @@
 
 use std::error::Error;
 use std::io;
-use crate::app::consumer::{GlobalErrorConsumer};
+use crate::app::consumer::{GlobalError, GlobalErrorConsumer};
 use crate::app::logging::configure_logging;
 use crate::contexts::local::LocalContext;
 use crate::contexts::traits::*;
@@ -30,6 +30,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use tokio::select;
+use tokio::sync::Notify;
 use tokio::task::JoinSet;
 use crate::app::instruction::RunInstruction;
 use crate::contexts::Context;
@@ -54,7 +55,9 @@ pub struct Atra {
     /// The mode of the application
     mode: ApplicationMode,
 
-    shutdown: GracefulShutdown
+    shutdown: GracefulShutdown,
+
+    notify: Notify
 }
 
 /// From tokio
@@ -93,6 +96,7 @@ impl Atra {
             mode,
             shutdown,
             handle,
+            notify: Notify::new()
         }
     }
 
@@ -101,7 +105,7 @@ impl Atra {
     /// Canceling the token immediately stops the application.
     pub fn build_with_runtime(
         mode: ApplicationMode,
-    ) -> (Self, AtraRuntime, GracefulShutdown) {
+    ) -> (Self, AtraRuntime) {
         let runtime = match &mode {
             ApplicationMode::Single => tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -125,17 +129,14 @@ impl Atra {
 
         let shutdown = GracefulShutdown::new();
 
-        let new = shutdown.create_delegated_shutdown();
-
         let runtime = AtraRuntime::new(runtime, None);
         (
             Self::new(
                 mode,
-                new,
+                shutdown,
                 runtime.handle().as_optional(),
             ),
             runtime,
-            shutdown
         )
     }
 
@@ -150,6 +151,11 @@ impl Atra {
         (instance, shutdown2)
     }
 
+    pub async fn shutdown(&self) {
+        self.shutdown.shutdown();
+        self.notify.notified().await;
+    }
+
     // fn create_contained(mode: ApplicationMode) -> (Self, AtraRuntime, GracefulShutdownBarrier) {
     //     let (notify, shutdown, barrier) = graceful_shutdown();
     //     let (instance, runtime) = Self::build_with_runtime(mode, notify, shutdown);
@@ -162,7 +168,9 @@ impl Atra {
         instruction: RunInstruction
     ) -> Result<(), anyhow::Error> {
         configure_logging(&instruction.config);
-        self.run_without_logger(instruction).await
+        let result = self.run_without_logger(instruction).await;
+        self.notify.notify_one();
+        result
     }
 
     async fn run_without_logger(
@@ -205,12 +213,19 @@ impl Atra {
                 let mut recrawl_ct = 0;
                 loop {
                     let barrier = WorkerBarrier::new(unsafe { NonZeroUsize::new_unchecked(1) });
-                    let value = crawl(
+                    let value = match crawl(
                         WorkerContext::create(0, recrawl_ct, context.clone())?,
                         self.shutdown.clone(),
                         Arc::new(barrier),
                         GlobalErrorConsumer::new(),
-                    ).await?;
+                    ).await {
+                        Ok(value) => {value}
+                        Err(err) => {
+                            log::info!("Notify shutdown!");
+                            self.notify.notify_waiters();
+                            return Err(err.into())
+                        }
+                    };
 
                     let time_needed = OffsetDateTime::now_utc() - start;
                     log::info!(
@@ -245,6 +260,8 @@ impl Atra {
                     }
                 }
 
+                log::info!("Notify shutdown!");
+                self.notify.notify_waiters();
                 Ok(())
             }
             ApplicationMode::Multi(worker) => {
@@ -350,9 +367,14 @@ impl Atra {
                         break;
                     }
                 }
+
+                log::info!("Notify shutdown!");
+                self.notify.notify_waiters();
                 Ok(())
             }
         }
+
+
     }
 
 

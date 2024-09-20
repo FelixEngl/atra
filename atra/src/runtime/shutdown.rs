@@ -41,6 +41,10 @@ impl GracefulShutdown {
     pub fn create_delegated_shutdown(&self) -> GracefulShutdown {
         Self::create(self.shutdown.create_delegated())
     }
+
+    pub fn shutdown(&self) {
+        self.shutdown.shutdown()
+    }
 }
 
 impl Clone for GracefulShutdown {

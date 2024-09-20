@@ -46,7 +46,7 @@ pub fn exec_args(args: AtraArgs) {
 
 /// Execute the
 fn execute(instruction: RunInstruction) {
-    let (mut atra, runtime, shutdown) = Atra::build_with_runtime(instruction.mode);
+    let (mut atra, runtime) = Atra::build_with_runtime(instruction.mode);
     let signal_handler = tokio::signal::ctrl_c();
     runtime.block_on(async move {
         tokio::select! {
@@ -59,8 +59,8 @@ fn execute(instruction: RunInstruction) {
                 log::info!("Shutting down.");
             }
         }
-        drop(atra);
-        shutdown.wait().await;
+        log::info!("Waiting for complete shutdown.");
+        atra.shutdown().await;
     });
     info!("Exit application.")
 }
