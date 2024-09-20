@@ -272,8 +272,14 @@ pub(crate) fn prepare_instruction(args: AtraArgs) -> Result<Instruction, Instruc
                     ).into())
                 };
 
-                let local = LocalContext::new_without_runtime(config).expect("Was not able to load context for reading!");
-                view(local, internals, extracted_links, headers);
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("Fatal: Was not able to initialize runtime!");
+                runtime.block_on(async move {
+                    let local = LocalContext::new_without_runtime(config).expect("Was not able to load context for reading!");
+                    view(local, internals, extracted_links, headers);
+                });
                 Ok(Instruction::Nothing)
             }
         }
