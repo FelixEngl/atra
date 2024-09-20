@@ -20,12 +20,13 @@ use crate::url::AtraUri;
 use crate::warc_ext::{ WarcSkipInstruction};
 
 pub fn view(local: LocalContext, internals: bool, extracted_links: bool, headers: bool) {
-    println!("Atra Stats:");
+    println!("##### ATRA STATS #####");
     println!("    Links in Queue:        {}", local.url_queue().len_blocking());
     println!("    Links in CrawlDB:      {}", local.crawl_db().len());
     println!("    Links in StateManager: {}", local.get_link_state_manager().len());
+    println!("##### ATRA STATS #####");
 
-    println!("Crawled Websides:\n");
+    println!("\n\nCrawled Websides:\n");
     println!("\n-----------------------\n");
     for (k, v) in local.crawl_db().iter().filter_map(
         |value| value.ok()

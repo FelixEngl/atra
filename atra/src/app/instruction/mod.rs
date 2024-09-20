@@ -272,6 +272,8 @@ pub(crate) fn prepare_instruction(args: AtraArgs) -> Result<Instruction, Instruc
                     ).into())
                 };
 
+                println!("{}\n\n{}\n\n\n", ATRA_WELCOME, ATRA_LOGO);
+
                 let runtime = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
