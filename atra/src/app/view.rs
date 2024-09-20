@@ -15,7 +15,7 @@
 use crate::contexts::local::LocalContext;
 use crate::contexts::traits::{SupportsLinkState, SupportsUrlQueue};
 use crate::crawl::{SlimCrawlResult, StoredDataHint};
-use crate::link_state::{LinkStateLike, LinkStateManager, RawLinkState};
+use crate::link_state::{LinkStateLike, LinkStateManager};
 use crate::url::AtraUri;
 use crate::warc_ext::{ WarcSkipInstruction};
 
@@ -59,19 +59,6 @@ pub fn view(local: LocalContext, internals: bool, extracted_links: bool, headers
             println!("        Encoding: -!-");
         }
 
-        if let Some(headers) = v.meta.headers {
-            if !headers.is_empty() {
-                println!("        Headers:");
-                for (k, v) in headers.iter() {
-                    println!("            \"{}\": \"{}\"", k, String::from_utf8_lossy(v.as_bytes()).to_string());
-                }
-            } else {
-                println!("        Headers: -!-");
-            }
-        } else {
-            println!("        Headers: -!-");
-        }
-
         let linkstate = local.get_link_state_manager().get_link_state_sync(&v.meta.url);
         if let Ok(Some(state)) = linkstate {
             println!("        Linkstate:");
@@ -88,39 +75,58 @@ pub fn view(local: LocalContext, internals: bool, extracted_links: bool, headers
             println!("        Redirect: {redirect}");
         }
 
-        if let Some(extracted_links) = v.meta.links {
-            println!("        Extracted Links:");
-            for (i, value) in extracted_links.iter().enumerate() {
-                println!("            {}: {}", i, value);
+        if headers {
+            if let Some(headers) = v.meta.headers {
+                if !headers.is_empty() {
+                    println!("        Headers:");
+                    for (k, v) in headers.iter() {
+                        println!("            \"{}\": \"{}\"", k, String::from_utf8_lossy(v.as_bytes()).to_string());
+                    }
+                } else {
+                    println!("        Headers: -!-");
+                }
+            } else {
+                println!("        Headers: -!-");
             }
         }
 
-        println!("    Internal Storage:");
-        match v.stored_data_hint {
-            StoredDataHint::External(ref value) => {
-                println!("        External: {} - {}", value.exists(), value);
+        if extracted_links {
+            if let Some(extracted_links) = v.meta.links {
+                println!("        Extracted Links:");
+                for (i, value) in extracted_links.iter().enumerate() {
+                    println!("            {}: {}", i, value);
+                }
             }
-            StoredDataHint::Warc(ref value) => {
-                match value {
-                    WarcSkipInstruction::Single { pointer, is_base64, header_signature_octet_count } => {
-                        println!("        Single Warc: {} - {} ({}, {}, {:?})", pointer.path().exists(), pointer.path(), is_base64, header_signature_octet_count, pointer.pointer());
-                    }
-                    WarcSkipInstruction::Multiple { pointers, header_signature_octet_count, is_base64 } => {
-                        println!("        Multiple Warc: ({}, {})", is_base64, header_signature_octet_count);
-                        for pointer in pointers {
-                            println!("            {} - {} ({}, {}, {:?})", pointer.path().exists(), pointer.path(), is_base64, header_signature_octet_count, pointer.pointer());
+        }
+
+        if internals {
+            println!("    Internal Storage:");
+            match v.stored_data_hint {
+                StoredDataHint::External(ref value) => {
+                    println!("        External: {} - {}", value.exists(), value);
+                }
+                StoredDataHint::Warc(ref value) => {
+                    match value {
+                        WarcSkipInstruction::Single { pointer, is_base64, header_signature_octet_count } => {
+                            println!("        Single Warc: {} - {} ({}, {}, {:?})", pointer.path().exists(), pointer.path(), is_base64, header_signature_octet_count, pointer.pointer());
+                        }
+                        WarcSkipInstruction::Multiple { pointers, header_signature_octet_count, is_base64 } => {
+                            println!("        Multiple Warc: ({}, {})", is_base64, header_signature_octet_count);
+                            for pointer in pointers {
+                                println!("            {} - {} ({}, {}, {:?})", pointer.path().exists(), pointer.path(), is_base64, header_signature_octet_count, pointer.pointer());
+                            }
                         }
                     }
                 }
-            }
-            StoredDataHint::InMemory(ref value) => {
-                println!("        InMemory: {}", value.len());
-            }
-            StoredDataHint::Associated => {
-                println!("        Associated!")
-            }
-            StoredDataHint::None => {
-                println!("        None!")
+                StoredDataHint::InMemory(ref value) => {
+                    println!("        InMemory: {}", value.len());
+                }
+                StoredDataHint::Associated => {
+                    println!("        Associated!")
+                }
+                StoredDataHint::None => {
+                    println!("        None!")
+                }
             }
         }
     }

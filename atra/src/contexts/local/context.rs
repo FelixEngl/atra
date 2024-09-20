@@ -74,7 +74,6 @@ pub struct LocalContext {
 
 impl LocalContext {
 
-    #[cfg(test)]
     pub fn new_without_runtime(config: Config) -> Result<Self, LocalContextInitError> {
         let other = RuntimeContext::new(
             GracefulShutdown::new(),
