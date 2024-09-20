@@ -323,7 +323,7 @@ where
                     return Ok(Some(found.inflate(None)));
                 }
                 StoredDataHint::Warc(pointers) => {
-                    let read = pointers.read_in_context(&self.worker_warc_writer).await?;
+                    let read = pointers.read_in_context(Some(&self.worker_warc_writer)).await?;
                     return Ok(Some(found.inflate(read)));
                 }
                 StoredDataHint::Associated => unreachable!(),

@@ -71,6 +71,9 @@ pub trait LinkStateManager {
             .await
     }
 
+
+    fn get_link_state_sync(&self, url: &UrlWithDepth) -> Result<Option<RawLinkState>, Self::Error>;
+
     /// Gets the state of the current url
     async fn get_link_state(&self, url: &UrlWithDepth)
         -> Result<Option<RawLinkState>, Self::Error>;

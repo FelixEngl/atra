@@ -76,6 +76,16 @@ impl<DB: LinkStateDB> LinkStateManager for DatabaseLinkStateManager<DB> {
         }
     }
 
+    fn get_link_state_sync(&self, url: &UrlWithDepth) -> Result<Option<RawLinkState>, Self::Error> {
+        match self.db.get_state(url) {
+            Err(LinkStateDBError::Database(DatabaseError::RecoverableFailure { .. })) => {
+                self.db.get_state(url)
+            }
+            escalate => escalate,
+        }
+    }
+
+
     async fn get_link_state(
         &self,
         url: &UrlWithDepth,

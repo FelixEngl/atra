@@ -24,6 +24,7 @@ mod logging;
 mod terminal;
 mod config;
 mod instruction;
+mod view;
 
 use atra::{Atra};
 pub use args::AtraArgs;

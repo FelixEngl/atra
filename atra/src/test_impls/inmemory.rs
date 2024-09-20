@@ -707,6 +707,14 @@ impl LinkStateManager for InMemoryLinkStateManager {
         Ok(())
     }
 
+    fn get_link_state_sync(&self, url: &UrlWithDepth) -> Result<Option<RawLinkState>, Self::Error> {
+        let lock = self.state.read().unwrap();
+        Ok(lock
+            .get(url.url())
+            .map(|value| unsafe { RawLinkState::from_slice_unchecked(&value) }))
+    }
+
+
     async fn get_link_state(
         &self,
         url: &UrlWithDepth,

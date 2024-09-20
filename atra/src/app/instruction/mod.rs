@@ -26,7 +26,9 @@ use crate::app::args::RunMode;
 use crate::app::{ApplicationMode, AtraArgs};
 use crate::app::config::{discover, discover_or_default, try_load_from_path};
 use crate::app::constants::{create_example_config, ATRA_LOGO, ATRA_WELCOME};
+use crate::app::view::view;
 use crate::config::{BudgetSetting, Config};
+use crate::contexts::local::LocalContext;
 
 /// Consumes the args and returns everything necessary to execute Atra
 pub(crate) fn prepare_instruction(args: AtraArgs) -> Result<Instruction, InstructionError> {
@@ -243,6 +245,36 @@ pub(crate) fn prepare_instruction(args: AtraArgs) -> Result<Instruction, Instruc
                         recover_mode: true,
                     }
                 ))
+            }
+            RunMode::VIEW { path, internals, extracted_links, headers } => {
+                let path = Utf8PathBuf::from(path);
+
+                let config = if path.is_dir() {
+                    let mut cfg: Config = try_load_from_path(&path)?;
+                    cfg.paths.root = path;
+                    cfg
+                } else if path.is_file() {
+                    let file = File::options().read(true).open(&path)?;
+                    let mut cfg: Config = serde_json::from_reader(BufReader::new(file))?;
+                    cfg.paths.root = if let Some(parent) = path.parent() {
+                        parent.to_path_buf()
+                    } else {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            format!("The path {} points to a config file but doesn't have a parent!", path)
+                        ).into())
+                    };
+                    cfg
+                } else {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("The path {} is neither a config file nor a path to a folder containing a config!", path)
+                    ).into())
+                };
+
+                let local = LocalContext::new_without_runtime(config).expect("Was not able to load context for reading!");
+                view(local, internals, extracted_links, headers);
+                Ok(Instruction::Nothing)
             }
         }
     } else {

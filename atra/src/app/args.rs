@@ -95,7 +95,22 @@ pub enum RunMode {
         path: String,
     },
     /// Initializes Atra for Multi by creating the default config filee
-    INIT
+    INIT,
+
+    /// View the content of the crawl
+    VIEW {
+        /// Show internal states of atra
+        #[arg(short, long)]
+        internals: bool,
+        /// Show the extracted link of every page
+        #[arg(short, long)]
+        extracted_links: bool,
+        /// Show the headers of every page
+        #[arg(short, long)]
+        headers: bool,
+        /// The path to the folder with the atra data
+        path: String,
+    }
 }
 
 
