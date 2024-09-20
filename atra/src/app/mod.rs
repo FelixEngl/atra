@@ -30,7 +30,7 @@ use atra::{Atra};
 pub use args::AtraArgs;
 pub use atra::ApplicationMode;
 use crate::app::instruction::{prepare_instruction, Instruction, RunInstruction};
-use crate::runtime::{GracefulShutdown, ShutdownReceiverWithWait};
+use crate::runtime::{ShutdownReceiverWithWait};
 
 pub fn exec_args(args: AtraArgs) {
     match prepare_instruction(args) {
@@ -46,9 +46,7 @@ pub fn exec_args(args: AtraArgs) {
 
 /// Execute the
 fn execute(instruction: RunInstruction) {
-    let shutdown_with_guard = GracefulShutdown::new();
-    let shutdown = shutdown_with_guard.create_shutdown();
-    let (mut atra, runtime) = Atra::build_with_runtime(instruction.mode, shutdown_with_guard);
+    let (mut atra, runtime, shutdown) = Atra::build_with_runtime(instruction.mode);
     let signal_handler = tokio::signal::ctrl_c();
     runtime.block_on(async move {
         tokio::select! {
@@ -59,7 +57,6 @@ fn execute(instruction: RunInstruction) {
             }
             _ = signal_handler => {
                 log::info!("Shutting down.");
-                shutdown.shutdown();
             }
         }
         drop(atra);

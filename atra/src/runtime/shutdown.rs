@@ -23,8 +23,11 @@ pub struct GracefulShutdown {
 
 impl GracefulShutdown {
     pub fn new() -> Self {
-        let shutdown = Shutdown::new();
-        let drop = shutdown.notify.clone().drop_guard();
+        Self::create(Shutdown::new())
+    }
+
+    fn create(shutdown: Shutdown) -> Self {
+        let drop = shutdown.inner.clone().drop_guard();
         Self {
             shutdown,
             guard: Arc::new(drop)
@@ -33,6 +36,10 @@ impl GracefulShutdown {
 
     pub fn create_shutdown(&self) -> Shutdown {
         self.shutdown.clone()
+    }
+
+    pub fn create_delegated_shutdown(&self) -> GracefulShutdown {
+        Self::create(self.shutdown.create_delegated())
     }
 }
 
@@ -60,37 +67,43 @@ impl ShutdownReceiverWithWait for GracefulShutdown {
 
 #[derive(Debug)]
 pub struct Shutdown {
-    notify: CancellationToken
+    inner: CancellationToken
 }
 
 impl Shutdown {
 
     pub fn shutdown(&self) {
-        self.notify.cancel();
+        self.inner.cancel();
+    }
+
+    pub fn create_delegated(&self) -> Self {
+        Self {
+            inner: self.inner.child_token()
+        }
     }
 
     pub fn new() -> Self {
-        Self { notify: CancellationToken::new() }
+        Self { inner: CancellationToken::new() }
     }
 }
 
 impl Clone for Shutdown {
     fn clone(&self) -> Self {
         Self {
-            notify: self.notify.clone()
+            inner: self.inner.clone()
         }
     }
 }
 
 impl ShutdownReceiver for Shutdown {
     fn is_shutdown(&self) -> bool {
-        self.notify.is_cancelled()
+        self.inner.is_cancelled()
     }
 }
 
 impl ShutdownReceiverWithWait for Shutdown {
     async fn wait(&self) {
-        self.notify.clone().cancelled_owned().await
+        self.inner.clone().cancelled_owned().await
     }
 }
 

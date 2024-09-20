@@ -97,10 +97,11 @@ impl Atra {
     }
 
 
+    /// Returns the application, the runtime and the master shutdown token.
+    /// Canceling the token immediately stops the application.
     pub fn build_with_runtime(
         mode: ApplicationMode,
-        shutdown: GracefulShutdown,
-    ) -> (Self, AtraRuntime) {
+    ) -> (Self, AtraRuntime, GracefulShutdown) {
         let runtime = match &mode {
             ApplicationMode::Single => tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -122,14 +123,19 @@ impl Atra {
             }
         };
 
+        let shutdown = GracefulShutdown::new();
+
+        let new = shutdown.create_delegated_shutdown();
+
         let runtime = AtraRuntime::new(runtime, None);
         (
             Self::new(
                 mode,
-                shutdown,
+                new,
                 runtime.handle().as_optional(),
             ),
             runtime,
+            shutdown
         )
     }
 
@@ -199,10 +205,9 @@ impl Atra {
                 let mut recrawl_ct = 0;
                 loop {
                     let barrier = WorkerBarrier::new(unsafe { NonZeroUsize::new_unchecked(1) });
-
                     let value = crawl(
                         WorkerContext::create(0, recrawl_ct, context.clone())?,
-                        self.shutdown.create_shutdown(),
+                        self.shutdown.clone(),
                         Arc::new(barrier),
                         GlobalErrorConsumer::new(),
                     ).await?;
@@ -253,7 +258,7 @@ impl Atra {
                     for i in 0..worker_count.get() {
                         log::info!("Spawn Worker: {i}");
                         let b = barrier.clone();
-                        let s = self.shutdown.create_shutdown();
+                        let s = self.shutdown.clone();
                         let context = WorkerContext::create(i, recrawl_ct, context.clone())?;
                         set.spawn(async move {
                             let context = context;
@@ -276,7 +281,7 @@ impl Atra {
                                         }
                                     }
                                 } else {
-                                    let stop = s.clone();
+                                    let stop = s.create_shutdown();
                                     log::debug!("Wait for all stopping.");
                                     let result = select! {
                                         _ = stop.wait() => {
