@@ -28,6 +28,7 @@ use std::hash::Hash;
 pub enum LinkOrigin {
     Href,
     Embedded,
+    Form,
     JavaScript,
     JavaScriptEmbedded,
     OnClick,
@@ -49,6 +50,7 @@ pub fn extract_links<'a, C>(
 
     let respect_nofollow: bool = cfg.crawl.respect_nofollow;
     let crawl_embedded_data: bool = cfg.crawl.crawl_embedded_data;
+    let crawl_forms: bool = cfg.crawl.crawl_forms;
     let crawl_javascript: bool = cfg.crawl.crawl_javascript;
     let crawl_onclick_by_heuristic: bool = cfg.crawl.crawl_onclick_by_heuristic;
 
@@ -119,6 +121,14 @@ pub fn extract_links<'a, C>(
         for element in html.select(&selectors::SRC_HOLDER) {
             if let Some(src) = element.attr("src") {
                 result.insert((LinkOrigin::Embedded, src.to_compact_string()));
+            }
+        }
+    }
+
+    if crawl_forms {
+        for element in html.select(&selectors::FORM_HOLDER) {
+            if let Some(src) = element.attr("action") {
+                result.insert((LinkOrigin::Form, src.to_compact_string()));
             }
         }
     }
@@ -227,6 +237,7 @@ mod selectors {
     pub static HREF_LOCATION_MATCHER: Lazy<Regex> =
         Lazy::new(|| Regex::new("location\\s*\\.\\s*href\\s*=\\s*'\\s*([^']*)\\s*'\\s*;?").unwrap());
 
+    // todo: use form action https://github.com/apache/nutch/blob/master/src/plugin/parse-html/src/java/org/apache/nutch/parse/html/DOMContentUtils.java#L330
     // Ignore [ping] of area/a
     static_selectors! {
         pub [
@@ -237,7 +248,7 @@ mod selectors {
             // TARGET_ELEMENTS = "a,area,base,link,script,audio,embed,iframe,img,input,script,source,track,video"
             ON_CLICK = "[onclick]"
             // SCRIPT = "script"
-
+            FORM_HOLDER = "form[action]"
             META_NO_FOLLOW = "meta[name=\"robots\"][content=\"nofollow\"]"
         ]
     }

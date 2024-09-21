@@ -47,6 +47,8 @@ pub struct CrawlConfig {
     pub respect_nofollow: bool,
     /// Extract links to embedded data like audio/video files for the crawl-queue (default: false)
     pub crawl_embedded_data: bool,
+    /// Extract links to embedded data like audio/video files for the crawl-queue (default: false)
+    pub crawl_forms: bool,
     /// Extract links to/from javascript files for the crawl-queue (default: true)
     pub crawl_javascript: bool,
     /// Try to extract links from tags with onclick attribute for the crawl-queue (default: false)
@@ -122,6 +124,7 @@ impl Default for CrawlConfig {
             respect_nofollow: true,
             crawl_embedded_data: false,
             crawl_javascript: true,
+            crawl_forms: false,
             crawl_onclick_by_heuristic: false,
             store_only_html_in_warc: true,
             store_big_file_hints_in_warc: false,

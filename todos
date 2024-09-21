@@ -107,3 +107,6 @@ Features:
 
 
 
+Pattern for URLS:
+- "([A-Za-z][A-Za-z0-9+.-]{1,120}:[A-Za-z0-9/](([A-Za-z0-9$_.+!*,;/?:@&~=-])|%[A-Fa-f0-9]{2}){1,333}(#([a-zA-Z0-9][a-zA-Z0-9$_.+!*,;/?:@&~=%-]{0,1000}))?)"
+see https://github.com/apache/nutch/blob/master/src/java/org/apache/nutch/parse/OutlinkExtractor.java

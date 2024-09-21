@@ -14,7 +14,7 @@
 
 use std::error::Error;
 use std::io;
-use crate::app::consumer::{GlobalError, GlobalErrorConsumer};
+use crate::app::consumer::{GlobalErrorConsumer};
 use crate::app::logging::configure_logging;
 use crate::contexts::local::LocalContext;
 use crate::contexts::traits::*;
@@ -22,23 +22,18 @@ use crate::contexts::worker::WorkerContext;
 use crate::crawl::{crawl, ErrorConsumer, ExitState};
 use crate::link_state::{LinkStateLike, LinkStateManager, RawLinkState};
 use crate::queue::{QueueError, SupportsForcedQueueElement, UrlQueue, UrlQueueElement};
-use crate::runtime::{AtraRuntime, GracefulShutdownWithGuard, GracefulShutdown, OptionalAtraHandle, RuntimeContext, ShutdownReceiver};
+use crate::runtime::{AtraRuntime, GracefulShutdownWithGuard, OptionalAtraHandle, RuntimeContext, ShutdownReceiver};
 use crate::sync::barrier::{ContinueOrStop, WorkerBarrier};
-use cfg_if::cfg_if;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use rocksdb::IteratorMode;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use tokio::select;
-use tokio::sync::Notify;
-use tokio::task::{JoinError, JoinSet};
+use tokio::task::{JoinSet};
 use crate::app::instruction::RunInstruction;
 use crate::contexts::Context;
 use crate::url::{AtraUri, UrlWithDepth};
-
-
-
 
 
 
@@ -142,7 +137,7 @@ impl Atra {
     fn create_contained_with(
         mode: ApplicationMode,
         handle: OptionalAtraHandle,
-    ) -> (Self, GracefulShutdown) {
+    ) -> (Self, crate::runtime::GracefulShutdown) {
         let shutdown = GracefulShutdownWithGuard::new();
         let graceful_shutdown = shutdown.get().clone();
         let instance = Self::new(mode, shutdown, handle);
@@ -277,7 +272,7 @@ impl Atra {
                         let shutdown = self.shutdown.clone();
                         let context = WorkerContext::create(i, recrawl_ct, context.clone())?;
                         set.spawn(async move {
-                            /// This has to be a drop guard to make sure, that we do not fail to wait for a thread.
+                            // This has to be a drop guard to make sure, that we do not fail to wait for a thread.
                             let shutdown = shutdown;
                             let context = context;
                             let barrier = b.clone();

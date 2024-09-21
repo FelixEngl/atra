@@ -29,7 +29,6 @@ use atra::{Atra};
 pub use args::AtraArgs;
 pub use atra::ApplicationMode;
 use crate::app::instruction::{prepare_instruction, Instruction, RunInstruction};
-use crate::runtime::{ShutdownReceiver};
 
 pub fn exec_args(args: AtraArgs) {
     match prepare_instruction(args) {
