@@ -47,6 +47,7 @@ pub fn create_example_config() -> crate::config::configs::Config {
             user_agent: UserAgent::Custom("My User Agent".to_string()),
             respect_robots_txt: true,
             respect_nofollow: true,
+            crawl_forms: false,
             crawl_embedded_data: false,
             crawl_javascript: true,
             crawl_onclick_by_heuristic: true,
