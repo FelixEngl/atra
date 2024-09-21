@@ -22,25 +22,22 @@ use crate::contexts::worker::WorkerContext;
 use crate::crawl::{crawl, ErrorConsumer, ExitState};
 use crate::link_state::{LinkStateLike, LinkStateManager, RawLinkState};
 use crate::queue::{QueueError, SupportsForcedQueueElement, UrlQueue, UrlQueueElement};
-use crate::runtime::{AtraRuntime, GracefulShutdown, OptionalAtraHandle, RuntimeContext, ShutdownReceiver, ShutdownReceiverWithWait};
+use crate::runtime::{AtraRuntime, GracefulShutdownWithGuard, GracefulShutdown, OptionalAtraHandle, RuntimeContext, ShutdownReceiver};
 use crate::sync::barrier::{ContinueOrStop, WorkerBarrier};
 use cfg_if::cfg_if;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
+use rocksdb::IteratorMode;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use tokio::select;
 use tokio::sync::Notify;
-use tokio::task::JoinSet;
+use tokio::task::{JoinError, JoinSet};
 use crate::app::instruction::RunInstruction;
 use crate::contexts::Context;
 use crate::url::{AtraUri, UrlWithDepth};
 
-cfg_if! {
-    if #[cfg(test)] {
-        use crate::runtime::{Shutdown};
-    }
-}
+
 
 
 
@@ -55,9 +52,8 @@ pub struct Atra {
     /// The mode of the application
     mode: ApplicationMode,
 
-    shutdown: GracefulShutdown,
-
-    notify: Notify
+    /// The hard shutdown
+    shutdown: GracefulShutdownWithGuard,
 }
 
 /// From tokio
@@ -89,15 +85,19 @@ fn num_cpus() -> NonZeroUsize {
 impl Atra {
     pub fn new(
         mode: ApplicationMode,
-        shutdown: GracefulShutdown,
+        shutdown: GracefulShutdownWithGuard,
         handle: OptionalAtraHandle,
     ) -> Self {
         Self {
             mode,
             shutdown,
             handle,
-            notify: Notify::new()
         }
+    }
+
+
+    pub fn shutdown(&self) -> &GracefulShutdownWithGuard {
+        &self.shutdown
     }
 
 
@@ -127,13 +127,11 @@ impl Atra {
             }
         };
 
-        let shutdown = GracefulShutdown::new();
-
         let runtime = AtraRuntime::new(runtime, None);
         (
             Self::new(
                 mode,
-                shutdown,
+                GracefulShutdownWithGuard::new(),
                 runtime.handle().as_optional(),
             ),
             runtime,
@@ -144,17 +142,13 @@ impl Atra {
     fn create_contained_with(
         mode: ApplicationMode,
         handle: OptionalAtraHandle,
-    ) -> (Self, Shutdown) {
-        let shutdown = GracefulShutdown::new();
-        let shutdown2 = shutdown.create_shutdown();
+    ) -> (Self, GracefulShutdown) {
+        let shutdown = GracefulShutdownWithGuard::new();
+        let graceful_shutdown = shutdown.get().clone();
         let instance = Self::new(mode, shutdown, handle);
-        (instance, shutdown2)
+        (instance, graceful_shutdown)
     }
 
-    pub async fn shutdown(&self) {
-        self.shutdown.shutdown();
-        self.notify.notified().await;
-    }
 
     // fn create_contained(mode: ApplicationMode) -> (Self, AtraRuntime, GracefulShutdownBarrier) {
     //     let (notify, shutdown, barrier) = graceful_shutdown();
@@ -169,12 +163,11 @@ impl Atra {
     ) -> Result<(), anyhow::Error> {
         configure_logging(&instruction.config);
         let result = self.run_without_logger(instruction).await;
-        self.notify.notify_one();
         result
     }
 
     async fn run_without_logger(
-        &self,
+        &mut self,
         RunInstruction{config, seeds, recover_mode, ..}: RunInstruction,
     ) -> Result<(), anyhow::Error> {
         let shutdown_and_handle = RuntimeContext::new(
@@ -182,12 +175,15 @@ impl Atra {
             self.handle.clone(),
         );
         let context = Arc::new(LocalContext::new(config, &shutdown_and_handle)?);
+        drop(shutdown_and_handle);
+
         if let Some(seeds) = seeds {
             seeds.fill_queue(context.url_queue()).await;
         }
         if recover_mode {
+            let _guard = self.shutdown.guard();
             let queue = context.url_queue();
-            for (k, v) in context.get_link_state_manager().iter().filter_map(|value| value.ok()) {
+            for (k, v) in context.get_link_state_manager().iter(IteratorMode::Start).filter_map(|value| value.ok()) {
                 let raw = unsafe { RawLinkState::from_slice_unchecked(v.as_ref()) };
                 let uri: AtraUri = String::from_utf8_lossy(k.as_ref()).parse().unwrap();
 
@@ -203,8 +199,8 @@ impl Atra {
                 }
             }
         }
-        if self.shutdown.is_shutdown() {
-            log::warn!("Shutdoen before doing anything!");
+        if self.shutdown.get().child().is_shutdown() {
+            log::warn!("Shutdown before doing anything!");
             return Ok(());
         }
         match self.mode {
@@ -212,20 +208,20 @@ impl Atra {
                 let start = OffsetDateTime::now_utc();
                 let mut recrawl_ct = 0;
                 loop {
+                    let guard = self.shutdown().guard();
                     let barrier = WorkerBarrier::new(unsafe { NonZeroUsize::new_unchecked(1) });
                     let value = match crawl(
                         WorkerContext::create(0, recrawl_ct, context.clone())?,
-                        self.shutdown.clone(),
+                        self.shutdown.get().child().clone(),
                         Arc::new(barrier),
                         GlobalErrorConsumer::new(),
                     ).await {
                         Ok(value) => {value}
                         Err(err) => {
-                            log::info!("Notify shutdown!");
-                            self.notify.notify_waiters();
                             return Err(err.into())
                         }
                     };
+                    drop(guard);
 
                     let time_needed = OffsetDateTime::now_utc() - start;
                     log::info!(
@@ -242,6 +238,11 @@ impl Atra {
                             .map(|value| value.to_string())
                             .unwrap_or("# ERROR COUNTING#".to_string())
                     );
+
+                    if self.shutdown.get().is_shutdown() {
+                        log::info!("Shutting down.");
+                        break
+                    }
 
                     match value {
                         ExitState::Shutdown => {
@@ -260,8 +261,6 @@ impl Atra {
                     }
                 }
 
-                log::info!("Notify shutdown!");
-                self.notify.notify_waiters();
                 Ok(())
             }
             ApplicationMode::Multi(worker) => {
@@ -275,16 +274,21 @@ impl Atra {
                     for i in 0..worker_count.get() {
                         log::info!("Spawn Worker: {i}");
                         let b = barrier.clone();
-                        let s = self.shutdown.clone();
+                        let shutdown = self.shutdown.clone();
                         let context = WorkerContext::create(i, recrawl_ct, context.clone())?;
                         set.spawn(async move {
+                            /// This has to be a drop guard to make sure, that we do not fail to wait for a thread.
+                            let shutdown = shutdown;
                             let context = context;
                             let barrier = b.clone();
                             let (i, state) = loop {
+                                if shutdown.get().is_shutdown() {
+                                    break (i, ExitState::Shutdown)
+                                }
                                 if context.can_poll().await {
                                     match crawl(
                                         context.clone(),
-                                        s.clone(),
+                                        shutdown.get().child().clone(),
                                         barrier.clone(),
                                         GlobalErrorConsumer::new(),
                                     ).await
@@ -298,10 +302,9 @@ impl Atra {
                                         }
                                     }
                                 } else {
-                                    let stop = s.create_shutdown();
                                     log::debug!("Wait for all stopping.");
                                     let result = select! {
-                                        _ = stop.wait() => {
+                                        _ = shutdown.get().child().wait() => {
                                             ContinueOrStop::Cancelled(ExitState::NoMoreElements)
                                         }
                                         value = barrier.wait_for_is_cancelled(
@@ -330,10 +333,15 @@ impl Atra {
                     }
                     let mut is_stop = false;
                     while let Some(res) = set.join_next().await {
-                        if let Ok((i, s)) = res {
-                            log::info!("Stopped worker {i}.");
-                            if matches!(s, ExitState::Shutdown) {
-                                is_stop = true
+                        match res {
+                            Ok((i, s)) => {
+                                log::info!("Stopped worker {i} due to {s}.");
+                                is_stop |= matches!(s, ExitState::Shutdown)
+                            }
+                            Err(err) => {
+                                log::error!("Thread join error: {err}");
+                                log::error!("Trying to shut down in a safe manner...");
+                                self.shutdown.get().shutdown();
                             }
                         }
                     }
@@ -353,8 +361,8 @@ impl Atra {
                             .unwrap_or("# ERROR COUNTING#".to_string())
                     );
 
-                    if is_stop || self.shutdown.is_shutdown() {
-                        log::info!("Shutting down.");
+                    if is_stop || self.shutdown.get().is_shutdown() {
+                        log::info!("Stopped by shutdown.");
                         break;
                     }
 
@@ -367,9 +375,6 @@ impl Atra {
                         break;
                     }
                 }
-
-                log::info!("Notify shutdown!");
-                self.notify.notify_waiters();
                 Ok(())
             }
         }
@@ -426,7 +431,7 @@ mod test {
     use crate::config::crawl::UserAgent;
     use crate::config::{BudgetSetting, CrawlConfig};
     use crate::config::Config as AtraConfig;
-    use crate::runtime::{OptionalAtraHandle, ShutdownReceiverWithWait};
+    use crate::runtime::{OptionalAtraHandle, ShutdownReceiver, ShutdownSender};
     use crate::seed::SeedDefinition;
     use log::LevelFilter;
     use log4rs::append::file::FileAppender;
@@ -436,6 +441,7 @@ mod test {
     use std::fs::{read_dir, File};
     use std::io::Read;
     use std::path::{Path, PathBuf};
+    use rocksdb::IteratorMode;
     use time::Duration;
     use time::ext::NumericalDuration;
     use tokio::select;
@@ -504,14 +510,14 @@ mod test {
     }
 
     async fn execute_crawl(config: AtraConfig, seeds: Option<SeedDefinition>){
-        let (app, shutdown) =
+        let (mut app, shutdown) =
             Atra::create_contained_with(ApplicationMode::Single, None);
 
-        let shutdown_copy = shutdown.clone();
+        let barrier_copy = shutdown.clone();
         let a = async move {
             log::info!("============ WAITING! ============");
             sleep(20.seconds().try_into().unwrap()).await;
-            let _ = shutdown_copy.shutdown();
+            let _ = barrier_copy.shutdown();
             log::info!("============ STOP! ============");
             ()
         };
@@ -546,7 +552,7 @@ mod test {
         println!("{}", local.get_link_state_manager().len());
 
         println!("=======");
-        for (k, v) in local.get_link_state_manager().iter().filter_map(
+        for (k, v) in local.get_link_state_manager().iter(IteratorMode::Start).filter_map(
             |value| value.ok()
         ).map(|(k, v)| {
             let raw = unsafe { RawLinkState::from_slice_unchecked(v.as_ref()) };
@@ -559,7 +565,7 @@ mod test {
             assert!(matches!(v.kind(), LinkStateKind::Discovered | LinkStateKind::ProcessedAndStored))
         }
         println!("=======");
-        for (k, v) in local.crawl_db().iter().filter_map(
+        for (k, v) in local.crawl_db().iter(IteratorMode::Start).filter_map(
             |value| value.ok()
         ).map(|(k, v)| {
             let k: AtraUri = String::from_utf8_lossy(k.as_ref()).parse().unwrap();
@@ -652,7 +658,7 @@ mod test {
     #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
     async fn can_multithread() {
         init();
-        let (app, shutdown) =
+        let (mut app, shutdown) =
             Atra::create_contained_with(ApplicationMode::Multi(None), None);
 
         let mut config: CrawlConfig = CrawlConfig::default();

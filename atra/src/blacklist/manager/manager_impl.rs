@@ -29,7 +29,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use thiserror::Error;
 use tokio::sync::RwLock;
-use crate::runtime::GracefulShutdown;
+use crate::runtime::GracefulShutdownWithGuard;
 
 #[derive(Debug, Error)]
 pub enum InMemoryBlacklistManagerInitialisationError<T: ManageableBlacklist> {
@@ -48,7 +48,7 @@ where
     inner: RwLock<InnerBlacklistManager>,
     sender: ManagedBlacklistSender<T>,
     managed: ManagedBlacklist<T>,
-    _shutdown_guard: GracefulShutdown,
+    _shutdown_guard: GracefulShutdownWithGuard,
 }
 
 impl<T> InMemoryBlacklistManager<T>
@@ -57,7 +57,7 @@ where
 {
     pub fn open<P: AsRef<Path>>(
         path: P,
-        shutdown_guard: GracefulShutdown,
+        shutdown_guard: GracefulShutdownWithGuard,
     ) -> Result<Self, InMemoryBlacklistManagerInitialisationError<T>> {
         let inner = RwLock::new(InnerBlacklistManager::open(path)?);
         let lock = inner.try_read().unwrap();

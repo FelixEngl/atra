@@ -46,7 +46,7 @@ pub fn get_len(db: &DB, handle: std::sync::Arc<rocksdb::BoundColumnFamily>) -> u
     ct
 }
 
-pub fn execute_iter<'a>(db: &'a DB, handle: std::sync::Arc<rocksdb::BoundColumnFamily<'a>>) -> DBIteratorWithThreadMode<'a, DBWithThreadMode<MultiThreaded>> {
+pub fn execute_iter<'a>(db: &'a DB, handle: std::sync::Arc<rocksdb::BoundColumnFamily<'a>>, mode: IteratorMode) -> DBIteratorWithThreadMode<'a, DBWithThreadMode<MultiThreaded>> {
     let mut options = ReadOptions::default();
     options.fill_cache(false);
     match db.flush_cf(&handle) {
@@ -59,6 +59,6 @@ pub fn execute_iter<'a>(db: &'a DB, handle: std::sync::Arc<rocksdb::BoundColumnF
     db.iterator_cf_opt(
         &handle,
         options,
-        IteratorMode::Start
+        mode
     )
 }

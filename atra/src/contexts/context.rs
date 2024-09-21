@@ -72,7 +72,7 @@ pub mod traits {
     use crate::robots::RobotsManager;
     #[cfg(test)]
     use crate::runtime::ShutdownPhantom;
-    use crate::runtime::ShutdownReceiverWithWait;
+    use crate::runtime::ShutdownReceiver;
     use crate::seed::BasicSeed;
     use crate::url::guard::UrlGuardian;
     use crate::url::{UrlWithDepth, UrlWithGuard};
@@ -243,7 +243,7 @@ pub mod traits {
         /// Tries to poll the next free url.
         async fn poll_next_free_url<'a>(
             &'a self,
-            shutdown_handle: impl ShutdownReceiverWithWait,
+            shutdown_handle: impl ShutdownReceiver,
             max_miss: Option<u64>,
         ) -> UrlQueuePollResult<UrlWithGuard<'a, Self::Guardian>, Self::Error>;
     }

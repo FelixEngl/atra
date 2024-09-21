@@ -19,7 +19,7 @@ use crate::link_state::{
     RawLinkState, RecrawlYesNo,
 };
 use crate::url::{AtraUri, UrlWithDepth};
-use rocksdb::{DBIteratorWithThreadMode, DBWithThreadMode, MultiThreaded, DB};
+use rocksdb::{DBIteratorWithThreadMode, DBWithThreadMode, MultiThreaded, DB, IteratorMode};
 use std::sync::Arc;
 use std::time::Duration;
 use time::OffsetDateTime;
@@ -44,8 +44,8 @@ impl DatabaseLinkStateManager<LinkStateRockDB> {
         self.db.len()
     }
 
-    pub fn iter(&self) -> DBIteratorWithThreadMode<DBWithThreadMode<MultiThreaded>> {
-        self.db.iter()
+    pub fn iter(&self, mode: IteratorMode) -> DBIteratorWithThreadMode<DBWithThreadMode<MultiThreaded>> {
+        self.db.iter(mode)
     }
 }
 

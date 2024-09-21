@@ -216,10 +216,13 @@ impl QueuingWebGraphManager {
         );
 
 
-        if Handle::try_current().is_ok() {
-            log::info!("Found Runtime");
+        if let Ok(handle) = shutdown_and_handle
+            .handle()
+            .try_io_or_main_or_current()
+        {
+            log::debug!("Found Runtime. Setting up writer.");
             let (queue_in, mut queue_out) = tokio::sync::mpsc::channel::<WebGraphEntry>(capacity.get());
-            let guard = shutdown_and_handle.shutdown_guard().clone();
+            let guard = shutdown_and_handle.shutdown_guard().guard();
 
             async fn write_buffer(entry: &mut Vec<String>, writer: &mut BufWriter<File>) {
                 for value in entry.drain(..).unique() {
@@ -230,10 +233,7 @@ impl QueuingWebGraphManager {
             }
 
             // todo: may need scaling
-            shutdown_and_handle
-                .handle()
-                .io_or_main_or_current()
-                .spawn(async move {
+            handle.spawn(async move {
                     let _guard = guard;
                     log::debug!("WebGraphWriter: Start writer thread");
 
@@ -270,7 +270,7 @@ impl QueuingWebGraphManager {
 
             Ok(Self { queue_in: Some(queue_in) })
         } else {
-            log::info!("No Runtime found. Piping entries to nirvana.");
+            log::debug!("No Runtime found. Piping entries to nirvana.");
             Ok(Self { queue_in: None })
         }
 
@@ -306,7 +306,7 @@ mod test {
     use std::sync::Arc;
     use tokio::sync::Barrier;
     use tokio::task::JoinSet;
-    use crate::runtime::{GracefulShutdown, OptionalAtraHandle, RuntimeContext, ShutdownReceiverWithWait};
+    use crate::runtime::{GracefulShutdownWithGuard, OptionalAtraHandle, RuntimeContext, ShutdownReceiver};
 
     #[tokio::test]
     async fn can_write_propery() {
@@ -326,8 +326,8 @@ mod test {
 
         let _ = log4rs::init_config(config).unwrap();
 
-        let guard = GracefulShutdown::new();
-        let s = guard.create_shutdown();
+        let guard = GracefulShutdownWithGuard::new();
+        let s = guard.get().clone();
         let writer = Arc::new(
             QueuingWebGraphManager::new(
                 10.try_into().unwrap(),

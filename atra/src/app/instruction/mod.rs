@@ -280,7 +280,7 @@ pub(crate) fn prepare_instruction(args: AtraArgs) -> Result<Instruction, Instruc
                     .expect("Fatal: Was not able to initialize runtime!");
                 runtime.block_on(async move {
                     let local = LocalContext::new_without_runtime(config).expect("Was not able to load context for reading!");
-                    view(local, internals, extracted_links, headers);
+                    view(local, internals, extracted_links, headers, false);
                 });
                 Ok(Instruction::Nothing)
             }

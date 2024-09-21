@@ -12,17 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::runtime::{GracefulShutdown, OptionalAtraHandle};
+use crate::runtime::{GracefulShutdownWithGuard, OptionalAtraHandle};
 
 /// A context holding informations about the runtime
 #[derive(Debug, Clone)]
 pub struct RuntimeContext {
-    shutdown: GracefulShutdown,
+    shutdown: GracefulShutdownWithGuard,
     handle: OptionalAtraHandle,
 }
 
 impl RuntimeContext {
-    pub fn new(shutdown: GracefulShutdown, handle: OptionalAtraHandle) -> Self {
+    pub fn new(shutdown: GracefulShutdownWithGuard, handle: OptionalAtraHandle) -> Self {
         Self {
             shutdown,
             handle,
@@ -32,10 +32,10 @@ impl RuntimeContext {
     /// Creates an unbound
     #[cfg(test)]
     pub fn unbound() -> Self {
-        Self::new(GracefulShutdown::new(), OptionalAtraHandle::None)
+        Self::new(GracefulShutdownWithGuard::new(), OptionalAtraHandle::None)
     }
 
-    pub fn shutdown_guard(&self) -> &GracefulShutdown {
+    pub fn shutdown_guard(&self) -> &GracefulShutdownWithGuard {
         &self.shutdown
     }
 
@@ -44,8 +44,8 @@ impl RuntimeContext {
     }
 }
 
-impl AsRef<GracefulShutdown> for RuntimeContext {
-    fn as_ref(&self) -> &GracefulShutdown {
+impl AsRef<GracefulShutdownWithGuard> for RuntimeContext {
+    fn as_ref(&self) -> &GracefulShutdownWithGuard {
         &self.shutdown
     }
 }

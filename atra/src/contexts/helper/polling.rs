@@ -20,7 +20,7 @@ use crate::queue::{
     AbortCause, EnqueueCalled, QueueExtractionError, UrlQueue, UrlQueueElement, UrlQueueElementRef,
     UrlQueuePollResult,
 };
-use crate::runtime::ShutdownReceiverWithWait;
+use crate::runtime::ShutdownReceiver;
 use crate::sync::barrier::ContinueOrStop;
 use crate::url::guard::{GuardianError, UrlGuardian};
 use crate::url::{AtraOriginProvider, UrlWithDepth, UrlWithGuard};
@@ -40,7 +40,7 @@ where
 
     async fn poll_next_free_url<'a>(
         &'a self,
-        shutdown_handle: impl ShutdownReceiverWithWait,
+        shutdown_handle: impl ShutdownReceiver,
         max_miss: Option<u64>,
     ) -> UrlQueuePollResult<UrlWithGuard<'a, Self::Guardian>, Self::Error> {
         let queue = self.url_queue();

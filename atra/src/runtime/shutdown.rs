@@ -12,104 +12,245 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
-use tokio_util::sync::{CancellationToken, DropGuard};
+#[cfg(test)]
+pub use phantom::*;
+pub use shutdown::*;
 
-#[derive(Debug)]
-pub struct GracefulShutdown {
-    shutdown: Shutdown,
-    guard: Arc<DropGuard>
+pub trait ShutdownSender {
+    fn shutdown(&self);
 }
 
-impl GracefulShutdown {
-    pub fn new() -> Self {
-        Self::create(Shutdown::new())
+/// A simple trait for receiving a shutdown command
+pub trait ShutdownReceiver: Clone {
+    /// Returns `true` if the shutdown signal has been received.
+    fn is_shutdown(&self) -> bool;
+
+    async fn wait(&self);
+}
+
+
+mod shutdown {
+    use std::sync::Arc;
+    use tokio_util::sync::{CancellationToken, DropGuard};
+    use crate::runtime::{ShutdownReceiver, ShutdownSender};
+
+    /// A root shutdown element. Does not provide any significant
+    /// functionality to the outside world.
+    #[derive(Debug)]
+    #[repr(transparent)]
+    pub struct ShutdownRoot {
+        inner: CancellationToken
     }
 
-    fn create(shutdown: Shutdown) -> Self {
-        let drop = shutdown.inner.clone().drop_guard();
-        Self {
-            shutdown,
-            guard: Arc::new(drop)
+    impl ShutdownRoot {
+        fn new() -> Self {
+            Self { inner: CancellationToken::new() }
+        }
+
+        /// Creates a child shutdown.
+        fn create_child(&self) -> ShutdownChild {
+            ShutdownChild {
+                inner: self.inner.child_token()
+            }
+        }
+
+        /// Creates a drob guard for the inner token.
+        /// If this guard is dropped, the root token is canceled.
+        fn drop_guard(&self) -> DropGuard {
+            self.inner.clone().drop_guard()
+        }
+
+        /// Returns true if the token is cancelled.
+        pub fn is_shutdown(&self) -> bool {
+            self.inner.is_cancelled()
+        }
+
+        /// Waits until the token is canceled.
+        pub async fn wait(&self) {
+            self.inner.clone().cancelled_owned().await
+        }
+
+        /// Shuts down the root.
+        pub unsafe fn shutdown(&self) {
+            self.inner.cancel();
+        }
+
+        /// The only way to duplicate a root shutdown.
+        /// This is only used internally for cloning a graceful shutdown.
+        fn explicit_clone(&self) -> Self {
+            Self {
+                inner: self.inner.clone()
+            }
         }
     }
 
-    pub fn create_shutdown(&self) -> Shutdown {
-        self.shutdown.clone()
+
+    /// A graceful shutdown shuts down all children but waits until the
+    /// root shutdown id canceled.
+    ///
+    /// As precaution is does not implement any kind of interface to make sure,
+    /// that it is not used for shutdown behaviour by mistake.
+    #[derive(Debug)]
+    pub struct GracefulShutdown {
+        root: ShutdownRoot,
+        child: ShutdownChild
+    }
+    impl GracefulShutdown {
+        pub fn new() -> Self {
+            let root = ShutdownRoot::new();
+            let child = root.create_child();
+            Self {
+                root,
+                child
+            }
+        }
+
+        #[inline]
+        pub fn with_guard(self) -> GracefulShutdownWithGuard {
+            GracefulShutdownWithGuard::wrap(self)
+        }
+
+        /// Returns a reference to the root shutdown.
+        #[inline]
+        pub fn root(&self) -> &ShutdownRoot {
+            &self.root
+        }
+
+        /// Returns a reference to the child shutdown
+        #[inline]
+        pub fn child(&self) -> &ShutdownChild {
+            &self.child
+        }
+
+        /// Returns true if the child is canceled.
+        #[inline(always)]
+        pub fn is_shutdown(&self) -> bool {
+            self.child.is_shutdown()
+        }
+
+        /// Waits until the root is canceled.
+        #[inline(always)]
+        pub async fn wait(&self) {
+            self.root.wait().await
+        }
+
+        #[inline(always)]
+        pub fn shutdown(&self) {
+            self.child.shutdown();
+        }
+    }
+    impl Clone for GracefulShutdown {
+        fn clone(&self) -> Self {
+            Self {
+                root: self.root.explicit_clone(),
+                child: self.child.clone()
+            }
+        }
     }
 
-    pub fn create_delegated_shutdown(&self) -> GracefulShutdown {
-        Self::create(self.shutdown.create_delegated())
+
+    /// A graceful shutdown bot doesn't implement any interfaces because it
+    /// can not be shared by normal means.
+    #[derive(Debug)]
+    pub struct GracefulShutdownWithGuard {
+        inner: GracefulShutdown,
+        guard: GracefulShutdownGuard
+    }
+    impl GracefulShutdownWithGuard {
+        pub fn new() -> Self {
+            let new = GracefulShutdown::new();
+            Self::wrap(new)
+        }
+
+        #[inline]
+        pub fn wrap(inner: GracefulShutdown) -> Self {
+            let guard = GracefulShutdownGuard::new(inner.root.drop_guard());
+            Self {
+                inner,
+                guard
+            }
+        }
+
+        /// Returns the underlying shutdown
+        #[inline(always)]
+        pub fn get(&self) -> &GracefulShutdown {
+            &self.inner
+        }
+
+        /// Returns a copy from the guard.
+        ///
+        /// CAREFUL:
+        /// The GracefulShutdown is never canceled by dropping,
+        /// if there is anywhere a guard that is never dropped.
+        #[inline(always)]
+        pub fn guard(&self) -> GracefulShutdownGuard {
+            self.guard.clone()
+        }
+
+        /// Drops the guard and returns the inner shutdown.
+        pub fn consume(self) -> GracefulShutdown {
+            self.inner
+        }
+    }
+    impl Clone for GracefulShutdownWithGuard {
+        fn clone(&self) -> Self {
+            Self {
+                inner: self.inner.clone(),
+                guard: self.guard.clone()
+            }
+        }
     }
 
-    pub fn shutdown(&self) {
-        self.shutdown.shutdown()
-    }
-}
 
-impl Clone for GracefulShutdown {
-    fn clone(&self) -> Self {
-        Self {
-            shutdown: self.shutdown.clone(),
-            guard: self.guard.clone()
+    #[derive(Debug, Clone)]
+    #[repr(transparent)]
+    #[clippy::has_significant_drop]
+    pub struct GracefulShutdownGuard { _inner: Arc<DropGuard> }
+    impl GracefulShutdownGuard {
+        pub fn new(inner: DropGuard) -> Self {
+            Self {
+                _inner: Arc::new(inner)
+            }
+        }
+    }
+
+
+    /// A normal shutdown that is canceled when the associated [`ShutdownRoot`] is
+    /// canceled.
+    #[derive(Debug)]
+    #[repr(transparent)]
+    pub struct ShutdownChild {
+        inner: CancellationToken
+    }
+    impl ShutdownSender for ShutdownChild {
+        fn shutdown(&self) {
+            self.inner.cancel();
+        }
+    }
+    impl ShutdownReceiver for ShutdownChild {
+        fn is_shutdown(&self) -> bool {
+            self.inner.is_cancelled()
+        }
+
+        async fn wait(&self) {
+            self.inner.clone().cancelled_owned().await
+        }
+    }
+    impl Clone for ShutdownChild {
+        #[inline]
+        fn clone(&self) -> Self {
+            Self {
+                inner: self.inner.clone()
+            }
         }
     }
 }
 
-impl ShutdownReceiver for GracefulShutdown {
-    fn is_shutdown(&self) -> bool {
-        self.shutdown.is_shutdown()
-    }
-}
-
-impl ShutdownReceiverWithWait for GracefulShutdown {
-    async fn wait(&self) {
-        self.shutdown.wait().await
-    }
-}
 
 
-#[derive(Debug)]
-pub struct Shutdown {
-    inner: CancellationToken
-}
 
-impl Shutdown {
 
-    pub fn shutdown(&self) {
-        self.inner.cancel();
-    }
 
-    pub fn create_delegated(&self) -> Self {
-        Self {
-            inner: self.inner.child_token()
-        }
-    }
-
-    pub fn new() -> Self {
-        Self { inner: CancellationToken::new() }
-    }
-}
-
-impl Clone for Shutdown {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone()
-        }
-    }
-}
-
-impl ShutdownReceiver for Shutdown {
-    fn is_shutdown(&self) -> bool {
-        self.inner.is_cancelled()
-    }
-}
-
-impl ShutdownReceiverWithWait for Shutdown {
-    async fn wait(&self) {
-        self.inner.clone().cancelled_owned().await
-    }
-}
 
 
 // Inspired by https://github.com/tokio-rs/mini-redis/blob/master/src/shutdown.rs
@@ -117,7 +258,7 @@ impl ShutdownReceiverWithWait for Shutdown {
 
 #[cfg(test)]
 mod phantom {
-    use crate::runtime::{ShutdownReceiver, ShutdownReceiverWithWait};
+    use crate::runtime::{ShutdownReceiver};
     use std::fmt::{Display, Formatter};
     use thiserror::Error;
 
@@ -136,9 +277,7 @@ mod phantom {
         fn is_shutdown(&self) -> bool {
             false
         }
-    }
 
-    impl<const ENDLESS: bool> ShutdownReceiverWithWait for ShutdownPhantom<ENDLESS> {
         async fn wait(&self) {
             if ENDLESS {
                 tokio::sync::Notify::const_new().notified().await
@@ -147,15 +286,159 @@ mod phantom {
     }
 }
 
+
+
+
 #[cfg(test)]
-pub use phantom::*;
+mod test {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::LazyLock;
+    use std::time::Duration;
+    use rand::Rng;
+    use tokio::task::{JoinSet};
+    use tokio::time::sleep;
+    use crate::runtime::{AtraHandleOption, AtraRuntime, GracefulShutdownWithGuard, GracefulShutdown, OptionalAtraHandle, RuntimeContext, ShutdownReceiver, ShutdownSender};
 
-/// A simple trait for receiving a shutdown command
-pub trait ShutdownReceiver: Clone {
-    /// Returns `true` if the shutdown signal has been received.
-    fn is_shutdown(&self) -> bool;
-}
+    struct OnDropProtected;
 
-pub trait ShutdownReceiverWithWait: ShutdownReceiver {
-    async fn wait(&self);
+
+    static COUNTER: LazyLock<AtomicUsize> = LazyLock::new(|| AtomicUsize::new(0));
+
+    impl OnDropProtected {
+        pub fn new(shutdown_and_handle: &RuntimeContext) -> Self {
+            if let Ok(handle) = shutdown_and_handle
+                .handle()
+                .try_io_or_main_or_current()
+            {
+                let guard = shutdown_and_handle.shutdown_guard().guard();
+                handle.spawn(
+                    async move {
+                        let _guard = guard;
+                        println!("OnDropProtected: Start Waiting");
+                        sleep(Duration::from_millis(6_000)).await;
+                        println!("OnDropProtected: Finished Work");
+                        COUNTER.fetch_add(1, Ordering::SeqCst);
+                    }
+                );
+            };
+
+            Self
+        }
+    }
+
+
+    async fn sidequest<S: ShutdownReceiver>(
+        shutdown: S,
+        i: i32
+    ) -> (i32, usize) {
+        let mut ct = 0;
+        while !shutdown.is_shutdown() {
+            sleep(Duration::from_millis(10)).await;
+            ct += i as usize;
+        }
+        let wait_time = {
+            rand::thread_rng().gen_range(500..1500)
+        };
+        sleep(Duration::from_millis(wait_time)).await;
+        (i, ct)
+    }
+
+    struct Application {
+        shutdown: GracefulShutdownWithGuard,
+        handle: OptionalAtraHandle
+    }
+
+    impl Application {
+        pub fn new() -> (Self, AtraRuntime) {
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .expect("Fatal: Was not able to initialize runtime!");
+
+            let runtime = AtraRuntime::new(runtime, None);
+            (
+                Self {
+                    shutdown: GracefulShutdownWithGuard::new(),
+                    handle: runtime.handle().as_optional()
+                },
+                runtime
+            )
+        }
+
+        pub fn shutdown(&self) -> &GracefulShutdown {
+            self.shutdown.get()
+        }
+
+        pub async fn run(&mut self) -> Vec<(i32, usize)>{
+            let shutdown_and_handle = RuntimeContext::new(
+                self.shutdown.clone(),
+                self.handle.clone(),
+            );
+
+            let worker = OnDropProtected::new(&shutdown_and_handle);
+            drop(shutdown_and_handle);
+
+            let mut threads = JoinSet::new();
+
+            for i in 0..8 {
+                let shutdown = self.shutdown.clone();
+                threads.spawn(
+                    async move {
+                        let shutdown = shutdown;
+                        sidequest(shutdown.get().child().clone(), i).await
+                    }
+                );
+            }
+
+            threads.join_all().await
+        }
+    }
+
+    #[test]
+    fn shutdown_works_as_expected(){
+        let (mut app, runtime) = Application::new();
+        let shutdown = app.shutdown().clone();
+
+        runtime.block_on(async move {
+            let result = {
+                let future = app.run();
+                tokio::pin!(future);
+
+                let signal = sleep(Duration::from_millis(3_000));
+
+                let mut shutdown_result: Option<Vec<(i32, usize)>> = None;
+
+                tokio::select! {
+                    res = &mut future => {
+                        shutdown_result.replace(res);
+                        println!("Future finished before signal.")
+                    }
+                    _ = signal => {
+                        println!("Signal for shutdown!");
+                        shutdown.shutdown();
+                    }
+                }
+
+                if let Some(result) = shutdown_result {
+                    result
+                } else {
+                    println!("Wait for future!");
+                    future.await
+                }
+            };
+
+            for value in result {
+                println!("{:?}", value);
+            }
+
+            println!("Drop App");
+
+            drop(app);
+            println!("Wait for shutdown!");
+            println!("CT Before: {}", COUNTER.load(Ordering::Relaxed));
+            shutdown.wait().await;
+            println!("Finished!");
+            println!("CT After: {}", COUNTER.load(Ordering::SeqCst));
+        })
+    }
 }

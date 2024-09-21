@@ -30,7 +30,7 @@ use crate::contexts::traits::{
 use crate::contexts::Context;
 use crate::queue::QueueError;
 use crate::queue::{AbortCause, QueueExtractionError, UrlQueuePollResult};
-use crate::runtime::ShutdownReceiverWithWait;
+use crate::runtime::ShutdownReceiver;
 use crate::sync::barrier::{ContinueOrStop, WorkerBarrier};
 
 use crate::link_state::LinkStateManager;
@@ -67,7 +67,7 @@ pub async fn crawl<C, S, E, EC>(
 ) -> Result<ExitState, EC::Error>
 where
     C: Context,
-    S: ShutdownReceiverWithWait,
+    S: ShutdownReceiver,
     E: From<<C as SupportsSlimCrawlResults>::Error>
         + From<<C as SupportsLinkSeeding>::Error>
         + From<<C as SupportsCrawlResults>::Error>

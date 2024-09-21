@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use log::info;
-
 mod args;
 mod atra;
 mod constants;
@@ -26,11 +24,12 @@ mod config;
 mod instruction;
 mod view;
 
+use anyhow::Error;
 use atra::{Atra};
 pub use args::AtraArgs;
 pub use atra::ApplicationMode;
 use crate::app::instruction::{prepare_instruction, Instruction, RunInstruction};
-use crate::runtime::{ShutdownReceiverWithWait};
+use crate::runtime::{ShutdownReceiver};
 
 pub fn exec_args(args: AtraArgs) {
     match prepare_instruction(args) {
@@ -47,22 +46,45 @@ pub fn exec_args(args: AtraArgs) {
 /// Execute the
 fn execute(instruction: RunInstruction) {
     let (mut atra, runtime) = Atra::build_with_runtime(instruction.mode);
-    let signal_handler = tokio::signal::ctrl_c();
+    
     runtime.block_on(async move {
-        tokio::select! {
-            res = atra.run(instruction) => {
-                if let Err(err) = res {
-                    log::error!("Error: {err}");
+        let shutdown = atra.shutdown().get().clone();
+
+        let shutdown_result = {
+            let ctrl_c = tokio::signal::ctrl_c();
+            let future = atra.run(instruction);
+            tokio::pin!(future);
+
+            let mut shutdown_result: Option<Result<(), Error>> = None;
+
+            tokio::select! {
+                res = &mut future => {
+                    log::info!("Crawl finished.");
+                    shutdown_result.replace(res);
+                }
+                _ = ctrl_c => {
+                    log::info!("Starting with shutdown by CTRL-C.");
+                    shutdown.shutdown();
                 }
             }
-            _ = signal_handler => {
-                log::info!("Shutting down.");
+
+
+            if let Some(shutdown_result) = shutdown_result {
+                shutdown_result
+            } else {
+                log::info!("Wait for workers to stop...");
+                future.await
             }
+        };
+
+        if let Err(err) = shutdown_result {
+            log::error!("Exit with error: {err}");
         }
-        log::info!("Waiting for complete shutdown.");
-        atra.shutdown().await;
+        drop(atra);
+        log::info!("Waiting for complete shutdown...");
+        shutdown.wait().await;
     });
-    info!("Exit application.")
+    log::info!("Complete shutdown.")
 }
 
 #[cfg(test)]

@@ -112,6 +112,8 @@ pub trait AtraHandleOption {
     /// See [Handle::current] for more information.
     fn io_or_main_or_current(&self) -> Handle;
 
+    fn main_or_current(&self) -> Handle;
+
     /// Returns [TryCurrentError] if None and not called in an async runtime.
     /// See [Handle::try_current] for more information.
     fn try_io_or_main_or_current(&self) -> Result<Handle, TryCurrentError>;
@@ -126,6 +128,13 @@ impl AtraHandleOption for OptionalAtraHandle {
         match self {
             None => Handle::current(),
             Some(handle) => handle.io_or_main().clone(),
+        }
+    }
+
+    fn main_or_current(&self) -> Handle {
+        match self {
+            None => {Handle::current()}
+            Some(handle) => {handle.main.clone()}
         }
     }
 

@@ -32,7 +32,7 @@ use crate::link_state::{
 use crate::queue::{RawAgingQueueFile, UrlQueue, UrlQueueElement, UrlQueueWrapper};
 use crate::recrawl_management::DomainLastCrawledDatabaseManager;
 use crate::robots::OffMemoryRobotsManager;
-use crate::runtime::{GracefulShutdown, RuntimeContext};
+use crate::runtime::{GracefulShutdownGuard, GracefulShutdownWithGuard, RuntimeContext};
 use crate::seed::BasicSeed;
 use crate::url::guard::InMemoryUrlGuardian;
 use crate::url::{AtraOriginProvider, UrlWithDepth};
@@ -69,14 +69,14 @@ pub struct LocalContext {
     stop_word_registry: Option<StopWordRegistry>,
     gdbr_filer_registry: Option<GdbrIdentifierRegistry<Tf, Idf, L2R_L2LOSS_SVR>>,
     domain_manager: DomainLastCrawledDatabaseManager,
-    _graceful_shutdown_guard: GracefulShutdown,
+    _guard: GracefulShutdownGuard,
 }
 
 impl LocalContext {
 
     pub fn new_without_runtime(config: Config) -> Result<Self, LocalContextInitError> {
         let other = RuntimeContext::new(
-            GracefulShutdown::new(),
+            GracefulShutdownWithGuard::new(),
             None
         );
         Self::new(config, &other)
@@ -169,7 +169,7 @@ impl LocalContext {
             stop_word_registry,
             gdbr_filer_registry,
             domain_manager,
-            _graceful_shutdown_guard: runtime_context.shutdown_guard().clone(),
+            _guard: runtime_context.shutdown_guard().guard(),
         })
     }
 
