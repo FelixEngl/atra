@@ -1,6 +1,6 @@
 [package]
 name = "atra"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 # https://en.wikipedia.org/wiki/Erigone_atra
@@ -11,10 +11,19 @@ edition = "2021"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(RUSTC_IS_NIGHTLY)'] }
 
 [dependencies]
+# Basics
+regex.workspace = true
+rand.workspace = true
+itertools.workspace = true
+url = { workspace = true, features = ["serde"] }
+const_format.workspace = true
+cfg-if.workspace = true
+
 # Async
-tokio = { version="1.35", features = ["rt-multi-thread", "macros", "time", "io-util", "signal"] }
+tokio = { version="1.35", features = ["rt-multi-thread", "macros", "time", "io-util", "signal", "sync"] }
 tokio-stream = "0.1"
 tokio-util = "0.7"
+#async-channel.workspace = true
 
 # Downloading data
 reqwest = { workspace = true, features = ["brotli", "gzip", "deflate", "stream", "cookies"] }
@@ -23,8 +32,7 @@ http-cache-reqwest = "0.14"
 ua_generator = "0.5"
 tempfile = "3"
 
-# Webdrivers
-chromiumoxide = { version = "0.7", optional = true, features = ["tokio-runtime", "bytes"], default-features = false }
+
 
 # Configuration and Init
 clap = { version = "4", features = ["derive"] }
@@ -52,13 +60,6 @@ data-encoding = "2.5"
 uuid = { version = "1.7", features = ["serde", "v4", "v5", "fast-rng"] }
 time = { workspace = true, features = ["serde", "serde-human-readable", "formatting"] }
 
-# Basics
-regex.workspace = true
-rand.workspace = true
-itertools.workspace = true
-url = { workspace = true, features = ["serde"] }
-const_format.workspace = true
-
 # Special Types
 deranged = { version = "0.3", features = ["serde"] }
 
@@ -71,7 +72,7 @@ float-cmp.workspace = true
 # Memory stuff
 smallvec = { workspace = true, features = ["serde", "const_new", "const_generics", "union"] }
 compact_str = { workspace = true, features = ["serde", "bytes"] }
-case_insensitive_string = { workspace = true, features = ["serde"] }
+#case_insensitive_string = { workspace = true, features = ["serde"] }
 
 # Data structures
 indexmap = "2"
@@ -141,6 +142,10 @@ nom.workspace = true
 tar = "0.4"
 zip = "2"
 
+
+# JavaScript
+#deno_core.workspace = true
+
 # Text processing
 unicode-normalization.workspace = true
 unicode-segmentation.workspace = true
@@ -148,7 +153,7 @@ text_processing.workspace = true
 
 ## Stemming of data
 rust-stemmers.workspace = true
-isolang = { workspace = true, features = ["serde"] }
+isolang = { workspace = true, features = ["serde", "english_names", "local_names", "lowercase_names"] }
 iso_stopwords.workspace = true
 
 # File formats
@@ -163,6 +168,11 @@ whatlang = { version = "0.16", features = ["serde"] }
 liblinear = { workspace = true, features = ["serde"] }
 svm.workspace = true
 
+# Console
+console = {workspace = true}
+#dialoguer = {workspace = true}
+#indicatif = {workspace = true}
+
 [target.'cfg(windows)'.dependencies]
 link_scraper = { version = "0.1", features = ["plaintext", "xml", "xlink", "svg", "ooxml", "odf", "rtf", "image"] }
 
@@ -174,13 +184,10 @@ link_scraper = { version = "0.1", features = ["pdf", "plaintext", "xml", "xlink"
 # torut = "0.2.1"
 
 [dev-dependencies]
-scopeguard = "1.2"
-mockall = "0.13"
-lipsum = "0.9"
+scopeguard.workspace = true
+mockall.workspace = true
+lipsum.workspace = true
 
 
 [build-dependencies]
 rustc_version = "0"
-
-[features]
-chrome = ["dep:chromiumoxide"]

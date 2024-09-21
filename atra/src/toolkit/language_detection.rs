@@ -20,11 +20,9 @@ use std::path::Path;
 
 use camino::Utf8PathBuf;
 use isolang::Language;
-use isolang::Language::Deu;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ubyte::ByteUnit;
-use whatlang::Script::Latin;
 use whatlang::{Info, Script};
 use xml::reader::{ParserConfig2, XmlEvent};
 use xml::EventReader;
@@ -44,9 +42,14 @@ pub struct LanguageInformation {
 }
 
 impl LanguageInformation {
-    pub const DEU: LanguageInformation = LanguageInformation::with_confidence(Latin, Deu);
-    pub const ENG: LanguageInformation = LanguageInformation::with_confidence(Latin, Language::Eng);
+    #[cfg(test)]
+    pub const DEU: LanguageInformation =
+        LanguageInformation::with_confidence(Script::Latin, Language::Deu);
+    #[cfg(test)]
+    pub const ENG: LanguageInformation =
+        LanguageInformation::with_confidence(Script::Latin, Language::Eng);
 
+    #[cfg(test)]
     pub fn script(&self) -> Script {
         self.script
     }
@@ -59,6 +62,7 @@ impl LanguageInformation {
         self.confidence
     }
 
+    #[cfg(test)]
     pub const fn new(script: Script, lang: Language, confidence: f64) -> Self {
         Self {
             script,
@@ -67,6 +71,7 @@ impl LanguageInformation {
         }
     }
 
+    #[cfg(test)]
     pub const fn with_confidence(script: Script, lang: Language) -> Self {
         Self::new(script, lang, 1f64)
     }

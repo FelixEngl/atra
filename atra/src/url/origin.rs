@@ -13,10 +13,10 @@
 // limitations under the License.
 
 use crate::toolkit::domains::domain_name_raw;
+use crate::toolkit::CaseInsensitiveString;
 use serde::{Deserialize, Serialize};
-use std::convert::Infallible;
 use std::fmt::{Display, Formatter};
-use std::str::FromStr;
+use std::ops::Deref;
 use url::Url;
 
 /// Provides the origin to something
@@ -33,60 +33,52 @@ impl AtraOriginProvider for Url {
     fn atra_origin(&self) -> Option<AtraUrlOrigin> {
         match domain_name_raw(self) {
             None => match self.domain() {
-                None => self.host_str().map(|value| value.to_lowercase().into()),
-                Some(value) => Some(value.to_lowercase().into()),
+                None => self.host_str().map(|value| value.into()),
+                Some(value) => Some(value.into()),
             },
-            Some(value) => Some(AtraUrlOrigin::from(value.as_bytes())),
+            Some(value) => Some(value.into()),
         }
     }
 }
 
 /// The origin of a url. Can be a domain or host in a normalized form.
+/// The normalized form is basically a lowercase string
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Hash, Default)]
 #[repr(transparent)]
 #[serde(transparent)]
-pub struct AtraUrlOrigin(String);
+pub struct AtraUrlOrigin {
+    inner: CaseInsensitiveString,
+}
+
+impl Deref for AtraUrlOrigin {
+    type Target = CaseInsensitiveString;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
 
 impl AsRef<str> for AtraUrlOrigin {
+    #[inline(always)]
     fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl From<String> for AtraUrlOrigin {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-
-impl<'a> From<&'a str> for AtraUrlOrigin {
-    fn from(value: &'a str) -> Self {
-        Self(value.to_owned())
-    }
-}
-
-impl<'a> From<&'a [u8]> for AtraUrlOrigin {
-    fn from(value: &'a [u8]) -> Self {
-        Self(String::from_utf8_lossy(value).into_owned())
-    }
-}
-
-impl AtraUrlOrigin {
-    pub fn as_bytes(&self) -> &[u8] {
-        self.0.as_bytes()
-    }
-}
-
-impl FromStr for AtraUrlOrigin {
-    type Err = Infallible;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self(s.to_string()))
+        self.inner.as_ref()
     }
 }
 
 impl Display for AtraUrlOrigin {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.0, f)
+        Display::fmt(&self.inner, f)
+    }
+}
+
+impl<T> From<T> for AtraUrlOrigin
+where
+    T: crate::toolkit::ToCaseInsensitive,
+{
+    #[inline]
+    fn from(value: T) -> Self {
+        Self {
+            inner: value.to_case_insensitive(),
+        }
     }
 }

@@ -23,6 +23,7 @@ use crate::media_type::{parse_media_type, MediaType};
 use crate::record_type::WarcRecordType;
 use crate::truncated_reason::TruncatedReason;
 use encoding_rs::Encoding;
+use isolang::ParseLanguageError;
 use itertools::Either;
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumString};
@@ -82,18 +83,57 @@ pub enum WarcFieldName {
     WarcType,
     #[strum(to_string = "warc-warcinfo-id")]
     WarcInfoID,
+    /// Stores the explicit content encoding recognized by atra. This can derivate from the response
+    /// header when the header was wrong or atra failed to decode the content without errors.
     #[cfg(feature = "atra-fieldnames")]
     #[strum(to_string = "xx--atra--content-encoding")]
     ContentEncoding,
+    /// Stores if there is some external data for this warc entry. It is usually relative to the
+    /// files position or some kind of root folder. (but can also contain an absolute path.)
     #[cfg(feature = "atra-fieldnames")]
     #[strum(to_string = "xx--atra--external-file")]
     ExternalBinFile,
+    /// Stores a boolean if the content is Base64 encoded.
     #[cfg(feature = "atra-fieldnames")]
     #[strum(to_string = "xx--atra--base64")]
     Base64Encoded,
+    /// Stores the length of the header in bytes for using jump pointer in the warc file.
+    /// The header length is usually the printed response header (one entry per line)
+    /// followed by a single newline '\n' before
+    ///
+    ///
+    /// Example:
+    /// ```text
+    /// WARC/1.1
+    /// xx--atra--header-length:204
+    /// warc-record-id:urn:uuid:cc70c0a1-1f4c-5326-a405-283380dd14d4
+    /// content-type:text/html;charset=UTF-8
+    /// xx--atra--content-encoding:UTF-8
+    /// content-length:419727
+    /// warc-payload-digest:XXH128:5J2YTMD6FP7HAJS7FBG3TRW3FU======
+    /// warc-type:response
+    /// warc-date:2024-09-18T10:06:28.789006500Z
+    /// warc-target-uri:https://www.arche-naturkueche.de/de/rezepte/uebersicht.php
+    /// warc-block-digest:XXH128:5J2YTMD6FP7HAJS7FBG3TRW3FU======
+    ///
+    /// GET 200 OK
+    /// content-type: text/html; charset=UTF-8
+    /// transfer-encoding: chunked
+    /// connection: keep-alive
+    /// keep-alive: timeout=15
+    /// date: Wed, 18 Sep 2024 10:06:27 GMT
+    /// server: Apache
+    /// x-xss-protection: 0
+    ///
+    /// <!DOCTYPE html>
+    /// ```
     #[cfg(feature = "atra-fieldnames")]
     #[strum(to_string = "xx--atra--header-length")]
     HeaderLength,
+    /// Contains a language hint for the file
+    #[cfg(feature = "atra-fieldnames")]
+    #[strum(to_string = "xx--atra--language-hint")]
+    LanguageHint,
     #[strum(default)]
     Unknown(String),
 }
@@ -124,6 +164,9 @@ pub enum WarcFieldValueParseError {
     AddressNotParseable(#[from] AddrParseError),
     #[error("Failed to parse mimetype with {0}")]
     MediaTypeNotParseable(String),
+    #[cfg(feature = "atra-fieldnames")]
+    #[error(transparent)]
+    ParseLanguageError(#[from] ParseLanguageError)
 }
 
 /// The values supported in the warc map
@@ -135,6 +178,8 @@ pub enum WarcFieldValue {
     Encoding(&'static Encoding),
     ContentType(MediaType),
     Date(OffsetDateTime),
+    #[cfg(feature = "atra-fieldnames")]
+    Language(isolang::Language),
     Number(u64),
     Bool(bool),
     TruncatedReason(TruncatedReason),
@@ -243,6 +288,11 @@ impl WarcFieldValue {
                 // Use unsafe to protect from bad user data
                 WarcFieldValue::General(unsafe { GeneralFieldValue::from_buffer_unchecked(buf) })
             }
+
+            #[cfg(feature = "atra-fieldnames")]
+            WarcFieldName::LanguageHint => {
+                WarcFieldValue::Language(std::str::from_utf8(buf)?.trim().parse()?)
+            }
         };
         Ok(result)
     }
@@ -260,6 +310,8 @@ impl WarcFieldValue {
             WarcFieldValue::Raw(value) => out.write(value.as_ref())?,
             WarcFieldValue::Encoding(value) => out.write(value.name().as_bytes())?,
             WarcFieldValue::Bool(value) => out.write(if *value { b"true" } else { b"false" })?,
+            #[cfg(feature = "atra-fieldnames")]
+            WarcFieldValue::Language(value) => out.write(value.to_639_3().as_bytes())?
         })
     }
 }

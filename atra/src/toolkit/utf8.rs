@@ -277,6 +277,10 @@ where
     /// Returns false if not all value
     fn fill_buffer(&mut self, buf: &mut [u8]) -> Result<usize, std::io::Error> {
         debug_assert!(buf.len() < 5);
+        if self.memory.len() < buf.len() {
+            self.fill_memory()?;
+        }
+
         for i in 0..buf.len() {
             if let Some(found) = self.memory.pop_front() {
                 buf[i] = found

@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::config::Configs;
+use crate::config::Config;
 use crate::crawl::SlimCrawlResult;
 use crate::database::DBActionType::{Read, Write};
-use crate::database::{DatabaseError, RawDatabaseError, RawIOError};
+use crate::database::{execute_iter, get_len, DatabaseError, RawDatabaseError, RawIOError};
 use crate::db_health_check;
 use crate::declare_column_families;
-use crate::url::UrlWithDepth;
-use rocksdb::DB;
+use crate::url::{UrlWithDepth};
+use rocksdb::{DBIteratorWithThreadMode, DBWithThreadMode, MultiThreaded, DB, IteratorMode};
 use std::sync::Arc;
 
 /// Manages the crawled websites in a database until it is flushed
@@ -35,7 +35,7 @@ impl CrawlDB {
     }
 
     /// Panics if the needed CFs are not configured.
-    pub fn new(db: Arc<DB>, _: &Configs) -> Result<Self, rocksdb::Error> {
+    pub fn new(db: Arc<DB>, _: &Config) -> Result<Self, rocksdb::Error> {
         db_health_check!(db: [
             Self::CRAWL_DB_CF => (
                 if test crawled_page_cf_options
@@ -81,41 +81,11 @@ impl CrawlDB {
         }
     }
 
-    // pub fn contains(&self, url: &UrlWithDepth) -> Result<bool, DatabaseError> {
-    //     let handle = self.cf_handle();
-    //     let key = url.as_str().as_bytes();
-    //     if self.db.key_may_exist_cf(&handle, key) {
-    //         let mut options = ReadOptions::default();
-    //         options.set_iterate_range(rocksdb::PrefixRange(&key[..15]));
-    //         options.fill_cache(false);
-    //         Ok(
-    //             self.db
-    //                 .get_pinned_cf_opt(&handle, key, &options)
-    //                 .enrich_without_entry(Self::CRAWL_DB_CF, Read, key)?
-    //                 .is_some()
-    //         )
-    //     } else {
-    //         Ok(false)
-    //     }
-    // }
+    pub fn len(&self) -> usize {
+        get_len(&self.db, self.cf_handle())
+    }
 
-    // pub fn iter(&self) -> impl Iterator<Item=Result<SlimCrawlResult, DatabaseError>> + '_ {
-    //     let handle = self.cf_handle();
-    //     let _ = self.db.flush_cf(&handle).enrich_no_key(Self::CRAWL_DB_CF, DBActionType::Flush);
-    //     self.db.iterator_cf(&handle, IteratorMode::Start).map(|value| {
-    //         match value {
-    //             Ok(found) => {
-    //                 match bincode::deserialize::<SlimCrawlResult>(&found.1) {
-    //                     Ok(header) => {
-    //                         Ok(header)
-    //                     }
-    //                     Err(err) => {
-    //                         Err(err.enrich_de(Self::CRAWL_DB_CF, found.0, found.1.to_vec()))
-    //                     }
-    //                 }
-    //             }
-    //             Err(err) => {Err(err.enrich_no_key(Self::CRAWL_DB_CF, DBActionType::Iterate))}
-    //         }
-    //     })
-    // }
+    pub fn iter(&self, mode: IteratorMode) -> DBIteratorWithThreadMode<DBWithThreadMode<MultiThreaded>> {
+        execute_iter(&self.db, self.cf_handle(), mode)
+    }
 }

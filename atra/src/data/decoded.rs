@@ -52,6 +52,7 @@ where
     A: AsRef<str>,
     B: AsRef<Path>,
 {
+    #[cfg(test)]
     #[inline]
     pub fn new_in_memory(result: A, encoding: &'static Encoding, had_errors: bool) -> Self {
         Self::InMemory {

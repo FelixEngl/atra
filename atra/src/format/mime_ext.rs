@@ -22,11 +22,11 @@ macro_rules! mime_declarations {
     ($($name: ident: $typ: literal / $subtype: literal $(+ $suffix: literal)?),+ $(,)?) => {
         paste! {
             $(
-                #[allow(dead_code)] const [<$name _RAW_TYPE>]: &str = $typ;
-                #[allow(dead_code)] const [<$name _RAW_SUBTYPE>]: &str = $subtype;
-                #[allow(dead_code)] $(const [<$name _RAW_SUFFIX>]: &str = $suffix;)?
-                #[allow(dead_code)] const [<$name _RAW>]: &str = concatcp!($typ, "/", $subtype $(, "+", $suffix)?);
-                #[allow(dead_code)] pub static $name: LazyLock<Mime> = LazyLock::new(||  [<$name _RAW>] .parse::<Mime>().unwrap());
+                const [<$name _RAW_TYPE>]: &str = $typ;
+                const [<$name _RAW_SUBTYPE>]: &str = $subtype;
+                $(const [<$name _RAW_SUFFIX>]: &str = $suffix;)?
+                const [<$name _RAW>]: &str = concatcp!($typ, "/", $subtype $(, "+", $suffix)?);
+                pub static $name: LazyLock<Mime> = LazyLock::new(||  [<$name _RAW>] .parse::<Mime>().unwrap());
             )+
 
             #[cfg(test)]

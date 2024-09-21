@@ -18,6 +18,10 @@ use crate::url::AtraUrlOrigin;
 use crate::url::UrlWithDepth;
 use std::fmt::Debug;
 
+/// An event fired when an url guardian changes
+#[derive(Debug, Copy, Clone)]
+pub struct GuardianChangedEvent;
+
 /// Basic api that is not public to the rest of the code
 pub unsafe trait UnsafeUrlGuardian {
     /// Lazily releases the host. This code may be unsafe or cause
@@ -28,7 +32,10 @@ pub unsafe trait UnsafeUrlGuardian {
 }
 
 /// A class capable of managing origins
-pub trait UrlGuardian: UnsafeUrlGuardian + Debug + Clone {
+pub trait UrlGuardian: UnsafeUrlGuardian
+where
+    Self: Sized,
+{
     /// Returns a guard if the reserve was successful.
     /// Returns an error if there is the domain is already in use.
     async fn try_reserve<'a>(
@@ -54,4 +61,7 @@ pub trait UrlGuardian: UnsafeUrlGuardian + Debug + Clone {
         &self,
         guard: &UrlGuard<'a, Self>,
     ) -> Result<(), GuardPoisonedError>;
+
+    /// Provides a way to subscribe to an url guardian to receive changes.
+    fn subscribe(&self) -> tokio::sync::watch::Receiver<GuardianChangedEvent>;
 }

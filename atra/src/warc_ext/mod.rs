@@ -21,9 +21,9 @@ mod write;
 
 pub use errors::*;
 pub use instructions::WarcSkipInstruction;
+pub use read::read_body;
 #[cfg(test)]
 pub use skip_pointer::*;
-pub use read::read_body;
 // pub use skip_pointer::*;
 pub use special_writer::SpecialWarcWriter;
 pub use write::write_warc;
@@ -60,7 +60,7 @@ mod test {
                     None,
                     false,
                 ),
-                UrlWithDepth::from_seed("https://www.google.de/0").unwrap(),
+                UrlWithDepth::from_url("https://www.google.de/0").unwrap(),
             ),
             None,
             Some(encoding_rs::UTF_8),
@@ -110,7 +110,7 @@ mod test {
                     None,
                     false,
                 ),
-                UrlWithDepth::from_seed("https://www.google.de/0").unwrap(),
+                UrlWithDepth::from_url("https://www.google.de/0").unwrap(),
             ),
             None,
             Some(encoding_rs::UTF_8),

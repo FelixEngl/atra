@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::client::Client;
+use crate::client::traits::AtraClient;
 use crate::config::CrawlConfig;
 use crate::robots::information::RobotsInformation;
 use crate::url::{AtraOriginProvider, AtraUrlOrigin, UrlWithDepth};
@@ -22,7 +22,7 @@ use time::Duration;
 use tokio::time::Interval;
 
 /// Manages the interval
-pub struct InvervalManager<'a, R: RobotsInformation> {
+pub struct InvervalManager<'a, Client: AtraClient, R: RobotsInformation> {
     client: &'a Client,
     configured_robots: Arc<R>,
     registered_intervals: HashMap<AtraUrlOrigin, Interval>,
@@ -30,7 +30,10 @@ pub struct InvervalManager<'a, R: RobotsInformation> {
     no_domain_default: Interval,
 }
 
-impl<'a, R: RobotsInformation> InvervalManager<'a, R> {
+impl<'a, Client, R: RobotsInformation> InvervalManager<'a, Client, R>
+where
+    Client: AtraClient,
+{
     pub fn new(client: &'a Client, config: &CrawlConfig, configured_robots: Arc<R>) -> Self {
         Self {
             client,
@@ -57,7 +60,7 @@ impl<'a, R: RobotsInformation> InvervalManager<'a, R> {
             } else {
                 let target_duration = if let Some(found) = self
                     .configured_robots
-                    .get_or_retrieve_delay(&self.client, url)
+                    .get_or_retrieve_delay(self.client, url)
                     .await
                 {
                     log::trace!("Wait found {found}");
@@ -67,7 +70,15 @@ impl<'a, R: RobotsInformation> InvervalManager<'a, R> {
                     default.unsigned_abs()
                 } else {
                     log::warn!("Fallback delay 1000ms for {}", url);
-                    std::time::Duration::from_millis(1000)
+                    #[cfg(test)]
+                    {
+                        std::time::Duration::from_millis(10)
+                    }
+
+                    #[cfg(not(test))]
+                    {
+                        std::time::Duration::from_millis(1000)
+                    }
                 };
                 self.registered_intervals
                     .insert(origin.clone(), tokio::time::interval(target_duration));

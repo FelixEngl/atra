@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use case_insensitive_string::CaseInsensitiveString;
+use crate::toolkit::CaseInsensitiveString;
 use psl::Domain;
 use url::Url;
 
 /// Get the domain name from the [url] as [CaseInsensitiveString].
 /// Returns None if there is no domain
 pub fn domain_name(url: &Url) -> Option<CaseInsensitiveString> {
-    domain_name_raw(url).map(|value| CaseInsensitiveString::new(value.as_bytes()))
+    domain_name_raw(url).map(|value| value.into())
 }
 
 /// Get the raw domain name from [url]

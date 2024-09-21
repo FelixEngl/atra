@@ -1,0 +1,148 @@
+If we ever need chromium, here are the structs for the configs:
+
+# Cargo
+    # Webdrivers
+    chromiumoxide = { version = "0.7", optional = true, features = ["tokio-runtime", "bytes"], default-features = false }
+
+
+# Configs
+
+    /// Chrome specific settings
+    #[derive(Serialize, Deserialize, Debug, Clone, Default, Eq, PartialEq)]
+    pub struct ChromeSettings {
+        /// Use stealth mode for requests.
+        pub stealth_mode: bool,
+        /// Setup network interception for request.
+        pub intercept_settings: InterceptSettings,
+        /// Overrides default host system timezone with the specified one.
+        pub timezone_id: Option<String>,
+        /// Overrides default host system locale with the specified one.
+        pub locale: Option<String>,
+        /// Configure the viewport for chrome.
+        pub viewport: Option<Viewport>,
+    }
+
+    /// The intercept settings for chrome
+    #[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, Eq, PartialEq)]
+    pub enum InterceptSettings {
+        /// No intercepting
+        #[default]
+        Off,
+        On {
+            /// Setup network interception for request.
+            chrome_intercept: bool,
+
+            /// Block all images from rendering in Chrome.
+            chrome_intercept_block_visuals: bool,
+        },
+    }
+
+    #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+    /// View port handling for chrome.
+    pub struct Viewport {
+        /// Device screen Width
+        pub width: u32,
+        /// Device screen size
+        pub height: u32,
+        /// Device scale factor
+        pub device_scale_factor: Option<f64>,
+        /// Emulating Mobile?
+        pub emulating_mobile: bool,
+        /// Use landscape mode instead of portrait.
+        pub is_landscape: bool,
+        /// Touch screen device?
+        pub has_touch: bool,
+    }
+
+    impl Default for Viewport {
+        fn default() -> Self {
+            Viewport {
+                width: 800,
+                height: 600,
+                device_scale_factor: None,
+                emulating_mobile: false,
+                is_landscape: false,
+                has_touch: false,
+            }
+        }
+    }
+
+    impl From<Viewport> for chromiumoxide::handler::viewport::Viewport {
+        fn from(viewport: spider::configuration::Viewport) -> Self {
+            Self {
+                width: viewport.width,
+                height: viewport.height,
+                device_scale_factor: viewport.device_scale_factor,
+                emulating_mobile: viewport.emulating_mobile,
+                is_landscape: viewport.is_landscape,
+                has_touch: viewport.has_touch,
+            }
+        }
+    }
+
+    #[derive(
+        Debug, Clone, PartialEq, Eq, Hash, Default, EnumString, Display, Serialize, Deserialize,
+    )]
+    /// Capture screenshot options for chrome.
+    pub enum CaptureScreenshotFormat {
+        #[serde(rename = "jpeg")]
+        /// jpeg format
+        Jpeg,
+        #[serde(rename = "png")]
+        #[default]
+        /// png format
+        Png,
+        #[serde(rename = "webp")]
+        /// webp format
+        Webp,
+    }
+
+    impl From<CaptureScreenshotFormat>
+        for chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotFormat
+    {
+        fn from(value: CaptureScreenshotFormat) -> Self {
+            match value {
+                CaptureScreenshotFormat::Jpeg => {
+                    chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotFormat::Jpeg
+                }
+                CaptureScreenshotFormat::Png => {
+                    chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotFormat::Png
+                }
+                CaptureScreenshotFormat::Webp => {
+                    chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotFormat::Webp
+                }
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
+    /// The view port clip for screenshots.
+    pub struct ClipViewport {
+        #[doc = "X offset in device independent pixels (dip)."]
+        #[serde(rename = "x")]
+        pub x: f64,
+        #[doc = "Y offset in device independent pixels (dip)."]
+        #[serde(rename = "y")]
+        pub y: f64,
+        #[doc = "Rectangle width in device independent pixels (dip)."]
+        #[serde(rename = "width")]
+        pub width: f64,
+        #[doc = "Rectangle height in device independent pixels (dip)."]
+        #[serde(rename = "height")]
+        pub height: f64,
+        #[doc = "Page scale factor."]
+        #[serde(rename = "scale")]
+        pub scale: f64,
+    }
+
+    impl From<ClipViewport> for chromiumoxide::cdp::browser_protocol::page::Viewport {
+        fn from(viewport: ClipViewport) -> Self {
+            Self {
+                x: viewport.x,
+                y: viewport.y,
+                height: viewport.height,
+                width: viewport.width,
+                scale: viewport.scale,
+            }
+        }
+    }

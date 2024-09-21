@@ -28,14 +28,12 @@ impl AtraRuntime {
     }
 
     /// Returns a reference to a special handle used for io tasks
-    #[allow(dead_code)]
     #[inline]
     pub fn io(&self) -> Option<&Runtime> {
         self.io.as_ref()
     }
 
     /// Returns a reference to the main runtime used of all tasks
-    #[allow(dead_code)]
     #[inline]
     pub fn main(&self) -> &Runtime {
         &self.main
@@ -70,14 +68,6 @@ pub struct AtraHandle {
 impl AtraHandle {
     pub fn new(general: Handle, io: Option<Handle>) -> Self {
         Self { main: general, io }
-    }
-
-    pub fn some(general: Handle, io: Option<Handle>) -> OptionalAtraHandle {
-        Some(Self::new(general, io))
-    }
-
-    pub fn none() -> OptionalAtraHandle {
-        None
     }
 
     /// Returns a reference to a special handle used for io tasks
@@ -117,11 +107,12 @@ impl Deref for AtraHandle {
 /// An optional Atra handle
 pub type OptionalAtraHandle = Option<AtraHandle>;
 
-#[allow(dead_code)]
 pub trait AtraHandleOption {
     /// Panics if None and not called in an async runtime.
     /// See [Handle::current] for more information.
     fn io_or_main_or_current(&self) -> Handle;
+
+    fn main_or_current(&self) -> Handle;
 
     /// Returns [TryCurrentError] if None and not called in an async runtime.
     /// See [Handle::try_current] for more information.
@@ -137,6 +128,13 @@ impl AtraHandleOption for OptionalAtraHandle {
         match self {
             None => Handle::current(),
             Some(handle) => handle.io_or_main().clone(),
+        }
+    }
+
+    fn main_or_current(&self) -> Handle {
+        match self {
+            None => {Handle::current()}
+            Some(handle) => {handle.main.clone()}
         }
     }
 

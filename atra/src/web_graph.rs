@@ -130,7 +130,7 @@ pub const DEFAULT_CACHE_SIZE_WEB_GRAPH: NonZeroUsize =
 /// A link net manager with a backing file.
 #[derive(Debug)]
 pub struct QueuingWebGraphManager {
-    queue_in: Sender<WebGraphEntry>,
+    queue_in: Option<Sender<WebGraphEntry>>,
 }
 
 impl QueuingWebGraphManager {
@@ -169,17 +169,27 @@ impl QueuingWebGraphManager {
                 if let Ok(value) = value {
                     if value.starts_with("@prefix") {
                         graph_prefix =
-                            value.contains(" : ") && value.contains("http://atra.de/graph#");
-                        domain_prefix = value.contains(" o: ")
-                            && value.contains("http://atra.de/graph/origin#");
-                        domain_label_prefix = value.contains(" ol: ")
-                            && value.contains("http://atra.de/graph/origin-label#");
-                        rnfs_prefix = value.contains(" rdfs: ")
-                            && value.contains("http://www.w3.org/2000/01/rdf-schema#");
+                            graph_prefix
+                                || (value.contains(" : ") && value.contains("http://atra.de/graph#"));
+                        domain_prefix =
+                            domain_prefix
+                                || (value.contains(" o: ") && value.contains("http://atra.de/graph/origin#"));
+                        domain_label_prefix =
+                            domain_label_prefix
+                                || (value.contains(" ol: ") && value.contains("http://atra.de/graph/origin-label#"));
+                        rnfs_prefix =
+                            rnfs_prefix
+                                || (value.contains(" rdfs: ") && value.contains("http://www.w3.org/2000/01/rdf-schema#"));
                     }
+                }
+                if graph_prefix && domain_prefix && domain_label_prefix && rnfs_prefix {
+                    break
                 }
             }
             if !graph_prefix || !domain_prefix || !domain_label_prefix || !rnfs_prefix {
+                log::error!(
+                    "graph_prefix: {graph_prefix} domain_prefix: {domain_prefix} domain_label_prefix: {domain_label_prefix} rnfs_prefix: {rnfs_prefix}"
+                );
                 return Err(LinkNetError::InvalidFile(
                     path.as_ref().as_os_str().to_os_string(),
                 ));
@@ -203,77 +213,87 @@ impl QueuingWebGraphManager {
             ByteUnit::Kilobyte(32).as_u64() as usize,
             File::from_std(file),
         );
-        let (queue_in, mut queue_out) = tokio::sync::mpsc::channel::<WebGraphEntry>(capacity.get());
-        let guard = shutdown_and_handle.shutdown_guard().clone();
 
-        async fn write_buffer(entry: &mut Vec<String>, writer: &mut BufWriter<File>) {
-            for value in entry.drain(..).unique() {
-                if let Err(err) = writer.write_all(value.as_bytes()).await {
-                    log::error!("WebGraphWriter: encountered a problem:{err}")
+
+        if let Ok(handle) = shutdown_and_handle
+            .handle()
+            .try_io_or_main_or_current()
+        {
+            log::debug!("Found Runtime. Setting up writer.");
+            let (queue_in, mut queue_out) = tokio::sync::mpsc::channel::<WebGraphEntry>(capacity.get());
+            let guard = shutdown_and_handle.shutdown_guard().guard();
+
+            async fn write_buffer(entry: &mut Vec<String>, writer: &mut BufWriter<File>) {
+                for value in entry.drain(..).unique() {
+                    if let Err(err) = writer.write_all(value.as_bytes()).await {
+                        log::error!("WebGraphWriter: encountered a problem:{err}")
+                    }
                 }
             }
+
+            // todo: may need scaling
+            handle.spawn(async move {
+                    let _guard = guard;
+                    log::debug!("WebGraphWriter: Start writer thread");
+
+                    let mut buffer = Vec::with_capacity(32);
+                    let mut entry_buffer = Vec::new();
+
+                    while queue_out.recv_many(&mut buffer, 32).await > 0 {
+                        log::trace!("WebGraphWriter:Write {} entries", buffer.len());
+                        for value in &buffer {
+                            value.collect(&mut entry_buffer);
+                        }
+                        buffer.clear();
+                        write_buffer(&mut entry_buffer, &mut writer).await;
+                    }
+
+                    debug_assert!(buffer.is_empty());
+                    debug_assert!(entry_buffer.is_empty());
+
+                    match writer.flush().await {
+                        Ok(_) => {}
+                        Err(err) => {
+                            log::error!("WebGraphWriter: Failed to flush data: {err}");
+                        }
+                    }
+                    let file = writer.into_inner();
+                    match file.sync_all().await {
+                        Ok(_) => {}
+                        Err(err) => {
+                            log::error!("WebGraphWriter: Failed to sync to file: {err}");
+                        }
+                    }
+                    log::debug!("WebGraphWriter: Stopping writer thread");
+                });
+
+            Ok(Self { queue_in: Some(queue_in) })
+        } else {
+            log::debug!("No Runtime found. Piping entries to nirvana.");
+            Ok(Self { queue_in: None })
         }
 
-        // todo: may need scaling
-        shutdown_and_handle
-            .handle()
-            .io_or_main_or_current()
-            .spawn(async move {
-                let _guard = guard;
-                log::debug!("WebGraphWriter: Start writer thread");
-
-                let mut buffer = Vec::with_capacity(32);
-                let mut entry_buffer = Vec::new();
-
-                while queue_out.recv_many(&mut buffer, 32).await > 0 {
-                    log::trace!("WebGraphWriter:Write {} entries", buffer.len());
-                    for value in &buffer {
-                        value.collect(&mut entry_buffer);
-                    }
-                    buffer.clear();
-                    write_buffer(&mut entry_buffer, &mut writer).await;
-                }
-
-                debug_assert!(buffer.is_empty());
-                debug_assert!(entry_buffer.is_empty());
-
-                match writer.flush().await {
-                    Ok(_) => {}
-                    Err(err) => {
-                        log::error!("WebGraphWriter: Failed to flush data: {err}");
-                    }
-                }
-                let file = writer.into_inner();
-                match file.sync_all().await {
-                    Ok(_) => {}
-                    Err(err) => {
-                        log::error!("WebGraphWriter: Failed to sync to file: {err}");
-                    }
-                }
-                log::debug!("WebGraphWriter: Stopping writer thread");
-            });
-
-        Ok(Self { queue_in })
     }
 }
 
 impl WebGraphManager for QueuingWebGraphManager {
     async fn add(&self, link_net_entry: WebGraphEntry) -> Result<(), LinkNetError> {
-        match self.queue_in.send(link_net_entry).await {
-            Ok(_) => return Ok(()),
-            Err(SendError(value)) => {
-                log::error!("Failed to write {:?} to the external file", value);
-                return Err(LinkNetError::SendError(value));
+        if let Some(ref sender) = self.queue_in {
+            match sender.send(link_net_entry).await {
+                Ok(_) => Ok(()),
+                Err(SendError(value)) => {
+                    log::error!("Failed to write {:?} to the external file", value);
+                    Err(LinkNetError::SendError(value))
+                }
             }
+        } else {
+            Ok(())
         }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::runtime::{
-        graceful_shutdown, OptionalAtraHandle, RuntimeContext, UnsafeShutdownGuard,
-    };
     use crate::url::AtraUri;
     use crate::web_graph::{QueuingWebGraphManager, WebGraphEntry, WebGraphManager};
     use log::LevelFilter;
@@ -285,14 +305,13 @@ mod test {
     use std::sync::Arc;
     use tokio::sync::Barrier;
     use tokio::task::JoinSet;
+    use crate::runtime::{GracefulShutdownWithGuard, OptionalAtraHandle, RuntimeContext, ShutdownReceiver};
 
     #[tokio::test]
     async fn can_write_propery() {
         scopeguard::defer! {
             let _ = std::fs::remove_file(Path::new("./atra_data/example.ttl"));
         }
-
-        let (_, b, mut guard) = graceful_shutdown();
 
         let console_logger = ConsoleAppender::builder()
             .encoder(Box::new(PatternEncoder::new("{l}{I} - {d} - {m}{n}")))
@@ -306,12 +325,14 @@ mod test {
 
         let _ = log4rs::init_config(config).unwrap();
 
+        let guard = GracefulShutdownWithGuard::new();
+        let s = guard.get().clone();
         let writer = Arc::new(
             QueuingWebGraphManager::new(
                 10.try_into().unwrap(),
                 "./atra_data/example.ttl",
                 &RuntimeContext::new(
-                    UnsafeShutdownGuard::Guarded(b.into_inner().1),
+                    guard,
                     OptionalAtraHandle::None,
                 ),
             )
@@ -348,7 +369,7 @@ mod test {
         }
         drop(writer);
         log::info!("Waiting!");
-        guard.wait().await;
+        s.wait().await;
         let read = std::fs::read_to_string(Path::new("./atra_data/example.ttl")).unwrap();
         println!("Turtle-File:\n\n{read}")
     }

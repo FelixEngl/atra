@@ -1,4 +1,4 @@
-// Copyright 2024 Felix Engl
+// Copyright 2024. Felix Engl
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::blacklist::BlackListType;
+use crate::blacklist::manage::ManagedBlacklist;
+use crate::blacklist::manager::BlacklistError;
+use crate::blacklist::traits::{Blacklist, BlacklistType, ManageableBlacklist};
+use crate::blacklist::{create_managed_blacklist, BlacklistManager, ManagedBlacklistSender};
 use crate::io::simple_line::SupportsSimpleLineReader;
-use crate::runtime::UnsafeShutdownGuard;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use regex::RegexSet;
@@ -27,67 +29,108 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use thiserror::Error;
 use tokio::sync::RwLock;
+use crate::runtime::GracefulShutdownWithGuard;
+
+#[derive(Debug, Error)]
+pub enum InMemoryBlacklistManagerInitialisationError<T: ManageableBlacklist> {
+    #[error(transparent)]
+    IO(#[from] io::Error),
+    #[error(transparent)]
+    InitError(T::Error),
+}
 
 /// Manages a blacklist in a thread safe way.
 #[derive(Debug)]
-pub struct BlacklistManager {
+pub struct InMemoryBlacklistManager<T>
+where
+    T: ManageableBlacklist,
+{
     inner: RwLock<InnerBlacklistManager>,
-    _shutdown_guard: UnsafeShutdownGuard,
+    sender: ManagedBlacklistSender<T>,
+    managed: ManagedBlacklist<T>,
+    _shutdown_guard: GracefulShutdownWithGuard,
 }
 
-/// TODO: need patch structure for multi client crawling
-#[allow(dead_code)]
-impl BlacklistManager {
-    pub fn open<P: AsRef<Path>>(path: P, shutdown_guard: UnsafeShutdownGuard) -> io::Result<Self> {
+impl<T> InMemoryBlacklistManager<T>
+where
+    T: ManageableBlacklist,
+{
+    pub fn open<P: AsRef<Path>>(
+        path: P,
+        shutdown_guard: GracefulShutdownWithGuard,
+    ) -> Result<Self, InMemoryBlacklistManagerInitialisationError<T>> {
         let inner = RwLock::new(InnerBlacklistManager::open(path)?);
+        let lock = inner.try_read().unwrap();
+        let blacklist = lock
+            .create_current_blacklist::<T>()
+            .map_err(InMemoryBlacklistManagerInitialisationError::InitError)?;
+        let (managed, sender) = create_managed_blacklist(blacklist);
+        drop(lock);
         Ok(Self {
-            inner,
+            sender,
+            managed,
             _shutdown_guard: shutdown_guard,
+            inner,
         })
     }
 
-    pub async fn current_version(&self) -> u64 {
-        self.inner.read().await.current_version()
-    }
-
-    pub async fn add(&self, value: String) -> Result<bool, IllegalBlacklistValueError> {
-        self.inner.write().await.add(value)
-    }
-
-    pub async fn apply_patch<I: IntoIterator<Item = String>>(&self, patch: I) {
-        self.inner.write().await.apply_patch(patch)
-    }
-
-    pub async fn get_patch(&self, since_version: u64) -> Option<Vec<String>> {
-        self.inner.read().await.get_patch(since_version)
-    }
-
-    pub async fn is_empty(&self) -> bool {
-        self.inner.read().await.is_empty()
-    }
-
-    pub async fn create_current_blacklist<T: BlackListType>(&self) -> Result<T, T::Error> {
-        self.inner.read().await.create_current_blacklist()
-    }
-
-    pub async fn to_compact_str_vec(&self) -> Vec<String> {
-        self.inner.read().await.get_string_vec()
-    }
-
-    fn into_inner(self) -> InnerBlacklistManager {
-        self.inner.into_inner()
+    async fn patch(&self) -> bool {
+        let read = self.inner.read().await;
+        if self.managed.version() < read.current_version() {
+            drop(read);
+            let write = self.inner.write().await;
+            if self.managed.version() < write.current_version() {
+                return match write.create_current_blacklist::<T>() {
+                    Ok(value) => {
+                        self.sender.update(value);
+                        true
+                    }
+                    Err(err) => {
+                        log::error!("Failed to update the blacklist with {err}");
+                        false
+                    }
+                };
+            }
+        }
+        false
     }
 }
 
-/// Blacklist error
-#[derive(Debug, Copy, Clone, Error)]
-pub enum IllegalBlacklistValueError {
-    /// A blacklist entry can not contain a newline.
-    #[error("Tried to add something with a new line separator to the queue.")]
-    NewLinesNotAllowed,
-    /// A blacklist entry can not not be empty.
-    #[error("Tried to add an empty string to the queue")]
-    EmptyStringsNotAllowed,
+impl<T> BlacklistManager for InMemoryBlacklistManager<T>
+where
+    T: ManageableBlacklist,
+{
+    type Blacklist = T;
+
+    async fn current_version(&self) -> u64 {
+        self.inner.read().await.current_version()
+    }
+
+    async fn add(&self, value: String) -> Result<bool, BlacklistError> {
+        let result = self.inner.write().await.add(value)?;
+        if result {
+            self.patch().await;
+        }
+        return Ok(result);
+    }
+
+    async fn apply_patch<I: IntoIterator<Item = String>>(&self, patch: I) {
+        if self.inner.write().await.apply_patch(patch) {
+            self.patch().await;
+        }
+    }
+
+    async fn get_patch(&self, since_version: u64) -> Option<Vec<String>> {
+        self.inner.read().await.get_patch(since_version)
+    }
+
+    async fn is_empty(&self) -> bool {
+        self.inner.read().await.is_empty()
+    }
+
+    async fn get_blacklist(&self) -> ManagedBlacklist<Self::Blacklist> {
+        self.managed.clone()
+    }
 }
 
 /// Manages a blacklist in a not thread safe way.
@@ -110,7 +153,9 @@ impl InnerBlacklistManager {
             .open(path)?;
         let created = if file.metadata()?.len() > 0 {
             let mut blacklist_entries = IndexSet::new();
-            let lines = BufReader::new(&file).to_simple_line_reader();
+            let lines = BufReader::new(&file)
+                .to_simple_line_reader()
+                .filter_ok(|value| !value.is_empty());
 
             for line in lines.flatten() {
                 blacklist_entries.insert(BlacklistEntry::new_from_file(line));
@@ -145,14 +190,15 @@ impl InnerBlacklistManager {
         return self.blacklist_entries.len() as u64;
     }
 
-    pub fn add(&mut self, value: String) -> Result<bool, IllegalBlacklistValueError> {
+    /// Returns true if the patch changed something
+    pub fn add(&mut self, value: String) -> Result<bool, BlacklistError> {
         log::debug!("Add {:?}", value);
 
         if value.is_empty() {
-            return Err(IllegalBlacklistValueError::EmptyStringsNotAllowed);
+            return Err(BlacklistError::EmptyStringsNotAllowed);
         }
         if value.contains("\n") {
-            return Err(IllegalBlacklistValueError::NewLinesNotAllowed);
+            return Err(BlacklistError::NewLinesNotAllowed);
         }
         if self.cached_set.is_some() {
             self.cached_set = None;
@@ -189,12 +235,15 @@ impl InnerBlacklistManager {
         self.file.flush()
     }
 
-    pub fn apply_patch<I: IntoIterator<Item = String>>(&mut self, patch: I) {
+    /// Returns true if the patch changed something
+    pub fn apply_patch<I: IntoIterator<Item = String>>(&mut self, patch: I) -> bool {
         if self.version_on_hdd.is_none() {
             self.version_on_hdd = Some(self.blacklist_entries.len() as u64)
         }
+        let old = self.blacklist_entries.len();
         self.blacklist_entries
-            .extend(patch.into_iter().map(|it| BlacklistEntry::new(it)))
+            .extend(patch.into_iter().map(|it| BlacklistEntry::new(it)));
+        return old != self.blacklist_entries.len();
     }
 
     pub fn get_patch(&self, since_version: u64) -> Option<Vec<String>> {
@@ -214,20 +263,11 @@ impl InnerBlacklistManager {
         self.blacklist_entries.is_empty()
     }
 
-    #[allow(dead_code)]
-    pub fn as_hash_set(&self) -> &IndexSet<BlacklistEntry> {
-        &self.blacklist_entries
-    }
-
-    pub fn create_current_blacklist<T: BlackListType>(&self) -> Result<T, T::Error> {
+    pub fn create_current_blacklist<T: BlacklistType>(&self) -> Result<T, T::Error> {
         return T::new(self.current_version(), self.blacklist_entries.iter());
     }
 
-    #[allow(dead_code)]
-    pub fn as_vec(&self) -> Vec<&BlacklistEntry> {
-        Vec::from_iter(&self.blacklist_entries)
-    }
-
+    #[cfg(test)]
     pub fn get_string_vec(&self) -> Vec<String> {
         Vec::from_iter(self.blacklist_entries.iter())
     }
@@ -321,6 +361,8 @@ mod test {
         defer! {
             let _ = std::fs::remove_file("blacklist1.txt");
         }
+        let _ = std::fs::remove_file("blacklist1.txt");
+
         let mut manager = InnerBlacklistManager::open("blacklist1.txt").unwrap();
         manager.add("Test1".to_string()).unwrap();
         manager.add("Test2".to_string()).unwrap();
@@ -342,6 +384,8 @@ mod test {
         defer! {
             let _ = std::fs::remove_file("blacklist2.txt");
         }
+
+        let _ = std::fs::remove_file("blacklist2.txt");
 
         let mut manager = InnerBlacklistManager::open("blacklist2.txt").unwrap();
         manager.add("Test1".to_string()).unwrap();

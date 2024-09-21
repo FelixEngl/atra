@@ -15,6 +15,7 @@
 use std::io;
 use std::io::{BufRead, BufReader, Cursor, Lines};
 
+#[cfg(test)]
 use itertools::{Itertools, Position};
 
 /// A struct implementing this trait supports beeing read as simple lines
@@ -73,59 +74,56 @@ impl<B: BufRead> Iterator for SimpleLinesReader<B> {
         loop {
             match self.buf.next() {
                 Some(Ok(line)) => {
+                    if line.starts_with('#') {
+                        continue;
+                    }
                     if line.is_empty() || !(line.starts_with("\\#") || line.ends_with('\\')) {
                         return Some(Ok(line));
                     }
-                    if line.starts_with('#') {
-                        continue;
-                    } else {
-                        let mut collector = line;
-                        if collector.starts_with("\\#") {
-                            collector.remove(0);
-                        }
-                        if collector.ends_with('\\') {
+                    let mut collector = line;
+                    if collector.starts_with("\\#") {
+                        collector.remove(0);
+                    }
+                    if collector.ends_with('\\') {
+                        collector.pop();
+                        let needs_processing = collector.ends_with("\\\\");
+                        if needs_processing {
                             collector.pop();
-                            let needs_processing = collector.ends_with("\\\\");
-                            if needs_processing {
-                                collector.pop();
-                            }
-                            if needs_processing || !collector.ends_with('\\') {
-                                while let Some(next) = self.buf.next() {
-                                    match next {
-                                        Ok(mut next) => {
-                                            let starts_with_ignored_comment =
-                                                next.starts_with("\\#");
-                                            if next.ends_with('\\') {
+                        }
+                        if needs_processing || !collector.ends_with('\\') {
+                            while let Some(next) = self.buf.next() {
+                                match next {
+                                    Ok(mut next) => {
+                                        let starts_with_ignored_comment = next.starts_with("\\#");
+                                        if next.ends_with('\\') {
+                                            next.pop();
+                                            let needs_processing = next.ends_with("\\\\");
+                                            if needs_processing {
                                                 next.pop();
-                                                let needs_processing = next.ends_with("\\\\");
-                                                if needs_processing {
-                                                    next.pop();
-                                                }
-                                                if needs_processing || !next.ends_with('\\') {
-                                                    collector.push('\n');
-                                                    collector.push_str(
-                                                        &next[(starts_with_ignored_comment
-                                                            as usize)..],
-                                                    );
-                                                    continue;
-                                                }
                                             }
-                                            collector.push('\n');
-                                            collector.push_str(
-                                                &next[(starts_with_ignored_comment as usize)..],
-                                            );
-                                            break;
+                                            if needs_processing || !next.ends_with('\\') {
+                                                collector.push('\n');
+                                                collector.push_str(
+                                                    &next[(starts_with_ignored_comment as usize)..],
+                                                );
+                                                continue;
+                                            }
                                         }
-                                        Err(err) => {
-                                            self.err_state = true;
-                                            return Some(Err(err));
-                                        }
+                                        collector.push('\n');
+                                        collector.push_str(
+                                            &next[(starts_with_ignored_comment as usize)..],
+                                        );
+                                        break;
+                                    }
+                                    Err(err) => {
+                                        self.err_state = true;
+                                        return Some(Err(err));
                                     }
                                 }
                             }
                         }
-                        return Some(Ok(collector));
                     }
+                    return Some(Ok(collector));
                 }
                 x @ Some(Err(_)) => {
                     self.err_state = true;
@@ -137,6 +135,7 @@ impl<B: BufRead> Iterator for SimpleLinesReader<B> {
     }
 }
 
+#[cfg(test)]
 fn convert_to_simple_line_format_string<T: AsRef<str>>(value: T) -> String {
     let s = value.as_ref();
     let mut next = String::with_capacity(s.len());
@@ -169,10 +168,12 @@ fn convert_to_simple_line_format_string<T: AsRef<str>>(value: T) -> String {
     return next;
 }
 
+#[cfg(test)]
 pub trait SupportsSimpleLineMapper {
     fn to_simple_lines(self) -> impl Iterator<Item = String>;
 }
 
+#[cfg(test)]
 impl<I, T> SupportsSimpleLineMapper for I
 where
     I: Iterator<Item = T>,
@@ -186,8 +187,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::io::simple_line::{SimpleLinesReader, SupportsSimpleLineMapper};
+    use crate::io::simple_line::{
+        SimpleLinesReader, SupportsSimpleLineMapper, SupportsSimpleLineReader,
+    };
     use itertools::Itertools;
+    use std::fs::File;
+    use std::io::BufReader;
 
     #[test]
     pub fn can_serialize_and_deserialize() {
@@ -199,7 +204,7 @@ mod tests {
         ];
         // println!("{}", data.into_iter().to_simple_line_iter().join("\n"));
         let dat = data.clone().into_iter().to_simple_lines().join("\n");
-        println!("{dat}");
+        println!("{dat}\n");
         let result = SimpleLinesReader::with_cursor(dat)
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
@@ -207,5 +212,19 @@ mod tests {
         for (a, b) in data.into_iter().zip(result.into_iter()) {
             assert_eq!(a.to_string(), b)
         }
+    }
+
+    #[test]
+    pub fn can_read_text() {
+        let x =
+            BufReader::new(File::open("testdata/blacklist.txt").unwrap()).to_simple_line_reader();
+        let collected = x
+            .filter_ok(|value| !value.is_empty())
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(
+            collected,
+            vec!["www.google.de".to_string(), "#.Ebay.com".to_string()]
+        )
     }
 }

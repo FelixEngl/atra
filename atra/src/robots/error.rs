@@ -18,13 +18,13 @@ use url::ParseError;
 
 /// Errors while working with robots.txt
 #[derive(Error, Debug)]
-pub enum RobotsError {
+pub enum RobotsError<ClientError: std::error::Error> {
     #[error("Some kind of parsing error happened for the url.")]
     InvalidUrl(#[from] ParseError),
     #[error("The robots.txt parser had some problems.")]
     InvalidRobotsTxt(#[source] anyhow::Error),
     #[error("The client failed to send the request: {0}")]
-    ClientWasNotAbleToSend(#[from] crate::client::ClientError),
+    ClientWasNotAbleToSend(ClientError),
     #[error("The url had no domain.")]
     NoDomainForUrl,
     #[error("The database had some kind of issue")]

@@ -32,6 +32,7 @@ mod html;
 mod io;
 mod link_state;
 mod queue;
+mod recrawl_management;
 mod robots;
 mod runtime;
 mod seed;

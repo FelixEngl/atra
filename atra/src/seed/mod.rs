@@ -18,11 +18,18 @@ mod input;
 mod unguarded;
 
 use crate::url::{AtraUrlOrigin, UrlWithDepth};
-pub use error::SeedCreationError;
+use cfg_if::cfg_if;
+
 pub use guarded::GuardedSeed;
 pub use input::lines::read_seeds;
 pub use input::seed_data::SeedDefinition;
 pub use unguarded::UnguardedSeed;
+
+cfg_if! {
+    if #[cfg(test)] {
+        pub use error::SeedCreationError;
+    }
+}
 
 /// The seed of a crawl task
 pub trait BasicSeed {
@@ -31,4 +38,10 @@ pub trait BasicSeed {
 
     /// A reference to the host
     fn origin(&self) -> &AtraUrlOrigin;
+
+    fn is_original_seed(&self) -> bool;
+
+    /// Creates an unguarded version that can be used for storing.
+    #[cfg(test)]
+    fn create_unguarded(&self) -> UnguardedSeed;
 }

@@ -31,11 +31,11 @@ use text_processing::stopword_registry::StopWordRepository;
 use time::Duration;
 use ubyte::ToByteUnit;
 
-pub const ATRA_LOGO: &'static str = include_str!("../../../logo.txt");
+pub const ATRA_LOGO: &'static str = include_str!("logo_small.txt");
 pub const ATRA_WELCOME: &'static str = include_str!("welcome.txt");
 
-pub fn create_example_config() -> crate::config::configs::Configs {
-    crate::config::configs::Configs {
+pub fn create_example_config() -> crate::config::configs::Config {
+    crate::config::configs::Config {
         system: Default::default(),
         paths: Default::default(),
         session: SessionConfig {
@@ -47,6 +47,7 @@ pub fn create_example_config() -> crate::config::configs::Configs {
             user_agent: UserAgent::Custom("My User Agent".to_string()),
             respect_robots_txt: true,
             respect_nofollow: true,
+            crawl_forms: false,
             crawl_embedded_data: false,
             crawl_javascript: true,
             crawl_onclick_by_heuristic: true,

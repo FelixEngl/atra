@@ -139,7 +139,7 @@ pub mod test {
 
     pub fn create_testdata_with_on_seed(content: Option<RawVecData>) -> CrawlResult {
         create_test_data(
-            UrlWithDepth::from_seed("https://www.google.de/").unwrap(),
+            UrlWithDepth::from_url("https://www.google.de/").unwrap(),
             content,
         )
     }

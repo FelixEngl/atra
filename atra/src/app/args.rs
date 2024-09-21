@@ -12,18 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fs::File;
-use std::io::{BufWriter};
-use std::num::NonZeroUsize;
-use std::str::FromStr;
-use camino::Utf8PathBuf;
 use clap::{Parser, Subcommand};
-use time::Duration;
-
-use crate::app::atra::ApplicationMode;
-use crate::app::constants::{create_example_config, ATRA_LOGO, ATRA_WELCOME};
+use std::str::FromStr;
 use crate::config::crawl::UserAgent;
-use crate::config::{BudgetSetting, Configs};
 use crate::seed::SeedDefinition;
 
 #[derive(Parser, Debug, Default)]
@@ -61,7 +52,7 @@ pub enum RunMode {
         #[arg(short, long)]
         timeout: Option<f64>,
         /// The delay in milliseconds.
-        #[arg(short = 'w',long)]
+        #[arg(short = 'w', long)]
         delay: Option<u64>,
         /// The log level of Atra
         #[arg(long, default_value_t = log::LevelFilter::Info)]
@@ -92,164 +83,77 @@ pub enum RunMode {
         /// Seed to be crawled
         seeds: SeedDefinition,
     },
-    // CLUSTER,
-    /// Initializes Atra for Multi by creating the default config file.
+    /// Continue a crawl that was somehow ended.
+    RECOVER {
+        /// The number of threads used by this application.
+        #[arg(short, long)]
+        threads: Option<usize>,
+        /// Log to file
+        #[arg(long)]
+        log_to_file: bool,
+        /// The path to the folder with the atra data
+        path: String,
+    },
+    /// Initializes Atra for Multi by creating the default config filee
     INIT,
+
+    /// View the content of the crawl
+    VIEW {
+        /// Show internal states of atra
+        #[arg(short, long)]
+        internals: bool,
+        /// Show the extracted link of every page
+        #[arg(short, long)]
+        extracted_links: bool,
+        /// Show the headers of every page
+        #[arg(short, long)]
+        headers: bool,
+        /// The path to the folder with the atra data
+        path: String,
+    }
 }
 
-#[derive(Debug)]
-pub enum ConsumedArgs {
-    RunConfig(ApplicationMode, SeedDefinition, Configs),
-    Nothing,
-}
-
-/// Consumes the args and returns everything necessary to execute Atra
-pub(crate) fn consume_args(args: AtraArgs) -> ConsumedArgs {
-    if let Some(mode) = args.mode {
-        match mode {
-            RunMode::SINGLE {
-                session_name,
-                absolute,
-                agent,
-                seeds,
-                depth,
-                timeout,
-                log_level,
-                log_to_file,
-                delay
-            } => {
-                let mut configs =
-                    Configs::discover_or_default().expect("Expected some kind of config!");
-
-                configs.paths.root = configs.paths.root_path().join(format!(
-                    "single_{}_{}",
-                    data_encoding::BASE64URL.encode(
-                        &time::OffsetDateTime::now_utc()
-                            .unix_timestamp_nanos()
-                            .to_be_bytes()
-                    ),
-                    data_encoding::BASE64URL.encode(&rand::random::<u64>().to_be_bytes()),
-                ));
-
-                configs.crawl.user_agent = agent;
-
-                if let Some(session_name) = session_name {
-                    configs.session.service = session_name
-                }
-
-                configs.crawl.budget.default = if absolute {
-                    BudgetSetting::Absolute {
-                        depth,
-                        recrawl_interval: None,
-                        request_timeout: timeout
-                            .map(|value| Duration::saturating_seconds_f64(value)),
-                    }
-                } else {
-                    BudgetSetting::SeedOnly {
-                        depth_on_website: depth,
-                        recrawl_interval: None,
-                        request_timeout: timeout
-                            .map(|value| Duration::saturating_seconds_f64(value)),
-                    }
-                };
 
 
-                configs.crawl.delay = delay.map(|value| std::time::Duration::from_millis(value).try_into().ok()).flatten();
 
-                configs.system.log_level = log_level;
 
-                configs.system.log_to_file = log_to_file;
 
-                ConsumedArgs::RunConfig(ApplicationMode::Single, seeds, configs)
+
+#[cfg(test)]
+mod test {
+    use crate::app::{execute, AtraArgs};
+    use crate::config::crawl::UserAgent;
+    use crate::seed::SeedDefinition;
+    use log::max_level;
+    use crate::app::instruction::{prepare_instruction, Instruction};
+
+    #[test]
+    fn works() {
+        let args = AtraArgs {
+            generate_example_config: false,
+            mode: Some(crate::app::args::RunMode::SINGLE {
+                session_name: None,
+                depth: 1,
+                log_to_file: true,
+                delay: None,
+                absolute: false,
+                agent: UserAgent::Default,
+                seeds: SeedDefinition::Single(
+                    "https://www.arche-naturkueche.de/de/rezepte/uebersicht.php".to_string(),
+                ),
+                log_level: max_level(),
+                timeout: None,
+            }),
+        };
+
+        let args = prepare_instruction(args);
+
+        match args {
+            Ok(Instruction::RunInstruction(instruction)) => {
+                execute(instruction);
             }
-            RunMode::MULTI {
-                session_name,
-                seeds,
-                config: configs_folder,
-                threads,
-                override_log_level: log_level,
-                log_to_file,
-            } => {
-                let mut configs = match configs_folder {
-                    None => Configs::discover(),
-                    Some(path) => Configs::load_from(path),
-                }
-                    .expect("No config found!");
-
-                println!("Session Info: {} - {} - {}", configs.session.service, configs.session.collection, configs.session.crawl_job_id);
-
-                configs.paths.root = configs.paths.root_path().join(format!(
-                    "multi_{}_{}",
-                    data_encoding::BASE64URL.encode(
-                        &time::OffsetDateTime::now_utc()
-                            .unix_timestamp_nanos()
-                            .to_be_bytes()
-                    ),
-                    data_encoding::BASE64URL.encode(&rand::random::<u64>().to_be_bytes()),
-                ));
-
-                configs.system.log_to_file = log_to_file;
-
-                if let Some(session_name) = session_name {
-                    configs.session.service = session_name
-                }
-
-                if let Some(log_level) = log_level {
-                    configs.system.log_level = log_level;
-                }
-
-                ConsumedArgs::RunConfig(
-                    ApplicationMode::Multi(threads.map(|value| NonZeroUsize::new(value)).flatten()),
-                    seeds,
-                    configs,
-                )
-            }
-            RunMode::INIT => {
-                println!("{}\n\n{}\n", ATRA_WELCOME, ATRA_LOGO);
-                println!("Start creating the default config.");
-                let cfg = Configs::default();
-                let root = cfg.paths.root_path();
-                std::fs::create_dir_all(root).unwrap();
-                let path = root.join("config.json");
-                if path.exists() {
-                    println!("The default config already exists in {path}.\nDelete is before regenerating.")
-                } else {
-                    match File::options().create(true).write(true).open(&path) {
-                        Ok(file) => match serde_json::to_writer_pretty(BufWriter::new(file), &cfg) {
-                            Ok(_) => {}
-                            Err(err) => {
-                                println!("Failed to create the example file: {err}")
-                            }
-                        },
-                        Err(err) => {
-                            println!("Failed to create the example file: {err}")
-                        }
-                    }
-                    println!("Created the default config at {}.", path);
-                }
-
-                ConsumedArgs::Nothing
-            }
-        }
-    } else {
-        if args.generate_example_config {
-            let cfg = create_example_config();
-            let root = cfg.paths.root_path();
-            std::fs::create_dir_all(root).unwrap();
-            match File::options().create(true).write(true).open(root.join("example_config.json")) {
-                Ok(file) => match serde_json::to_writer_pretty(BufWriter::new(file), &cfg) {
-                    Ok(_) => {}
-                    Err(err) => {
-                        println!("Failed to create the example file: {err}")
-                    }
-                },
-                Err(err) => {
-                    println!("Failed to create the example file: {err}")
-                }
-            }
-            ConsumedArgs::Nothing
-        } else {
-            ConsumedArgs::Nothing
+            Ok(Instruction::Nothing) => {}
+            _ => {}
         }
     }
 }

@@ -25,12 +25,13 @@ pub enum CachedRobots {
         retrieved_at: OffsetDateTime,
     },
     NoRobots {
-        status_code: StatusCode,
+        _status_code: StatusCode,
         retrieved_at: OffsetDateTime,
     },
 }
 
 impl CachedRobots {
+    #[cfg(test)]
     pub fn map<R, F>(&self, on_has_robot: F) -> Option<R>
     where
         F: FnOnce(&Robot) -> R,
@@ -41,7 +42,6 @@ impl CachedRobots {
         }
     }
 
-    #[allow(dead_code)]
     pub fn map_or<R, F>(&self, default: R, on_has_robot: F) -> R
     where
         F: FnOnce(&Robot) -> R,
@@ -52,7 +52,7 @@ impl CachedRobots {
         }
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn map_or_else<R, D, F>(&self, default: D, on_has_robot: F) -> R
     where
         D: FnOnce() -> R,

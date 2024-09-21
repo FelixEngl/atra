@@ -12,23 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::app::consumer::GlobalErrorConsumer;
+use std::error::Error;
+use std::io;
+use crate::app::consumer::{GlobalErrorConsumer};
 use crate::app::logging::configure_logging;
-use crate::config::Configs;
 use crate::contexts::local::LocalContext;
-use crate::contexts::traits::{SupportsLinkState, SupportsMetaInfo, SupportsUrlQueue};
+use crate::contexts::traits::*;
 use crate::contexts::worker::WorkerContext;
-use crate::crawl::{crawl, ExitState};
-use crate::runtime::{
-    graceful_shutdown, AtraRuntime, GracefulShutdown, GracefulShutdownBarrier, OptionalAtraHandle,
-    RuntimeContext, ShutdownReceiver, ShutdownSignalSender,
-};
-use crate::seed::SeedDefinition;
-use crate::sync::barrier::WorkerBarrier;
+use crate::crawl::{crawl, ErrorConsumer, ExitState};
+use crate::link_state::{LinkStateLike, LinkStateManager, RawLinkState};
+use crate::queue::{QueueError, SupportsForcedQueueElement, UrlQueue, UrlQueueElement};
+use crate::runtime::{AtraRuntime, GracefulShutdownWithGuard, OptionalAtraHandle, RuntimeContext, ShutdownReceiver};
+use crate::sync::barrier::{ContinueOrStop, WorkerBarrier};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
+use rocksdb::IteratorMode;
+use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
-use tokio::task::JoinSet;
+use tokio::select;
+use tokio::task::{JoinSet};
+use crate::app::instruction::RunInstruction;
+use crate::contexts::Context;
+use crate::url::{AtraUri, UrlWithDepth};
+
+
+
+
 
 /// The application
 pub struct Atra {
@@ -38,29 +47,8 @@ pub struct Atra {
     /// The mode of the application
     mode: ApplicationMode,
 
-    /// Broadcasts a shutdown signal to all active connections.
-    ///
-    /// The initial `shutdown` trigger is provided by the `run` caller. The
-    /// server is responsible for gracefully shutting down active connections.
-    /// When a connection task is spawned, it is passed a broadcast receiver
-    /// handle. When a graceful shutdown is initiated, a `()` value is sent via
-    /// the broadcast::Sender. Each active connection receives it, reaches a
-    /// safe terminal state, and completes the task.
-    _notify_shutdown: ShutdownSignalSender,
-
-    /// Used as part of the graceful shutdown process to wait for client
-    /// connections to complete processing.
-    ///
-    /// Tokio channels are closed once all `Sender` handles go out of scope.
-    /// When a channel is closed, the receiver receives `None`. This is
-    /// leveraged to detect all connection handlers completing. When a
-    /// connection handler is initialized, it is assigned a clone of
-    /// `shutdown_complete_tx`. When the listener shuts down, it drops the
-    /// sender held by this `shutdown_complete_tx` field. Once all handler tasks
-    /// complete, all clones of the `Sender` are also dropped. This results in
-    /// `shutdown_complete_rx.recv()` completing with `None`. At this point, it
-    /// is safe to exit the server process.
-    shutdown: GracefulShutdown,
+    /// The hard shutdown
+    shutdown: GracefulShutdownWithGuard,
 }
 
 /// From tokio
@@ -92,22 +80,26 @@ fn num_cpus() -> NonZeroUsize {
 impl Atra {
     pub fn new(
         mode: ApplicationMode,
-        notify_shutdown: ShutdownSignalSender,
-        shutdown: GracefulShutdown,
+        shutdown: GracefulShutdownWithGuard,
         handle: OptionalAtraHandle,
     ) -> Self {
         Self {
             mode,
-            _notify_shutdown: notify_shutdown,
             shutdown,
             handle,
         }
     }
 
+
+    pub fn shutdown(&self) -> &GracefulShutdownWithGuard {
+        &self.shutdown
+    }
+
+
+    /// Returns the application, the runtime and the master shutdown token.
+    /// Canceling the token immediately stops the application.
     pub fn build_with_runtime(
         mode: ApplicationMode,
-        notify_shutdown: ShutdownSignalSender,
-        shutdown: GracefulShutdown,
     ) -> (Self, AtraRuntime) {
         let runtime = match &mode {
             ApplicationMode::Single => tokio::runtime::Builder::new_current_thread()
@@ -131,26 +123,27 @@ impl Atra {
         };
 
         let runtime = AtraRuntime::new(runtime, None);
-
         (
             Self::new(
                 mode,
-                notify_shutdown,
-                shutdown,
+                GracefulShutdownWithGuard::new(),
                 runtime.handle().as_optional(),
             ),
             runtime,
         )
     }
 
+    #[cfg(test)]
     fn create_contained_with(
         mode: ApplicationMode,
         handle: OptionalAtraHandle,
-    ) -> (Self, GracefulShutdownBarrier) {
-        let (notify, shutdown, barrier) = graceful_shutdown();
-        let instance = Self::new(mode, notify, shutdown, handle);
-        (instance, barrier)
+    ) -> (Self, crate::runtime::GracefulShutdown) {
+        let shutdown = GracefulShutdownWithGuard::new();
+        let graceful_shutdown = shutdown.get().clone();
+        let instance = Self::new(mode, shutdown, handle);
+        (instance, graceful_shutdown)
     }
+
 
     // fn create_contained(mode: ApplicationMode) -> (Self, AtraRuntime, GracefulShutdownBarrier) {
     //     let (notify, shutdown, barrier) = graceful_shutdown();
@@ -161,129 +154,265 @@ impl Atra {
     /// Start the application
     pub async fn run(
         &mut self,
-        seeds: SeedDefinition,
-        configs: Configs,
+        instruction: RunInstruction
     ) -> Result<(), anyhow::Error> {
-        configure_logging(&configs);
-        self.run_without_logger(seeds, configs).await
+        configure_logging(&instruction.config);
+        let result = self.run_without_logger(instruction).await;
+        result
     }
 
     async fn run_without_logger(
-        &self,
-        seeds: SeedDefinition,
-        configs: Configs,
+        &mut self,
+        RunInstruction{config, seeds, recover_mode, ..}: RunInstruction,
     ) -> Result<(), anyhow::Error> {
+        let shutdown_and_handle = RuntimeContext::new(
+            self.shutdown.clone(),
+            self.handle.clone(),
+        );
+        let context = Arc::new(LocalContext::new(config, &shutdown_and_handle)?);
+        drop(shutdown_and_handle);
+
+        if let Some(seeds) = seeds {
+            seeds.fill_queue(context.url_queue()).await;
+        }
+        if recover_mode {
+            let _guard = self.shutdown.guard();
+            let queue = context.url_queue();
+            for (k, v) in context.get_link_state_manager().iter(IteratorMode::Start).filter_map(|value| value.ok()) {
+                let raw = unsafe { RawLinkState::from_slice_unchecked(v.as_ref()) };
+                let uri: AtraUri = String::from_utf8_lossy(k.as_ref()).parse().unwrap();
+
+                if !raw.kind().is_processed_and_stored() {
+                    queue.force_enqueue(
+                        UrlQueueElement::new(
+                            raw.is_seed().is_yes(),
+                            0,
+                            false,
+                            UrlWithDepth::new(uri, raw.depth())
+                        )
+                    )?;
+                }
+            }
+        }
+        if self.shutdown.get().child().is_shutdown() {
+            log::warn!("Shutdown before doing anything!");
+            return Ok(());
+        }
         match self.mode {
             ApplicationMode::Single => {
                 let start = OffsetDateTime::now_utc();
+                let mut recrawl_ct = 0;
+                loop {
+                    let guard = self.shutdown().guard();
+                    let barrier = WorkerBarrier::new(unsafe { NonZeroUsize::new_unchecked(1) });
+                    let value = match crawl(
+                        WorkerContext::create(0, recrawl_ct, context.clone())?,
+                        self.shutdown.get().child().clone(),
+                        Arc::new(barrier),
+                        GlobalErrorConsumer::new(),
+                    ).await {
+                        Ok(value) => {value}
+                        Err(err) => {
+                            return Err(err.into())
+                        }
+                    };
+                    drop(guard);
 
-                let shutdown_and_handle = RuntimeContext::new(
-                    self.shutdown.new_guard_instance().to_unsafe(),
-                    self.handle.clone(),
-                );
+                    let time_needed = OffsetDateTime::now_utc() - start;
+                    log::info!(
+                        "Needed {} for discovering {} websites",
+                        time_needed,
+                        context.discovered_websites()
+                    );
+                    log::info!(
+                        "Needed {} for crawling {} websites",
+                        time_needed,
+                        context
+                            .get_link_state_manager()
+                            .crawled_websites()
+                            .map(|value| value.to_string())
+                            .unwrap_or("# ERROR COUNTING#".to_string())
+                    );
 
-                let context = Arc::new(
-                    LocalContext::new(configs, shutdown_and_handle)
-                        .await
-                        .unwrap(),
-                );
-                let barrier = WorkerBarrier::new(unsafe { NonZeroUsize::new_unchecked(1) });
-                seeds.fill_queue(context.url_queue()).await;
-                crawl(
-                    WorkerContext::create(0, context.clone()).await?,
-                    self.shutdown.weak_handle(),
-                    Arc::new(barrier),
-                    GlobalErrorConsumer::new(),
-                )
-                .await
-                .expect("Failed the crawl.");
-                let time_needed = OffsetDateTime::now_utc() - start;
-                log::info!(
-                    "Needed {} for discovering {} websites",
-                    time_needed,
-                    context.discovered_websites()
-                );
-                log::info!(
-                    "Needed {} for crawling {} websites",
-                    time_needed,
-                    context
-                        .crawled_websites()
-                        .map(|value| value.to_string())
-                        .unwrap_or("# ERROR COUNTING#".to_string())
-                );
-                return Ok(());
+                    if self.shutdown.get().is_shutdown() {
+                        log::info!("Shutting down.");
+                        break
+                    }
+
+                    match value {
+                        ExitState::Shutdown => {
+                            log::info!("Shutting down.");
+                            break;
+                        }
+                        ExitState::NoMoreElements => {
+                            log::info!("No more elements!");
+                        }
+                    }
+
+                    if self.try_recrawls(context.as_ref()).await {
+                        recrawl_ct += 1;
+                    } else {
+                        break;
+                    }
+                }
+
+                Ok(())
             }
             ApplicationMode::Multi(worker) => {
                 let start = OffsetDateTime::now_utc();
-                let shutdown_and_handle = RuntimeContext::new(
-                    self.shutdown.new_guard_instance().to_unsafe(),
-                    self.handle.clone(),
-                );
+                let mut recrawl_ct = 0;
 
-                let context = Arc::new(
-                    LocalContext::new(configs, shutdown_and_handle)
-                        .await
-                        .unwrap(),
-                );
-                seeds.fill_queue(context.url_queue()).await;
-                let mut set = JoinSet::new();
-                let worker_count = worker.unwrap_or(num_cpus());
-                let barrier = Arc::new(WorkerBarrier::new(worker_count));
-                for i in 0..worker_count.get() {
-                    log::info!("Spawn Worker: {i}");
-                    let b = barrier.clone();
-                    let s = self.shutdown.clone();
-                    let context = WorkerContext::create(i, context.clone()).await?;
-                    set.spawn(async move {
-                        let context = context;
-                        while context.can_poll().await {
-                            match crawl(
-                                context.clone(),
-                                s.clone(),
-                                b.clone(),
-                                GlobalErrorConsumer::new(),
-                            )
-                            .await
-                            {
-                                Ok(s) => {
-                                    log::info!("Exit {i} with {s}.");
-                                    break
+                loop {
+                    let mut set = JoinSet::new();
+                    let worker_count = worker.unwrap_or(num_cpus());
+                    let barrier = Arc::new(WorkerBarrier::new(worker_count));
+                    for i in 0..worker_count.get() {
+                        log::info!("Spawn Worker: {i}");
+                        let b = barrier.clone();
+                        let shutdown = self.shutdown.clone();
+                        let context = WorkerContext::create(i, recrawl_ct, context.clone())?;
+                        set.spawn(async move {
+                            // This has to be a drop guard to make sure, that we do not fail to wait for a thread.
+                            let shutdown = shutdown;
+                            let context = context;
+                            let barrier = b.clone();
+                            let (i, state) = loop {
+                                if shutdown.get().is_shutdown() {
+                                    break (i, ExitState::Shutdown)
                                 }
-                                Err(_) => {
-                                    log::error!("Encountered some errors.");
+                                if context.can_poll().await {
+                                    match crawl(
+                                        context.clone(),
+                                        shutdown.get().child().clone(),
+                                        barrier.clone(),
+                                        GlobalErrorConsumer::new(),
+                                    ).await
+                                    {
+                                        Ok(s) => {
+                                            log::info!("Exit {i} with {s}.");
+                                            break (i, s);
+                                        }
+                                        Err(_) => {
+                                            log::error!("Encountered some errors.");
+                                        }
+                                    }
+                                } else {
+                                    log::debug!("Wait for all stopping.");
+                                    let result = select! {
+                                        _ = shutdown.get().child().wait() => {
+                                            ContinueOrStop::Cancelled(ExitState::NoMoreElements)
+                                        }
+                                        value = barrier.wait_for_is_cancelled(
+                                            &context,
+                                            ExitState::NoMoreElements
+                                        ) => {
+                                            value
+                                        }
+                                    };
+
+                                    match result {
+                                        ContinueOrStop::Continue(_) => {
+                                            continue
+                                        }
+                                        ContinueOrStop::Cancelled(value) => {
+                                            log::info!("Stopping worker {} after waiting to stop with {}", i, value);
+                                            break (i, value);
+                                        }
+                                    }
                                 }
+                            };
+
+                            b.trigger_cancellation();
+                            (i, state)
+                        });
+                    }
+                    let mut is_stop = false;
+                    while let Some(res) = set.join_next().await {
+                        match res {
+                            Ok((i, s)) => {
+                                log::info!("Stopped worker {i} due to {s}.");
+                                is_stop |= matches!(s, ExitState::Shutdown)
+                            }
+                            Err(err) => {
+                                log::error!("Thread join error: {err}");
+                                log::error!("Trying to shut down in a safe manner...");
+                                self.shutdown.get().shutdown();
                             }
                         }
+                    }
+                    let time_needed = OffsetDateTime::now_utc() - start;
+                    log::info!(
+                        "Needed {} for discovering {} websites",
+                        time_needed,
+                        context.discovered_websites()
+                    );
+                    log::info!(
+                        "Needed {} for crawling {} websites",
+                        time_needed,
+                        context
+                            .get_link_state_manager()
+                            .crawled_websites()
+                            .map(|value| value.to_string())
+                            .unwrap_or("# ERROR COUNTING#".to_string())
+                    );
 
-                        b.trigger_cancellation();
-                        i
-                    });
+                    if is_stop || self.shutdown.get().is_shutdown() {
+                        log::info!("Stopped by shutdown.");
+                        break;
+                    }
+
+                    log::info!("Start to check if we have some kind of recrawl.");
+
+                    if self.try_recrawls(context.as_ref()).await {
+                        recrawl_ct += 1;
+                    } else {
+                        log::info!("Shutting down, because nothing to recrawl.");
+                        break;
+                    }
                 }
-                while let Some(res) = set.join_next().await {
-                    log::info!("Stopped worker {res:?}.")
-                }
-                let time_needed = OffsetDateTime::now_utc() - start;
-                log::info!(
-                    "Needed {} for discovering {} websites",
-                    time_needed,
-                    context.discovered_websites()
-                );
-                log::info!(
-                    "Needed {} for crawling {} websites",
-                    time_needed,
-                    context
-                        .crawled_websites()
-                        .map(|value| value.to_string())
-                        .unwrap_or("# ERROR COUNTING#".to_string())
-                );
                 Ok(())
             }
         }
+
+
     }
+
+
+    /// Returns true if there are more thins to crawl
+    async fn try_recrawls<C>(&self, context: &C) -> bool
+    where
+        C: SupportsUrlQueue + SupportsLinkState,
+    {
+        log::info!("Start to check if we have some kind of recrawl.");
+
+        if context
+            .get_link_state_manager()
+            .check_if_there_are_any_recrawlable_links()
+            .await
+        {
+            let queue = context.url_queue();
+            context
+                .get_link_state_manager()
+                .collect_recrawlable_links(|is_seed, url| {
+                    queue
+                        .force_enqueue(UrlQueueElement::new(is_seed.is_yes(), 0, false, url))
+                        .unwrap()
+                })
+                .await;
+            log::info!("Finished refilling queue with data.");
+            !queue.is_empty().await
+        } else {
+            false
+        }
+    }
+
+
 }
 
+
+
 /// The mode of the application
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum ApplicationMode {
     Single,
     /// Contains the number of threads to be used
@@ -295,8 +424,9 @@ mod test {
     use super::{ApplicationMode, Atra};
     use crate::app::constants::ATRA_LOGO;
     use crate::config::crawl::UserAgent;
-    use crate::config::{BudgetSetting, Configs, CrawlConfig};
-    use crate::runtime::OptionalAtraHandle;
+    use crate::config::{BudgetSetting, CrawlConfig};
+    use crate::config::Config as AtraConfig;
+    use crate::runtime::{OptionalAtraHandle, ShutdownReceiver, ShutdownSender};
     use crate::seed::SeedDefinition;
     use log::LevelFilter;
     use log4rs::append::file::FileAppender;
@@ -306,7 +436,20 @@ mod test {
     use std::fs::{read_dir, File};
     use std::io::Read;
     use std::path::{Path, PathBuf};
+    use rocksdb::IteratorMode;
     use time::Duration;
+    use time::ext::NumericalDuration;
+    use tokio::select;
+    use tokio::task::JoinSet;
+    use tokio::time::sleep;
+    use crate::app::instruction::RunInstruction;
+    use crate::contexts::local::LocalContext;
+    use crate::contexts::traits::{SupportsLinkState, SupportsUrlQueue};
+    use crate::crawl::{SlimCrawlResult, StoredDataHint};
+    use crate::link_state::{LinkStateKind, LinkStateLike, RawLinkState};
+    use crate::queue::UrlQueue;
+    use crate::url::AtraUri;
+    use crate::warc_ext::WarcSkipInstruction;
 
     fn recurse(path: impl AsRef<Path>) -> Vec<PathBuf> {
         let Ok(entries) = read_dir(path) else {
@@ -361,11 +504,157 @@ mod test {
         let _ = log4rs::init_config(config).unwrap();
     }
 
+    async fn execute_crawl(config: AtraConfig, seeds: Option<SeedDefinition>){
+        let (mut app, shutdown) =
+            Atra::create_contained_with(ApplicationMode::Single, None);
+
+        let barrier_copy = shutdown.clone();
+        let a = async move {
+            log::info!("============ WAITING! ============");
+            sleep(20.seconds().try_into().unwrap()).await;
+            let _ = barrier_copy.shutdown();
+            log::info!("============ STOP! ============");
+            ()
+        };
+
+        let b = async move {
+            app.run_without_logger(
+                RunInstruction {
+                    config,
+                    seeds,
+                    recover_mode: false,
+                    mode: ApplicationMode::Single
+                }
+            )
+                .await
+                .expect("no errors");
+            ()
+        };
+
+
+        let mut x = JoinSet::new();
+        x.spawn(a);
+        x.spawn(b);
+        x.join_all().await;
+        shutdown.wait().await;
+    }
+
+    fn show_stats(config: AtraConfig){
+        let local = LocalContext::new_without_runtime(config).expect("Should load!");
+
+        println!("{}", local.url_queue().len_blocking());
+        println!("{}", local.crawl_db().len());
+        println!("{}", local.get_link_state_manager().len());
+
+        println!("=======");
+        for (k, v) in local.get_link_state_manager().iter(IteratorMode::Start).filter_map(
+            |value| value.ok()
+        ).map(|(k, v)| {
+            let raw = unsafe { RawLinkState::from_slice_unchecked(v.as_ref()) };
+            let uri: AtraUri = String::from_utf8_lossy(k.as_ref()).parse().unwrap();
+            (uri, raw.as_link_state().into_owned())
+        }) {
+            println!("{k}\n    {v:?}");
+            assert_ne!(v.kind(), LinkStateKind::ReservedForCrawl);
+            assert_ne!(v.kind(), LinkStateKind::Crawled);
+            assert!(matches!(v.kind(), LinkStateKind::Discovered | LinkStateKind::ProcessedAndStored))
+        }
+        println!("=======");
+        for (k, v) in local.crawl_db().iter(IteratorMode::Start).filter_map(
+            |value| value.ok()
+        ).map(|(k, v)| {
+            let k: AtraUri = String::from_utf8_lossy(k.as_ref()).parse().unwrap();
+            let v: SlimCrawlResult = bincode::deserialize(v.as_ref()).unwrap();
+            (k, v)
+        }) {
+            println!("{k}");
+            match v.stored_data_hint {
+                StoredDataHint::External(value) => {
+                    println!("    External: {} - {}", value.exists(), value);
+                }
+                StoredDataHint::Warc(value) => {
+                    match value {
+                        WarcSkipInstruction::Single { pointer, is_base64, header_signature_octet_count } => {
+                            println!("    Single Warc: {} - {} ({}, {}, {:?})", pointer.path().exists(), pointer.path(), is_base64, header_signature_octet_count, pointer.pointer());
+                        }
+                        WarcSkipInstruction::Multiple { pointers, header_signature_octet_count, is_base64 } => {
+                            println!("    Multiple Warc: ({}, {})", is_base64, header_signature_octet_count);
+                            for pointer in pointers {
+                                println!("        {} - {} ({}, {}, {:?})", pointer.path().exists(), pointer.path(), is_base64, header_signature_octet_count, pointer.pointer());
+                            }
+                        }
+                    }
+
+                }
+                StoredDataHint::InMemory(value) => {
+                    println!("    InMemory: {}", value.len());
+                }
+                StoredDataHint::Associated => {
+                    println!("    Associated!")
+                }
+                StoredDataHint::None => {
+                    println!("    None!")
+                }
+            }
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn can_restart() {
+        init();
+
+        let mut config: CrawlConfig = CrawlConfig::default();
+        config.budget.default = BudgetSetting::Absolute {
+            depth: 2,
+            recrawl_interval: None,
+            request_timeout: None,
+        };
+        config.delay = Some(Duration::milliseconds(1000));
+        config.user_agent = UserAgent::Custom("TestCrawl/Atra/v0.1.0".to_string());
+        let mut config = AtraConfig::new(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            config,
+        );
+
+        config.paths.root = "test/atra_run_0".into();
+
+        if config.paths.root.exists() {
+            std::fs::remove_dir_all(&config.paths.root).unwrap();
+        }
+        std::fs::create_dir_all(&config.paths.root).unwrap();
+
+        execute_crawl(
+            config.clone(),
+            Some(
+                SeedDefinition::Multi(vec![
+                    "http://www.antsandelephants.de".to_string(),
+                    "http://www.aperco.info".to_string(),
+                    "http://www.applab.de/".to_string(),
+                    "http://www.carefornetworks.de/".to_string(),
+                    "https://ticktoo.com/".to_string(),
+                ])
+            )
+        ).await;
+
+        show_stats(config.clone());
+
+        execute_crawl(
+            config.clone(),
+            None
+        ).await;
+
+        println!("\n\n========\n\n");
+
+        show_stats(config.clone());
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
     async fn can_multithread() {
         init();
-        let (app, mut barrier) =
-            Atra::create_contained_with(ApplicationMode::Multi(None), OptionalAtraHandle::None);
+        let (mut app, shutdown) =
+            Atra::create_contained_with(ApplicationMode::Multi(None), None);
 
         let mut config: CrawlConfig = CrawlConfig::default();
         config.budget.default = BudgetSetting::Absolute {
@@ -376,39 +665,65 @@ mod test {
         config.delay = Some(Duration::milliseconds(1000));
         config.user_agent = UserAgent::Custom("TestCrawl/Atra/v0.1.0".to_string());
 
-        let configs = Configs::new(
+        let config = AtraConfig::new(
+            Default::default(),
             Default::default(),
             Default::default(),
             config,
-            Default::default(),
         );
 
         app.run_without_logger(
-            SeedDefinition::Multi(vec![
-                "http://www.antsandelephants.de".to_string(),
-                "http://www.aperco.info".to_string(),
-                "http://www.applab.de/".to_string(),
-                "http://www.carefornetworks.de/".to_string(),
-                "https://ticktoo.com/".to_string(),
-            ]),
-            configs,
+            RunInstruction {
+                config,
+                seeds: Some(
+                    SeedDefinition::Multi(vec![
+                        "http://www.antsandelephants.de".to_string(),
+                        "http://www.aperco.info".to_string(),
+                        "http://www.applab.de/".to_string(),
+                        "http://www.carefornetworks.de/".to_string(),
+                        "https://ticktoo.com/".to_string(),
+                    ])
+                ),
+                recover_mode: false,
+                mode: ApplicationMode::Multi(None)
+            }
         )
         .await
         .expect("no errors");
 
         drop(app);
-        barrier.wait().await;
+        shutdown.wait().await;
     }
+}
+
+
+pub trait RunContextProvider: Sync + Send + 'static {
+    type Context: Context;
+    type Error:
+    From<<Self::Context as SupportsSlimCrawlResults>::Error>
+    + From<<Self::Context as SupportsLinkSeeding>::Error>
+    + From<<Self::Context as SupportsCrawlResults>::Error>
+    + From<<<Self::Context as SupportsLinkState>::LinkStateManager as LinkStateManager>::Error>
+    + From<<Self::Context as SupportsPolling>::Error>
+    + From<<Self::Context as SupportsCrawling>::Error>
+    + From<QueueError>
+    + From<io::Error>
+    + Error;
+
+    type ErrorConsumer: ErrorConsumer<Self::Error>;
+
+    fn create_context(&self, worker_id: usize, retry: usize) -> Self::Context;
+    fn create_consumer(&self) -> Self::ErrorConsumer;
 }
 
 #[cfg(test)]
 mod config_test {
-    use crate::config::Configs;
+    use crate::app::config::try_load_from_path;
     use crate::seed::read_seeds;
 
     #[test]
     fn can_load() {
-        Configs::load_from("test_crawl/atra").expect("Works");
+        try_load_from_path("test_crawl/atra").expect("Works");
         let _ = read_seeds("test_crawl/atra/seeds.txt").expect("Was not able to read file");
     }
 }

@@ -12,13 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod errors;
-mod file;
-mod file_typed;
-pub mod polling;
-mod traits;
+pub mod errors;
+mod raw;
+mod url;
 
 pub use errors::QueueError;
-pub use file::RawAgingQueueFile;
-pub use traits::AgingQueueElement;
-pub use traits::RawAgingQueue;
+pub use raw::implementation::RawAgingQueueFile;
+pub use raw::AgingQueueElement;
+pub use raw::EnqueueCalled;
+pub use raw::RawSupportsForcedQueueElement;
+
+pub use url::element::UrlQueueElement;
+pub use url::queue::UrlQueueWrapper;
+pub use url::result::*;
+pub use url::SupportsForcedQueueElement;
+pub use url::SupportsSeeding;
+pub use url::UrlQueue;
+pub use url::UrlQueueElementRef;
+#[cfg(test)]
+pub use url::UrlQueueElementRefCounter;

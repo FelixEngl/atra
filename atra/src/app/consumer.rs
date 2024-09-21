@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::client::ClientError;
 use crate::contexts::local::LinkHandlingError;
 use crate::contexts::worker::CrawlWriteError;
 use crate::crawl::ErrorConsumer;
@@ -44,13 +43,19 @@ pub enum GlobalError {
     #[error(transparent)]
     QueueError(#[from] QueueError),
     #[error(transparent)]
-    ClientError(#[from] ClientError),
+    ClientError(#[from] reqwest_middleware::Error),
     #[error(transparent)]
     IOError(#[from] std::io::Error),
+    #[error(transparent)]
+    RequestError(#[from] reqwest::Error),
 }
 
 impl ErrorConsumer<GlobalError> for GlobalErrorConsumer {
     type Error = GlobalError;
+
+    fn consume_init_error(&self, e: GlobalError) -> Result<(), Self::Error> {
+        self.consume_crawl_error(e)
+    }
 
     fn consume_crawl_error(&self, err: GlobalError) -> Result<(), Self::Error> {
         /// true = return OK
@@ -146,6 +151,10 @@ impl ErrorConsumer<GlobalError> for GlobalErrorConsumer {
                     log::warn!("The url was not valid: {e}");
                     true
                 }
+                QueueError::LockPoisoned => {
+                    log::error!("The queue locks are poisoned!");
+                    false
+                }
             }
         }
 
@@ -180,6 +189,10 @@ impl ErrorConsumer<GlobalError> for GlobalErrorConsumer {
             }
             GlobalError::IOError(e) => {
                 log::debug!("Client error: {e}");
+                true
+            }
+            GlobalError::RequestError(err) => {
+                log::debug!("{err}");
                 true
             }
         };

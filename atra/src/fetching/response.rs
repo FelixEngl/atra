@@ -33,13 +33,10 @@ pub struct ResponseData {
     pub status_code: StatusCode,
     /// The final destination of the page if redirects were performed [Not implemented in the chrome feature].
     pub final_redirect_destination: Option<String>,
-    #[cfg(feature = "chrome")]
-    /// Page object for chrome. The page may be closed when accessing it on another thread from concurrency.
-    chrome_page: Option<chromiumoxide::Page>,
 }
 
 impl ResponseData {
-    #[cfg(not(feature = "chrome"))]
+    #[cfg(test)]
     pub fn reconstruct(
         content: RawVecData,
         url: UrlWithDepth,
@@ -53,24 +50,6 @@ impl ResponseData {
             headers,
             status_code,
             final_redirect_destination,
-        }
-    }
-
-    #[cfg(feature = "chrome")]
-    pub fn reconstruct(
-        content: RawVecData,
-        url: UrlWithDepth,
-        headers: Option<HeaderMap>,
-        status_code: StatusCode,
-        chrome_page: Option<chromiumoxide::Page>,
-    ) -> Self {
-        Self {
-            content,
-            url,
-            headers,
-            status_code,
-            final_redirect_destination,
-            chrome_page,
         }
     }
 

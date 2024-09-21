@@ -12,18 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::cmp::max;
 use crate::io::errors::{ErrorWithPath, ToErrorWithPath};
-use crate::io::templating::{file_name_template, FileNameTemplate, FileNameTemplateArgs};
+use crate::io::templating::{file_name_template, FileNameTemplate, FileNameTemplateArgs, RecoverInstruction};
 use crate::io::unique_path_provider::{UniquePathProvider, UniquePathProviderWithTemplate};
 use crate::stores::warc::WarcFilePathProvider;
 use camino::{Utf8Path, Utf8PathBuf};
-use data_encoding::BASE64URL_NOPAD;
 use std::fmt::Debug;
-use std::hash::{Hash, Hasher};
+use std::fs::{File};
+use std::hash::Hash;
 use std::io;
-use std::io::ErrorKind;
-use tokio::sync::Mutex;
+use std::io::{BufRead, BufReader, BufWriter, ErrorKind};
+use std::sync::{Arc, LazyLock};
+use regex::Regex;
+use std::sync::Mutex;
+use byteorder::WriteBytesExt;
 use twox_hash::xxh3::HasherExt;
+use crate::io::serial::{SerialProvider, SerialProviderKind, SerialValue};
 
 pub trait AtraFS {
     /// Creates a unique path to a fresh data file.
@@ -35,9 +40,10 @@ pub trait AtraFS {
     /// Deletes a datafile
     fn cleanup_data_file(&self, name: impl AsRef<Utf8Path> + Debug) -> io::Result<()>;
 
-    async fn create_worker_file_provider(
+    fn create_worker_file_provider(
         &self,
         worker_id: usize,
+        recrawl_iteration: usize,
     ) -> Result<WorkerFileSystemAccess, ErrorWithPath>;
 }
 
@@ -69,9 +75,8 @@ impl FileSystemAccess {
             std::fs::create_dir_all(&big_file_folder).to_error_with_path(&collection_root)?;
         }
 
-        let path_provider_big_file = UniquePathProvider::new(big_file_folder).with_template(
-            file_name_template!(arg!@"url" _ timestamp64 _ serial ".dat").unwrap(),
-        );
+        let path_provider_big_file = UniquePathProvider::new(big_file_folder, Default::default())
+            .with_template(file_name_template!(arg!@"url" _ timestamp64 _ serial ".dat").unwrap());
 
         Ok(Self {
             collection_root,
@@ -104,15 +109,17 @@ impl AtraFS for FileSystemAccess {
         std::fs::remove_file(path)
     }
 
-    async fn create_worker_file_provider(
+    fn create_worker_file_provider(
         &self,
         worker_id: usize,
+        recrawl_iteration: usize,
     ) -> Result<WorkerFileSystemAccess, ErrorWithPath> {
-        let _ = self.filesystem_lock.lock().await;
+        let _unused = self.filesystem_lock.lock();
         WorkerFileSystemAccess::new(
             self.collection_root.clone(),
             self.worker_base.clone(),
             worker_id,
+            recrawl_iteration,
         )
     }
 }
@@ -120,28 +127,130 @@ impl AtraFS for FileSystemAccess {
 /// A worker bound access for writing warcs
 #[derive(Debug)]
 pub struct WorkerFileSystemAccess {
-    provider: UniquePathProviderWithTemplate,
+    root: Utf8PathBuf,
+    provider: Arc<UniquePathProviderWithTemplate>,
+    journal: Arc<Mutex<BufWriter<File>>>
 }
+
+static FILE_NAME_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new("rc_(\\d+)_(\\d+)\\.warc").unwrap()
+});
+
+
+
 
 impl WorkerFileSystemAccess {
     pub fn new(
         collection_root: Utf8PathBuf,
         worker_base: FileNameTemplate,
         worker_id: usize,
+        recrawl_iteration: usize,
     ) -> Result<Self, ErrorWithPath> {
         let worker_root = collection_root.join(format!("worker_{worker_id}"));
-        if !worker_root.exists() {
-            std::fs::create_dir_all(&worker_root).to_error_with_path(&worker_root)?;
+        let path_to_journal = worker_root.join("warc.journal");
+
+
+
+        let recover_instruction = if path_to_journal.exists() {
+            let reader = File::options().read(true).open(&path_to_journal).to_error_with_path(&path_to_journal)?;
+            let last_pos = BufReader::new(reader).lines().filter_map(|value| {
+                value.ok().and_then(|value| (!value.is_empty()).then_some(value))
+            }).last();
+            if let Some(last) = last_pos {
+                serde_json::from_str::<RecoverInstruction>(&last).ok()
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let (provider, recover) =
+            if !worker_root.exists() || !worker_root.read_dir_utf8().is_ok_and(|mut value| value.next().is_some()) {
+                std::fs::create_dir_all(&worker_root).to_error_with_path(&worker_root)?;
+                (UniquePathProvider::new(&worker_root, SerialProviderKind::Long.into()).with_template(
+                    file_name_template!(ref worker_base _ worker_id _ "rc" _ recrawl_iteration _ serial ".warc")
+                        .unwrap(),
+                ), false)
+            } else if let Some(recover) = recover_instruction {
+                let mut provider = UniquePathProvider::new(&worker_root, SerialProviderKind::Long.into()).with_template(
+                    file_name_template!(ref worker_base _ worker_id _ "rc" _ recrawl_iteration _ serial ".warc")
+                        .unwrap(),
+                );
+                provider.recover(recover);
+                let _ = provider.provide_path_no_args();
+                (provider, true)
+            } else {
+                log::warn!("Failed to find recover information. Start with fallback recovery mode.");
+                let regex = FILE_NAME_REGEX.clone();
+                let mut last_serial = 0;
+                for file in worker_root.read_dir_utf8().to_error_with_path(&worker_root)? {
+                    if let Ok(file) = file {
+                        let ft = file.file_type().to_error_with_path(&worker_root)?;
+                        if ft.is_file() {
+                            if let Some(cap) = regex.captures(file.file_name()) {
+                                let recrawl_read: u64 = if let Ok(value) = cap[1].parse() {
+                                    value
+                                } else {
+                                    continue
+                                };
+                                if recrawl_read as usize != recrawl_iteration {
+                                    continue
+                                }
+                                        let serial_read: u64 = if let Ok(value) = cap[2].parse::<u64>() {
+                                    value + 1
+                                } else {
+                                    continue
+                                };
+                                last_serial = max(last_serial, serial_read as usize);
+                            }
+                        }
+                    }
+                }
+                (UniquePathProvider::new(&worker_root, SerialProvider::with_initial_state(
+                    SerialValue::Long(last_serial as u64)
+                )).with_template(
+                    file_name_template!(ref worker_base _ worker_id _ "rc" _ recrawl_iteration _ serial ".warc")
+                        .unwrap(),
+                ), true)
+            };
+
+        if recover {
+            loop {
+                let result = provider.current_path_no_args().expect("This should never fail!");
+                if !result.exists() {
+                    break;
+                }
+                let _ = provider.provide_path_no_args().expect("This should never fail!");
+            }
         }
-        let provider = UniquePathProvider::new(&worker_root).with_template(
-            file_name_template!(ref worker_base _ worker_id _ timestamp64 _ serial ".warc")
-                .unwrap(),
-        );
+
+        let journal =
+            BufWriter::new(
+                File::options()
+                    .write(true)
+                    .create(true)
+                    .append(true)
+                    .open(&path_to_journal)
+                    .to_error_with_path(&path_to_journal)?
+            );
+
+
+
         Ok(Self {
-            // worker_root,
-            // worker_base,
-            provider,
+            root: worker_root,
+            provider: Arc::new(provider),
+            journal: Arc::new(Mutex::new(journal))
         })
+    }
+
+    fn update_journal(&self) {
+        let recover = self.provider.get_recover_information();
+        let mut w = self.journal.lock().unwrap();
+        if serde_json::to_writer(w.get_mut(), &recover).is_err() {
+            log::warn!("Failed to write to warc journey for {}", self.root.join("warc.journal").to_string())
+        }
+        let _ = w.get_mut().write_u8(b'\n');
     }
 }
 
@@ -151,9 +260,9 @@ impl WarcFilePathProvider for WorkerFileSystemAccess {
         loop {
             let result = self.provider.provide_path_no_args().unwrap();
             if !result.exists() {
+                self.update_journal();
                 break Ok(result);
             }
-
             match last {
                 None => {
                     last = Some(result);
@@ -172,5 +281,30 @@ impl WarcFilePathProvider for WorkerFileSystemAccess {
                 }
             }
         }
+    }
+}
+
+impl Drop for WorkerFileSystemAccess {
+    fn drop(&mut self) {
+        self.update_journal();
+    }
+}
+
+
+
+#[cfg(test)]
+mod test {
+    use crate::io::fs::FILE_NAME_REGEX;
+
+    #[test]
+    fn can_properly_parse(){
+        const TEST: &str = "atra_0_0_rc_42_123.warc";
+        let cap = FILE_NAME_REGEX.captures(TEST).expect("Can read fn");
+        println!("{}", &cap[1]);
+        println!("{}", &cap[2]);
+        let recrawl_read: u64 = (&cap[1]).parse().expect("Expected a read recrawl info");
+        assert_eq!(42, recrawl_read, "Failed recrawl read: {recrawl_read}");
+        let serial_read: u64 = (&cap[2]).parse().expect("Expected a serial info");
+        assert_eq!(123, serial_read, "Failed serial read: {recrawl_read}");
     }
 }

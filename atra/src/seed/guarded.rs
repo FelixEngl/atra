@@ -13,32 +13,51 @@
 // limitations under the License.
 
 use crate::seed::error::SeedCreationError;
+#[cfg(test)]
 use crate::seed::unguarded::UnguardedSeed;
 use crate::seed::BasicSeed;
-use crate::url::guard::{UrlGuard, UrlGuardian};
-use crate::url::AtraUrlOrigin;
+use crate::url::guard::UrlGuardian;
 use crate::url::{AtraOriginProvider, UrlWithDepth};
+use crate::url::{AtraUrlOrigin, UrlWithGuard};
+use std::mem::transmute;
 
 /// A guarded version, it is keeping the guard for the host information.
 /// The lifetime depends on
-pub struct GuardedSeed<'a, 'guard: 'a, T: UrlGuardian> {
-    host_guard: &'a UrlGuard<'guard, T>,
-    url: &'a UrlWithDepth,
+#[repr(transparent)]
+pub struct GuardedSeed<'guard, Guardian>
+where
+    Guardian: UrlGuardian + 'static,
+{
+    url_with_guard: &'guard UrlWithGuard<'static, Guardian>,
 }
 
-impl<'a, 'guard: 'a, T: UrlGuardian> GuardedSeed<'a, 'guard, T> {
+unsafe impl<'guard, Guardian> Send for GuardedSeed<'guard, Guardian> where
+    Guardian: UrlGuardian + 'static
+{
+}
+unsafe impl<'guard, Guardian> Sync for GuardedSeed<'guard, Guardian> where
+    Guardian: UrlGuardian + 'static
+{
+}
+
+impl<'guard, Guardian> GuardedSeed<'guard, Guardian>
+where
+    Guardian: UrlGuardian + 'static,
+{
     /// Creates a guarded seed from a guard and a url
-    pub fn new(
-        host_guard: &'a UrlGuard<'guard, T>,
-        url: &'a UrlWithDepth,
-    ) -> Result<Self, SeedCreationError> {
-        if let Some(host) = url.atra_origin() {
-            if host.eq(host_guard.origin()) {
-                Ok(unsafe { Self::new_unchecked(host_guard, url) })
+    pub fn new<'a>(
+        url_with_guard: &'guard UrlWithGuard<'a, Guardian>,
+    ) -> Result<Self, SeedCreationError>
+    where
+        'guard: 'a,
+    {
+        if let Some(host) = url_with_guard.seed_url().atra_origin() {
+            if host.eq(url_with_guard.guard().origin()) {
+                Ok(unsafe { Self::new_unchecked(url_with_guard) })
             } else {
                 Err(SeedCreationError::GuardAndUrlDifferInOrigin {
                     origin_from_url: host.clone(),
-                    origin_from_guard: host_guard.origin().to_owned(),
+                    origin_from_guard: url_with_guard.guard().origin().to_owned(),
                 })
             }
         } else {
@@ -47,40 +66,55 @@ impl<'a, 'guard: 'a, T: UrlGuardian> GuardedSeed<'a, 'guard, T> {
     }
 
     /// Creates the new url but does not do any host to guard checks.
-    pub unsafe fn new_unchecked(
-        host_guard: &'a UrlGuard<'guard, T>,
-        url: &'a UrlWithDepth,
-    ) -> Self {
-        Self { host_guard, url }
-    }
-
-    /// Removes the dependency from the guard.
-    pub fn unguard(self) -> UnguardedSeed {
-        let origin = self.origin().to_owned();
-        unsafe { UnguardedSeed::new_unchecked(self.url.clone(), origin) }
+    pub unsafe fn new_unchecked<'a>(url_with_guard: &'guard UrlWithGuard<'a, Guardian>) -> Self
+    where
+        'guard: 'a,
+    {
+        Self {
+            url_with_guard: unsafe { transmute(url_with_guard) },
+        }
     }
 }
 
-impl<'a, 'guard: 'a, T: UrlGuardian> BasicSeed for GuardedSeed<'a, 'guard, T> {
+impl<'guard, Guardian> BasicSeed for GuardedSeed<'guard, Guardian>
+where
+    Guardian: UrlGuardian + 'static,
+{
     #[inline]
     fn url(&self) -> &UrlWithDepth {
-        self.url
+        self.url_with_guard.seed_url()
     }
 
     #[inline]
     fn origin(&self) -> &AtraUrlOrigin {
-        &self.host_guard.origin()
+        self.url_with_guard.guard().origin()
+    }
+
+    fn is_original_seed(&self) -> bool {
+        self.url_with_guard.is_seed()
+    }
+
+    #[cfg(test)]
+    #[inline]
+    fn create_unguarded(&self) -> UnguardedSeed {
+        self.url_with_guard.get_unguarded_seed()
     }
 }
 
-impl<'a, 'guard: 'a, T: UrlGuardian> AsRef<UrlWithDepth> for GuardedSeed<'a, 'guard, T> {
+impl<'guard, Guardian> AsRef<UrlWithDepth> for GuardedSeed<'guard, Guardian>
+where
+    Guardian: UrlGuardian + 'static,
+{
     #[inline]
     fn as_ref(&self) -> &UrlWithDepth {
         self.url()
     }
 }
 
-impl<'a, 'guard: 'a, T: UrlGuardian> AsRef<AtraUrlOrigin> for GuardedSeed<'a, 'guard, T> {
+impl<'guard, Guardian> AsRef<AtraUrlOrigin> for GuardedSeed<'guard, Guardian>
+where
+    Guardian: UrlGuardian + 'static,
+{
     #[inline]
     fn as_ref(&self) -> &AtraUrlOrigin {
         self.origin()

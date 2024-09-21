@@ -65,6 +65,7 @@ impl ExtractedLink {
     //     }
     // }
 
+    /// Makes sure that the extracted link is nor the same as the base link.
     pub fn is_not(&self, url: &UrlWithDepth) -> bool {
         match self {
             ExtractedLink::OnSeed { url: known, .. } => url != known,

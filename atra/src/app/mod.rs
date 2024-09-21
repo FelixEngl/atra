@@ -12,50 +12,78 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::app::args::{consume_args, ConsumedArgs};
-use crate::config::Configs;
-use crate::runtime::graceful_shutdown;
-use crate::seed::SeedDefinition;
-use log::info;
-
 mod args;
 mod atra;
 mod constants;
 pub mod consumer;
 mod logging;
 
-use crate::app::atra::{ApplicationMode, Atra};
+#[cfg(test)]
+mod terminal;
+mod config;
+mod instruction;
+mod view;
+
+use anyhow::Error;
+use atra::{Atra};
 pub use args::AtraArgs;
+pub use atra::ApplicationMode;
+use crate::app::instruction::{prepare_instruction, Instruction, RunInstruction};
 
 pub fn exec_args(args: AtraArgs) {
-    match consume_args(args) {
-        ConsumedArgs::RunConfig(mode, seeds, configs) => {
-            execute(mode, seeds, configs);
+    match prepare_instruction(args) {
+        Ok(Instruction::RunInstruction(instruction)) => {
+            execute(instruction);
         }
-        ConsumedArgs::Nothing => {}
+        Ok(Instruction::Nothing) => {}
+        Err(err) => {
+            log::error!("Failed with: {err}");
+        }
     }
 }
 
 /// Execute the
-fn execute(application_mode: ApplicationMode, seed_definition: SeedDefinition, configs: Configs) {
-    let (notify, shutdown, mut barrier) = graceful_shutdown();
-    let (mut atra, runtime) = Atra::build_with_runtime(application_mode, notify, shutdown);
-    let signal_handler = tokio::signal::ctrl_c();
+fn execute(instruction: RunInstruction) {
+    let (mut atra, runtime) = Atra::build_with_runtime(instruction.mode);
+    
     runtime.block_on(async move {
-        tokio::select! {
-            res = atra.run(seed_definition, configs) => {
-                if let Err(err) = res {
-                    log::error!("Error: {err}");
+        let shutdown = atra.shutdown().get().clone();
+
+        let shutdown_result = {
+            let ctrl_c = tokio::signal::ctrl_c();
+            let future = atra.run(instruction);
+            tokio::pin!(future);
+
+            let mut shutdown_result: Option<Result<(), Error>> = None;
+
+            tokio::select! {
+                res = &mut future => {
+                    log::info!("Crawl finished.");
+                    shutdown_result.replace(res);
+                }
+                _ = ctrl_c => {
+                    log::info!("Starting with shutdown by CTRL-C.");
+                    shutdown.shutdown();
                 }
             }
-            _ = signal_handler => {
-                log::info!("Shutting down.");
+
+
+            if let Some(shutdown_result) = shutdown_result {
+                shutdown_result
+            } else {
+                log::info!("Wait for workers to stop...");
+                future.await
             }
+        };
+
+        if let Err(err) = shutdown_result {
+            log::error!("Exit with error: {err}");
         }
         drop(atra);
-        barrier.wait().await;
+        log::info!("Waiting for complete shutdown...");
+        shutdown.wait().await;
     });
-    info!("Exit application.")
+    log::info!("Complete shutdown.")
 }
 
 #[cfg(test)]
@@ -64,9 +92,10 @@ mod test {
     use crate::app::atra::ApplicationMode;
     use crate::app::{execute, AtraArgs};
     use crate::config::crawl::UserAgent;
-    use crate::config::{BudgetSetting, Configs, CrawlConfig};
+    use crate::config::{BudgetSetting, Config, CrawlConfig};
     use crate::seed::SeedDefinition;
     use time::Duration;
+    use crate::app::instruction::RunInstruction;
 
     #[test]
     pub fn can_generate_example_config() {
@@ -89,7 +118,7 @@ mod test {
                 timeout: None,
                 agent: UserAgent::Custom("TestCrawl/Atra/v0.1.0".to_string()),
                 log_to_file: true,
-                delay: None
+                delay: None,
             }),
             generate_example_config: false,
         };
@@ -109,20 +138,25 @@ mod test {
         config.user_agent = UserAgent::Custom("TestCrawl/Atra/v0.1.0".to_string());
 
         execute(
-            ApplicationMode::Multi(None),
-            SeedDefinition::Multi(vec![
-                "http://www.antsandelephants.de".to_string(),
-                "http://www.aperco.info".to_string(),
-                "http://www.applab.de/".to_string(),
-                "http://www.carefornetworks.de/".to_string(),
-                "https://ticktoo.com/".to_string(),
-            ]),
-            Configs::new(
-                Default::default(),
-                Default::default(),
-                config,
-                Default::default(),
-            ),
+            RunInstruction {
+                mode: ApplicationMode::Multi(None),
+                config: Config::new(
+                    Default::default(),
+                    Default::default(),
+                    Default::default(),
+                    config,
+                ),
+                seeds: Some(
+                    SeedDefinition::Multi(vec![
+                        "http://www.antsandelephants.de".to_string(),
+                        "http://www.aperco.info".to_string(),
+                        "http://www.applab.de/".to_string(),
+                        "http://www.carefornetworks.de/".to_string(),
+                        "https://ticktoo.com/".to_string(),
+                    ])
+                ),
+                recover_mode: false
+            }
         )
     }
 }

@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::client::Client;
+use crate::client::traits::{AtraClient, AtraResponse};
 use crate::crawl::crawler::intervals::InvervalManager;
 use crate::robots::information::RobotsInformation;
+use crate::toolkit::CaseInsensitiveString;
 use crate::url::UrlWithDepth;
-use case_insensitive_string::CaseInsensitiveString;
 use sitemap::reader::SiteMapEntity;
 use sitemap::structs::{SiteMapEntry, UrlEntry};
 use std::borrow::Cow;
@@ -27,17 +27,16 @@ use std::io::Cursor;
 #[derive(Debug)]
 pub struct ParsedSiteMapEntries {
     pub urls: Vec<UrlEntry>,
-    #[allow(dead_code)]
     pub sitemaps: Vec<SiteMapEntry>,
 }
 
 /// Retrieves and parses sitemaps form [url]
 /// todo: use
-pub async fn retrieve_and_parse<'a, R: RobotsInformation>(
+pub async fn retrieve_and_parse<'a, Client: AtraClient, R: RobotsInformation>(
     client: &Client,
     url: &UrlWithDepth,
     configured_robots: &R,
-    interval: &mut InvervalManager<'a, impl RobotsInformation>,
+    interval: &mut InvervalManager<'a, impl AtraClient, impl RobotsInformation>,
     external_sitemaps: Option<&HashMap<CaseInsensitiveString, Vec<String>>>,
 ) -> ParsedSiteMapEntries {
     let mut sitemap_urls: Vec<Cow<str>> = Vec::new();
@@ -64,7 +63,7 @@ pub async fn retrieve_and_parse<'a, R: RobotsInformation>(
 
     for sitemap_url in sitemap_urls {
         interval.wait(url).await;
-        if let Ok(result) = client.get(sitemap_url.as_ref()).send().await {
+        if let Ok(result) = client.get(sitemap_url.as_ref()).await {
             if let Ok(text) = result.text().await {
                 let parser = sitemap::reader::SiteMapReader::new(Cursor::new(text));
                 for entity in parser {

@@ -12,6 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod consumer;
+mod fake_client;
 mod inmemory;
+mod providers;
 
+pub use consumer::*;
+pub use fake_client::*;
 pub use inmemory::*;
+pub use providers::*;

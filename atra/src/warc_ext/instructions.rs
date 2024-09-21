@@ -72,16 +72,20 @@ impl WarcSkipInstruction {
     /// Reads this in the context of [file_owner].
     pub async fn read_in_context(
         &self,
-        file_owner: &impl FileOwner,
+        file_owner: Option<&impl FileOwner>,
     ) -> Result<Option<Vec<u8>>, ReaderError> {
         match self {
             value @ WarcSkipInstruction::Single { pointer, .. } => {
-                file_owner.wait_until_free_path(pointer.path()).await?;
+                if let Some(file_owner) = file_owner {
+                    file_owner.wait_until_free_path(pointer.path()).await?;
+                }
                 value.read()
             }
             value @ WarcSkipInstruction::Multiple { pointers, .. } => {
-                for value in pointers {
-                    file_owner.wait_until_free_path(value.path()).await?;
+                if let Some(file_owner) = file_owner {
+                    for value in pointers {
+                        file_owner.wait_until_free_path(value.path()).await?;
+                    }
                 }
                 value.read()
             }

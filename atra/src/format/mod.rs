@@ -18,13 +18,13 @@ pub mod mime_ext;
 pub(crate) mod mime_serialize;
 pub mod supported;
 
-use std::fmt::{Display, Formatter};
 use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
 use crate::fetching::ResponseData;
 use crate::format::file_format_detection::{infer_file_formats, DetectedFileFormat};
 use crate::format::mime::{determine_mime_information, MimeType};
 use crate::format::supported::InterpretedProcessibleFileFormat;
 use serde::{Deserialize, Serialize};
+use std::fmt::{Display, Formatter};
 use warc::media_type::MediaType;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
@@ -35,6 +35,7 @@ pub struct AtraFileInformation {
 }
 
 impl AtraFileInformation {
+    #[cfg(test)]
     pub fn new(
         format: InterpretedProcessibleFileFormat,
         mime: Option<MimeType>,
@@ -69,6 +70,7 @@ impl AtraFileInformation {
         }
     }
 
+    #[cfg(test)]
     pub fn is_decodeable(&self) -> bool {
         self.format.supports_decoding()
             || self
@@ -94,13 +96,20 @@ impl AtraFileInformation {
     }
 }
 
-
 impl Display for AtraFileInformation {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "FileFormat({}, {}, {})",
-               self.format,
-               self.mime.as_ref().map(ToString::to_string).unwrap_or_default(),
-               self.detected.as_ref().map(|value| value.most_probable_file_format().to_string()).unwrap_or_default()
+        write!(
+            f,
+            "FileFormat({}, {}, {})",
+            self.format,
+            self.mime
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_default(),
+            self.detected
+                .as_ref()
+                .map(|value| value.most_probable_file_format().to_string())
+                .unwrap_or_default()
         )
     }
 }

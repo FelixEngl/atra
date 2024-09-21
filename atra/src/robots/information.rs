@@ -12,75 +12,95 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::client::Client;
+use crate::client::traits::AtraClient;
 use crate::robots::{CachedRobots, RobotsError, RobotsManager};
 use crate::url::{AtraOriginProvider, AtraUrlOrigin, UrlWithDepth};
+use std::error::Error;
 use std::sync::Arc;
+use thiserror::Error;
 use time::Duration;
 
 /// A trait for unifying different robots information providers
 pub trait RobotsInformation {
     /// Try to get the underlying robots.txt if it exists in any cache layer.
     /// Does return None if it needs a download.
-    async fn get(&self, url: &UrlWithDepth) -> Result<Option<Arc<CachedRobots>>, RobotsError>;
+    async fn get<E: Error>(
+        &self,
+        url: &UrlWithDepth,
+    ) -> Result<Option<Arc<CachedRobots>>, RobotsError<E>>;
 
     /// Gets the caches robots.txt.
     /// If it is not found in any layer it downloads it.
     /// If the download fails is creats a replacement with default values for a missing robots.txt
-    async fn get_or_retrieve(
+    async fn get_or_retrieve<Client: AtraClient>(
         &self,
         client: &Client,
         url: &UrlWithDepth,
-    ) -> Result<Arc<CachedRobots>, RobotsError>;
+    ) -> Result<Arc<CachedRobots>, RobotsError<Client::Error>>;
 
     /// Get the duration needed for the intervall between the requests.
-    async fn get_or_retrieve_delay(&self, client: &Client, url: &UrlWithDepth) -> Option<Duration>;
+    async fn get_or_retrieve_delay<Client: AtraClient>(
+        &self,
+        client: &Client,
+        url: &UrlWithDepth,
+    ) -> Option<Duration>;
 
     /// Tries to check in any of the cache-layers, if there is no cache entry or an error it returns None
     async fn check_if_allowed_fast(&self, url: &UrlWithDepth) -> Option<bool>;
 
     /// Tries to check in any of the cache-layers, if there is an error it returns false
-    async fn check_if_allowed(&self, client: &Client, url: &UrlWithDepth) -> bool;
+    async fn check_if_allowed<Client: AtraClient>(
+        &self,
+        client: &Client,
+        url: &UrlWithDepth,
+    ) -> bool;
 }
 
-pub enum AnyRobotsInformation<R: RobotsManager> {
-    Origin(OriginSpecificRobotsInformation<R>),
-    General(GeneralRobotsInformation<R>),
+pub enum AnyRobotsInformation<'a, R: RobotsManager> {
+    Origin(OriginSpecificRobotsInformation<'a, R>),
+    General(GeneralRobotsInformation<'a, R>),
 }
 
-impl<R: RobotsManager> RobotsInformation for AnyRobotsInformation<R> {
-    #[doc = " Try to get the underlying robots.txt if it exists in any cache layer."]
-    #[doc = " Does return None if it needs a download."]
+impl<'a, R: RobotsManager> RobotsInformation for AnyRobotsInformation<'a, R> {
+    ///Try to get the underlying robots.txt if it exists in any cache layer.
+    ///Does return None if it needs a download.
     #[inline]
-    async fn get(&self, url: &UrlWithDepth) -> Result<Option<Arc<CachedRobots>>, RobotsError> {
+    async fn get<E: Error>(
+        &self,
+        url: &UrlWithDepth,
+    ) -> Result<Option<Arc<CachedRobots>>, RobotsError<E>> {
         match self {
             AnyRobotsInformation::Origin(a) => a.get(url).await,
             AnyRobotsInformation::General(b) => b.get(url).await,
         }
     }
-    #[doc = " Gets the caches robots.txt."]
-    #[doc = " If it is not found in any layer it downloads it."]
-    #[doc = " If the download fails is creats a replacement with default values for a missing robots.txt"]
+    /// Gets the caches robots.txt.
+    /// If it is not found in any layer it downloads it.
+    /// If the download fails is creats a replacement with default values for a missing robots.txt
     #[inline]
-    async fn get_or_retrieve(
+    async fn get_or_retrieve<Client: AtraClient>(
         &self,
         client: &Client,
         url: &UrlWithDepth,
-    ) -> Result<Arc<CachedRobots>, RobotsError> {
+    ) -> Result<Arc<CachedRobots>, RobotsError<Client::Error>> {
         match self {
             AnyRobotsInformation::Origin(a) => a.get_or_retrieve(client, url).await,
             AnyRobotsInformation::General(b) => b.get_or_retrieve(client, url).await,
         }
     }
-    #[doc = " Get the duration needed for the intervall between the requests."]
+    /// Get the duration needed for the intervall between the requests.
     #[inline]
-    async fn get_or_retrieve_delay(&self, client: &Client, url: &UrlWithDepth) -> Option<Duration> {
+    async fn get_or_retrieve_delay<Client: AtraClient>(
+        &self,
+        client: &Client,
+        url: &UrlWithDepth,
+    ) -> Option<Duration> {
         match self {
             AnyRobotsInformation::Origin(a) => a.get_or_retrieve_delay(client, url).await,
             AnyRobotsInformation::General(b) => b.get_or_retrieve_delay(client, url).await,
         }
     }
-    #[doc = " Tries to check in any of the cache-layers, if there is no cache entry or an error it returns None"]
+    /// Tries to check in any of the cache-layers, if there is no cache entry or an error it returns None
     #[inline]
     async fn check_if_allowed_fast(&self, url: &UrlWithDepth) -> Option<bool> {
         match self {
@@ -88,9 +108,13 @@ impl<R: RobotsManager> RobotsInformation for AnyRobotsInformation<R> {
             AnyRobotsInformation::General(b) => b.check_if_allowed_fast(url).await,
         }
     }
-    #[doc = " Tries to check in any of the cache-layers, if there is an error it returns false"]
+    /// Tries to check in any of the cache-layers, if there is an error it returns false
     #[inline]
-    async fn check_if_allowed(&self, client: &Client, url: &UrlWithDepth) -> bool {
+    async fn check_if_allowed<Client: AtraClient>(
+        &self,
+        client: &Client,
+        url: &UrlWithDepth,
+    ) -> bool {
         match self {
             AnyRobotsInformation::Origin(a) => a.check_if_allowed(client, url).await,
             AnyRobotsInformation::General(b) => b.check_if_allowed(client, url).await,
@@ -99,10 +123,10 @@ impl<R: RobotsManager> RobotsInformation for AnyRobotsInformation<R> {
 }
 
 /// Same as [GeneralRobotsInformation] but is bound to a specific domain
-pub struct OriginSpecificRobotsInformation<R: RobotsManager> {
+pub struct OriginSpecificRobotsInformation<'a, R: RobotsManager> {
     origin: AtraUrlOrigin,
     origin_cached: Arc<CachedRobots>,
-    general: GeneralRobotsInformation<R>,
+    general: GeneralRobotsInformation<'a, R>,
 }
 
 // impl<R: RobotsManager> DomainSpecificRobotsInformation<R> {
@@ -111,8 +135,11 @@ pub struct OriginSpecificRobotsInformation<R: RobotsManager> {
 //     }
 // }
 
-impl<R: RobotsManager> RobotsInformation for OriginSpecificRobotsInformation<R> {
-    async fn get(&self, url: &UrlWithDepth) -> Result<Option<Arc<CachedRobots>>, RobotsError> {
+impl<'a, R: RobotsManager> RobotsInformation for OriginSpecificRobotsInformation<'a, R> {
+    async fn get<E: Error>(
+        &self,
+        url: &UrlWithDepth,
+    ) -> Result<Option<Arc<CachedRobots>>, RobotsError<E>> {
         if let Some(origin) = url.atra_origin() {
             if origin == self.origin {
                 log::trace!("Robots: Fast");
@@ -122,11 +149,11 @@ impl<R: RobotsManager> RobotsInformation for OriginSpecificRobotsInformation<R> 
         self.general.get(url).await
     }
 
-    async fn get_or_retrieve(
+    async fn get_or_retrieve<Client: AtraClient>(
         &self,
         client: &Client,
         url: &UrlWithDepth,
-    ) -> Result<Arc<CachedRobots>, RobotsError> {
+    ) -> Result<Arc<CachedRobots>, RobotsError<Client::Error>> {
         if let Some(origin) = url.atra_origin() {
             if origin == self.origin {
                 log::trace!("Robots: Fast");
@@ -136,7 +163,11 @@ impl<R: RobotsManager> RobotsInformation for OriginSpecificRobotsInformation<R> 
         self.general.get_or_retrieve(client, url).await
     }
 
-    async fn get_or_retrieve_delay(&self, client: &Client, url: &UrlWithDepth) -> Option<Duration> {
+    async fn get_or_retrieve_delay<Client: AtraClient>(
+        &self,
+        client: &Client,
+        url: &UrlWithDepth,
+    ) -> Option<Duration> {
         if let Some(origin) = url.atra_origin() {
             if origin == self.origin {
                 log::trace!("Robots: Fast");
@@ -150,17 +181,21 @@ impl<R: RobotsManager> RobotsInformation for OriginSpecificRobotsInformation<R> 
         if let Some(origin) = url.atra_origin() {
             if origin == self.origin {
                 log::trace!("Robots: Fast");
-                return Some(self.origin_cached.allowed(&url.as_str()));
+                return Some(self.origin_cached.allowed(&url.try_as_str()));
             }
         }
         self.general.check_if_allowed_fast(url).await
     }
 
-    async fn check_if_allowed(&self, client: &Client, url: &UrlWithDepth) -> bool {
+    async fn check_if_allowed<Client: AtraClient>(
+        &self,
+        client: &Client,
+        url: &UrlWithDepth,
+    ) -> bool {
         if let Some(origin) = url.atra_origin() {
             if origin == self.origin {
                 log::trace!("Robots: Fast");
-                return self.origin_cached.allowed(&url.as_str());
+                return self.origin_cached.allowed(&url.try_as_str());
             }
         }
         self.general.check_if_allowed(client, url).await
@@ -171,14 +206,14 @@ impl<R: RobotsManager> RobotsInformation for OriginSpecificRobotsInformation<R> 
 /// Also holds a persistent, possibly endless amount of cached robots.txt instances.
 /// Should only be used internally and dropped after use.
 #[derive(Debug)]
-pub struct GeneralRobotsInformation<R: RobotsManager> {
-    inner: R,
+pub struct GeneralRobotsInformation<'a, R: RobotsManager> {
+    inner: &'a R,
     agent: String,
     max_age: Option<Duration>,
 }
 
-impl<R: RobotsManager> GeneralRobotsInformation<R> {
-    pub fn new(inner: R, agent: String, max_age: Option<Duration>) -> Self {
+impl<'a, R: RobotsManager> GeneralRobotsInformation<'a, R> {
+    pub fn new(inner: &'a R, agent: String, max_age: Option<Duration>) -> Self {
         Self {
             inner,
             agent,
@@ -192,9 +227,9 @@ impl<R: RobotsManager> GeneralRobotsInformation<R> {
 
     pub async fn bind_to_domain(
         self,
-        client: &Client,
+        client: &impl AtraClient,
         url: &UrlWithDepth,
-    ) -> AnyRobotsInformation<R> {
+    ) -> AnyRobotsInformation<'a, R> {
         let domain = match url.atra_origin() {
             None => {
                 log::debug!("No domain for for {url}");
@@ -216,10 +251,13 @@ impl<R: RobotsManager> GeneralRobotsInformation<R> {
     }
 }
 
-impl<R: RobotsManager> RobotsInformation for GeneralRobotsInformation<R> {
+impl<'a, R: RobotsManager> RobotsInformation for GeneralRobotsInformation<'a, R> {
     /// Try to get the underlying robots.txt if it exists in any cache layer.
     /// Does return None if it needs a download.
-    async fn get(&self, url: &UrlWithDepth) -> Result<Option<Arc<CachedRobots>>, RobotsError> {
+    async fn get<E: Error>(
+        &self,
+        url: &UrlWithDepth,
+    ) -> Result<Option<Arc<CachedRobots>>, RobotsError<E>> {
         if let Some(ref value) = self.max_age {
             self.inner.get(self.agent.as_str(), url, Some(value)).await
         } else {
@@ -230,11 +268,11 @@ impl<R: RobotsManager> RobotsInformation for GeneralRobotsInformation<R> {
     /// Gets the caches robots.txt.
     /// If it is not found in any layer it downloads it.
     /// If the download fails is creats a replacement with default values for a missing robots.txt
-    async fn get_or_retrieve(
+    async fn get_or_retrieve<Client: AtraClient>(
         &self,
         client: &Client,
         url: &UrlWithDepth,
-    ) -> Result<Arc<CachedRobots>, RobotsError> {
+    ) -> Result<Arc<CachedRobots>, RobotsError<Client::Error>> {
         if let Some(ref value) = self.max_age {
             self.inner
                 .get_or_retrieve(client, self.agent.as_str(), url, Some(value))
@@ -247,7 +285,11 @@ impl<R: RobotsManager> RobotsInformation for GeneralRobotsInformation<R> {
     }
 
     /// Get the duration needed for the intervall between the requests.
-    async fn get_or_retrieve_delay(&self, client: &Client, url: &UrlWithDepth) -> Option<Duration> {
+    async fn get_or_retrieve_delay<Client: AtraClient>(
+        &self,
+        client: &Client,
+        url: &UrlWithDepth,
+    ) -> Option<Duration> {
         match self.get_or_retrieve(client, url).await {
             Ok(found) => found.delay(),
             Err(_) => {
@@ -259,16 +301,23 @@ impl<R: RobotsManager> RobotsInformation for GeneralRobotsInformation<R> {
 
     /// Tries to check in any of the cache-layers, if there is no cache entry or an error it returns None
     async fn check_if_allowed_fast(&self, url: &UrlWithDepth) -> Option<bool> {
-        let found = self.get(url).await.ok().flatten();
-        found.map(|found| found.allowed(&url.as_str()))
+        #[derive(Debug, Error)]
+        #[error("")]
+        struct AnonymousError;
+        let found = self.get::<AnonymousError>(url).await.ok().flatten();
+        found.map(|found| found.allowed(&url.try_as_str()))
     }
 
     /// Tries to check in any of the cache-layers, if there is an error it returns false
-    async fn check_if_allowed(&self, client: &Client, url: &UrlWithDepth) -> bool {
+    async fn check_if_allowed<Client: AtraClient>(
+        &self,
+        client: &Client,
+        url: &UrlWithDepth,
+    ) -> bool {
         match self
             .get_or_retrieve(client, url)
             .await
-            .map(|found| found.allowed(&url.as_str()))
+            .map(|found| found.allowed(&url.try_as_str()))
         {
             Ok(result) => result,
             Err(err) => {

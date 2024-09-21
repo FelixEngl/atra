@@ -123,7 +123,6 @@ pub enum DataHolderCursor<T: AsRef<[u8]>> {
 }
 
 impl<T: AsRef<[u8]>> DataHolderCursor<T> {
-    #[allow(dead_code)]
     pub fn len(&self) -> u64 {
         match self {
             DataHolderCursor::InMemory { len, .. } => *len as u64,

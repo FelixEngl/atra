@@ -12,12 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::database::DatabaseError;
 use crate::link_state::LinkStateDBError;
 use crate::queue::QueueError;
 use crate::web_graph::LinkNetError;
-use std::io;
 use thiserror::Error;
+use svm::error::SvmCreationError;
+use text_processing::tf_idf::Idf;
+use crate::blacklist::{InMemoryBlacklistManagerInitialisationError, PolyBlackList};
+use crate::database::OpenDBError;
+use crate::io::errors::ErrorWithPath;
 
 /// Error messages when the context fails somehow.
 #[derive(Debug, Error)]
@@ -30,17 +33,17 @@ pub enum LinkHandlingError {
     LinkNetError(#[from] LinkNetError),
 }
 
-/// The errors occuring during crawling
+
+
 #[derive(Debug, Error)]
-pub enum WebsiteCrawlerError {
-    #[error(transparent)]
-    Fetcher(#[from] crate::client::ClientError),
-    #[error(transparent)]
-    Database(#[from] DatabaseError),
-    #[error(transparent)]
-    LinkState(#[from] LinkStateDBError),
-    #[error(transparent)]
-    LinkHandling(#[from] LinkHandlingError),
-    #[error(transparent)]
-    IOError(#[from] io::Error),
+pub enum LocalContextInitError {
+    #[error(transparent)] IoError(#[from] std::io::Error),
+    #[error(transparent)] IoWithPathError(#[from] ErrorWithPath),
+    #[error(transparent)] SerdeError(#[from] serde_json::Error),
+    #[error(transparent)] OpenDBError(#[from] OpenDBError),
+    #[error(transparent)] RocksDBError(#[from] rocksdb::Error),
+    #[error(transparent)] QueueFileError(#[from] queue_file::Error),
+    #[error(transparent)] BlackListError(#[from] InMemoryBlacklistManagerInitialisationError<PolyBlackList>),
+    #[error(transparent)] SvmError(#[from] SvmCreationError<Idf>),
+    #[error(transparent)] LinkNetError(#[from] LinkNetError),
 }

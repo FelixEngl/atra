@@ -55,3 +55,17 @@ regex = "1.10"
 byteorder = "1"
 bytes = "1"
 anyhow = "1"
+cfg-if = "1"
+async-trait = "0.1"
+scopeguard = "1.2"
+mockall = "0.13"
+lipsum = "0"
+async-channel = "2.3"
+console = "0.15"
+dialoguer = "0.11"
+indicatif = "0.17"
+deno_core = "0.310.0"
+
+
+[profile.release_with_deadcode]
+inherits = "release"

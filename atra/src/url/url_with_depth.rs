@@ -13,10 +13,10 @@
 // limitations under the License.
 
 use super::origin::{AtraOriginProvider, AtraUrlOrigin};
+use crate::toolkit::CaseInsensitiveString;
 use crate::url::atra_uri::{AtraUri, HostComparisonError, ParseError};
 use crate::url::cleaner::SingleUrlCleaner;
 use crate::url::Depth;
-use case_insensitive_string::CaseInsensitiveString;
 use itertools::{EitherOrBoth, Itertools, Position};
 use reqwest::IntoUrl;
 use serde::{Deserialize, Serialize};
@@ -41,14 +41,14 @@ pub struct UrlWithDepth {
 
 impl UrlWithDepth {
     /// Creates a new [UrlWithDepth]
-    pub fn new(depth: Depth, mut url: AtraUri) -> Self {
+    pub fn new(mut url: AtraUri, depth: Depth) -> Self {
         url.clean(SingleUrlCleaner::Fragment);
         Self { url, depth }
     }
 
     /// Creates an url with depth from
-    pub fn from_seed<U: IntoUrl>(url: U) -> Result<Self, ParseError> {
-        Ok(Self::new(Depth::ZERO, url.as_str().parse::<AtraUri>()?))
+    pub fn from_url<U: IntoUrl>(url: U) -> Result<Self, ParseError> {
+        Ok(Self::new(url.as_str().try_into()?, Depth::ZERO))
     }
 
     #[inline(always)]
@@ -128,7 +128,7 @@ impl UrlWithDepth {
         std::ptr::eq(self, other) || (self.depth == other.depth && self.url == other.url)
     }
 
-    pub fn as_str(&self) -> Cow<str> {
+    pub fn try_as_str(&self) -> Cow<str> {
         if let Some(s) = self.url.try_as_str() {
             Cow::Borrowed(s)
         } else {
@@ -169,7 +169,7 @@ impl FromStr for UrlWithDepth {
     type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::from_seed(s)
+        Self::from_url(s)
     }
 }
 
@@ -297,12 +297,12 @@ impl ToUriLikeFieldValue for UrlWithDepth {
 
 #[cfg(test)]
 mod test {
-    use crate::url::Depth;
     use crate::url::{AtraOriginProvider, UrlWithDepth};
+    use crate::url::{Depth, DepthFieldConversion};
 
     #[test]
     fn base_only_changes_if_not_given() {
-        let base = UrlWithDepth::from_seed("https://www.example.com/").unwrap();
+        let base = UrlWithDepth::from_url("https://www.example.com/").unwrap();
         let created =
             UrlWithDepth::with_base(&base, "https://www.siemens.com/lookup?v=20").unwrap();
         assert_eq!(Some("www.siemens.com".into()), created.url.atra_origin());
@@ -313,7 +313,7 @@ mod test {
 
     #[test]
     fn depth_on_website_goes_up_if_on_same_domain() {
-        let base = UrlWithDepth::from_seed("https://www.example.com/").unwrap();
+        let base = UrlWithDepth::from_url("https://www.example.com/").unwrap();
         let created1 =
             UrlWithDepth::with_base(&base, "https://www.example.com/lookup?v=20").unwrap();
         assert_eq!(Some("www.example.com".into()), created1.url.atra_origin());
@@ -325,7 +325,7 @@ mod test {
 
     #[test]
     fn distance_to_seed_goes_up_if_not_same_domain() {
-        let base = UrlWithDepth::from_seed("https://www.example.com/").unwrap();
+        let base = UrlWithDepth::from_url("https://www.example.com/").unwrap();
         let created1 =
             UrlWithDepth::with_base(&base, "https://www.siemens.com/lookup?v=20").unwrap();
         assert_eq!(Some("www.siemens.com".into()), created1.url.atra_origin());
@@ -348,7 +348,7 @@ mod test {
 
     #[test]
     fn can_serialize_and_deserialize_nonhuman() {
-        let base = UrlWithDepth::from_seed("https://www.example.com/").unwrap();
+        let base = UrlWithDepth::from_url("https://www.example.com/").unwrap();
         let created1 =
             UrlWithDepth::with_base(&base, "https://www.siemens.com/lookup?v=20").unwrap();
         let serialized = bincode::serialize(&created1).unwrap();
@@ -363,7 +363,7 @@ mod test {
 
     #[test]
     fn can_serialize_and_deserialize_human() {
-        let base = UrlWithDepth::from_seed("https://www.example.com/").unwrap();
+        let base = UrlWithDepth::from_url("https://www.example.com/").unwrap();
         let created1 =
             UrlWithDepth::with_base(&base, "https://www.siemens.com/lookup?v=20").unwrap();
         let serialized = serde_json::to_string(&created1).unwrap();
@@ -374,5 +374,16 @@ mod test {
             created1,
             deserialized1
         )
+    }
+
+    #[test]
+    fn can_properly_create_subdomains() {
+        let mut init = UrlWithDepth::from_url("https://www.amazon.de/test").unwrap();
+        init.depth += 1.to_total_distance_to_seed();
+
+        let test1 = UrlWithDepth::new_like_with_base(&init, "https://www.ebay.com/hallo").unwrap();
+
+        assert_eq!(test1.try_as_str().as_ref(), "https://www.ebay.com/hallo");
+        assert_eq!(init.depth + (0, 1, 1), test1.depth);
     }
 }

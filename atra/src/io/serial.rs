@@ -12,91 +12,226 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt::Display;
-use std::marker::PhantomData;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::*;
 use std::sync::Arc;
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, strum::Display, Serialize, Deserialize, Eq, PartialEq)]
+pub enum SerialValue {
+    #[strum(to_string = "{0}")] Byte(u8),
+    #[strum(to_string = "{0}")] Short(u16),
+    #[strum(to_string = "{0}")] Int(u32),
+    #[strum(to_string = "{0}")] Long(u64),
+}
+
+impl Default for  SerialValue {
+    fn default() -> Self {
+        Self::Int(0)
+    }
+}
+
+
+macro_rules! create_froms {
+    ($($t: ty),+) => {
+        $(
+            impl From<SerialValue> for $t {
+                fn from(value: SerialValue) -> Self {
+                    match value {
+                        SerialValue::Byte(value) => value as $t,
+                        SerialValue::Short(value) => value as $t,
+                        SerialValue::Int(value) => value as $t,
+                        SerialValue::Long(value) => value as $t,
+                    }
+                }
+            }
+        )+
+    };
+}
+
+create_froms!{u8, u16, u32, u64}
+
+#[derive(Copy, Clone)]
+pub enum SerialProviderKind {
+    None,
+    Byte,
+    Short,
+    Int,
+    Long
+}
+
+#[derive(Debug, Clone)]
+pub enum SerialProvider {
+    NoSerial,
+    Byte{state:AtomicU8SerialState},
+    Short{state:AtomicU16SerialState},
+    Int{state:AtomicU32SerialState},
+    Long{state:AtomicU64SerialState},
+}
+
 
 /// Provides a serial
-pub trait SerialProvider: Sync + Send {
-    type Serial: Display;
+impl SerialProvider {
+    pub fn new(serial_kind: SerialProviderKind) -> Self {
+        match serial_kind {
+            SerialProviderKind::None => {Self::NoSerial}
+            SerialProviderKind::Byte => {SerialProvider::Byte {state: Default::default()}}
+            SerialProviderKind::Short => {SerialProvider::Short {state: Default::default()}}
+            SerialProviderKind::Int => {SerialProvider::Int {state: Default::default()}}
+            SerialProviderKind::Long => {SerialProvider::Long {state: Default::default()}}
+        }
+    }
 
-    fn provide_serial(&self) -> Option<Self::Serial>;
-}
+    pub fn with_initial_state(initial_state: SerialValue) -> Self {
+        match initial_state {
+            SerialValue::Byte(value) => {
+                SerialProvider::Byte {state: AtomicU8SerialState::with_init_value(value)}
+            }
+            SerialValue::Short(value) => {
+                SerialProvider::Short {state: AtomicU16SerialState::with_init_value(value)}
+            }
+            SerialValue::Int(value) => {
+                SerialProvider::Int {state: AtomicU32SerialState::with_init_value(value)}
+            }
+            SerialValue::Long(value) => {
+                SerialProvider::Long {state: AtomicU64SerialState::with_init_value(value)}
+            }
+        }
+    }
 
-#[derive(Debug, Copy, Clone)]
-pub struct NoSerial<S = u8> {
-    _phantom: PhantomData<S>,
-}
+    pub fn kind(&self) -> SerialProviderKind {
+        match self {
+            SerialProvider::NoSerial => {SerialProviderKind::None}
+            SerialProvider::Byte { .. } => {SerialProviderKind::Byte}
+            SerialProvider::Short { .. } => {SerialProviderKind::Short}
+            SerialProvider::Int { .. } => {SerialProviderKind::Int}
+            SerialProvider::Long { .. } => {SerialProviderKind::Long}
+        }
+    }
 
-unsafe impl<S> Send for NoSerial<S> {}
-unsafe impl<S> Sync for NoSerial<S> {}
+    pub fn provide_serial(&self) -> Option<SerialValue> {
+        match self {
+            SerialProvider::NoSerial => {
+                None
+            }
+            SerialProvider::Byte { state } => {
+                Some(SerialValue::Byte(state.get_next_serial()))
+            }
+            SerialProvider::Short { state } => {
+                Some(SerialValue::Short(state.get_next_serial()))
+            }
+            SerialProvider::Int { state } => {
+                Some(SerialValue::Int(state.get_next_serial()))
+            }
+            SerialProvider::Long { state } => {
+                Some(SerialValue::Long(state.get_next_serial()))
+            }
+        }
+    }
 
-impl<S> SerialProvider for NoSerial<S>
-where
-    S: Display,
-{
-    type Serial = S;
+    pub fn current_serial(&self) -> Option<SerialValue> {
+        match self {
+            SerialProvider::NoSerial => {
+                None
+            }
+            SerialProvider::Byte { state } => {
+                Some(SerialValue::Byte(state.get_current_serial()))
+            }
+            SerialProvider::Short { state } => {
+                Some(SerialValue::Short(state.get_current_serial()))
+            }
+            SerialProvider::Int { state } => {
+                Some(SerialValue::Int(state.get_current_serial()))
+            }
+            SerialProvider::Long { state } => {
+                Some(SerialValue::Long(state.get_current_serial()))
+            }
+        }
+    }
 
-    #[inline(always)]
-    fn provide_serial(&self) -> Option<Self::Serial> {
-        None
+    pub fn set_current_serial(&self, serial: SerialValue) {
+        match self {
+            SerialProvider::NoSerial => {}
+            SerialProvider::Byte { state } => {
+                state.set_current_serial(serial.into())
+            }
+            SerialProvider::Short { state } => {
+                state.set_current_serial(serial.into())
+            }
+            SerialProvider::Int { state } => {
+                state.set_current_serial(serial.into())
+            }
+            SerialProvider::Long { state } => {
+                state.set_current_serial(serial.into())
+            }
+        }
     }
 }
 
-impl<S> Default for NoSerial<S> {
+
+impl Default for SerialProvider {
     fn default() -> Self {
-        Self {
-            _phantom: PhantomData,
-        }
+        Self::Int {state: Default::default()}
     }
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct StaticSerialProvider<S> {
-    value: S,
-}
 
-unsafe impl<S> Send for StaticSerialProvider<S> {}
-unsafe impl<S> Sync for StaticSerialProvider<S> {}
-
-impl<S> StaticSerialProvider<S> {
-    pub const fn new(value: S) -> Self {
-        Self { value }
+impl From<SerialProviderKind> for SerialProvider {
+    fn from(value: SerialProviderKind) -> Self {
+        Self::new(value)
     }
 }
 
-impl<S> SerialProvider for StaticSerialProvider<S>
-where
-    S: Display + Clone,
-{
-    type Serial = S;
 
-    fn provide_serial(&self) -> Option<Self::Serial> {
-        Some(self.value.clone())
-    }
+macro_rules! create_normal_provider {
+    ($($ty: ty: $t: ident),+) => {
+        $(
+            paste::paste! {
+                #[derive(Debug)]
+                pub struct [<$t SerialState>] {
+                    state: Arc<$t>
+                }
+
+                impl [<$t SerialState>] {
+                    fn new() -> Self {
+                        Self {
+                            state: Default::default()
+                        }
+                    }
+
+                    fn with_init_value(value: $ty) -> Self {
+                        Self {
+                            state: Arc::new($t::new(value))
+                        }
+                    }
+
+                    pub fn get_next_serial(&self) -> $ty {
+                        self.state.fetch_add(1, Ordering::SeqCst)
+                    }
+
+                    pub fn get_current_serial(&self) -> $ty {
+                        self.state.load(Ordering::Acquire)
+                    }
+                    
+                    pub fn set_current_serial(&self, value: $ty) {
+                        self.state.store(value, Ordering::Release)
+                    }
+                }
+                impl Clone for [<$t SerialState>] {
+                    fn clone(&self) -> Self {
+                        Self{state: self.state.clone()}
+                    }
+                }
+
+                impl Default for [<$t SerialState>] {
+                    fn default() -> Self {
+                        Self::new()
+                    }
+                }
+            }
+        )+
+    };
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct DefaultSerialProvider {
-    state: Arc<AtomicU32>,
-}
-
-impl DefaultSerialProvider {
-    pub fn get_next_serial(&self) -> u32 {
-        unsafe {
-            self.state
-                .fetch_update(Ordering::SeqCst, Ordering::Relaxed, |next| {
-                    Some(next.overflowing_add(1).0)
-                })
-                .unwrap_unchecked()
-        }
-    }
-}
-
-impl SerialProvider for DefaultSerialProvider {
-    type Serial = u32;
-    fn provide_serial(&self) -> Option<Self::Serial> {
-        Some(self.get_next_serial())
-    }
+create_normal_provider! {
+    u8: AtomicU8, u16: AtomicU16, u32: AtomicU32, u64: AtomicU64
 }

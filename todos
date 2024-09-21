@@ -3,26 +3,22 @@ Features:
 
 - JS:
     - https://github.com/denoland/rusty_v8
+    - https://github.com/denoland/deno_core
 
-- GDPR recognition
-    - https://github.com/shadeMe/liblinear-rs/tree/master
-    - Model: Eric - DSGVO
-    - https://docs.rs/libsvm/latest/libsvm/
+- Plugin System
+    - https://docs.rs/abi_stable/latest/abi_stable/
+
+
 - Chrome
 - TOR support
 - Dedublication
     - https://github.com/internetarchive/heritrix3/wiki/Duplication%20Reduction%20Processors
 - Extractors:
     - https://heritrix.readthedocs.io/en/latest/bean-reference.html#link-extractors
-    - PDF
-    - CSS
     - SWF
     - WORD/EXCEL/POWERPOINT
     - More comprehensive JS
-    - XML/JSON
-    - Universal
     - JAR/EXE
-    - nofollow-Attribute!
 
 - Archive Detection & Crawling
 - Database Crawling?
@@ -69,9 +65,6 @@ Features:
     - Compare Stack?
 
 
-- Build
-    - https://crates.io/crates/autocfg
-
 
 - Warc
     - https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1-annotated/
@@ -100,11 +93,20 @@ Features:
     404 -> Do not talk to it
     410: Block until told otherwise
 
--- Interval crawling
-
 -- Use stdout for Unix-like output for piping
 
 
 
 
 -- https://crates.io/crates/ethbloom
+
+
+
+
+
+
+
+
+Pattern for URLS:
+- "([A-Za-z][A-Za-z0-9+.-]{1,120}:[A-Za-z0-9/](([A-Za-z0-9$_.+!*,;/?:@&~=-])|%[A-Fa-f0-9]{2}){1,333}(#([a-zA-Z0-9][a-zA-Z0-9$_.+!*,;/?:@&~=%-]{0,1000}))?)"
+see https://github.com/apache/nutch/blob/master/src/java/org/apache/nutch/parse/OutlinkExtractor.java

@@ -12,23 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::config::Configs;
+use crate::config::Config;
 use crate::contexts::traits::*;
 use crate::contexts::worker::error::CrawlWriteError;
-use crate::crawl::{CrawlResult, SlimCrawlResult};
-use crate::crawl::{StoredDataHint};
+use crate::crawl::StoredDataHint;
+use crate::crawl::{CrawlResult, CrawlTask, SlimCrawlResult};
 use crate::data::RawVecData;
 use crate::extraction::ExtractedLink;
-use crate::io::errors::ErrorWithPath;
+use crate::io::errors::{ErrorWithPath};
 use crate::io::fs::{AtraFS, WorkerFileSystemAccess};
-use crate::link_state::{LinkState, LinkStateType};
 use crate::seed::BasicSeed;
 use crate::stores::warc::ThreadsafeMultiFileWarcWriter;
 use crate::url::UrlWithDepth;
 use crate::warc_ext::write_warc;
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::time::Duration;
 use text_processing::stopword_registry::StopWordRegistry;
 
 /// A context for a specific worker
@@ -53,8 +51,14 @@ impl<T> WorkerContext<T>
 where
     T: SupportsFileSystemAccess,
 {
-    pub async fn create(worker_id: usize, inner: Arc<T>) -> Result<Self, ErrorWithPath> {
-        let worker_warc_system = inner.fs().create_worker_file_provider(worker_id).await?;
+    pub fn create(
+        worker_id: usize,
+        recrawl_number: usize,
+        inner: Arc<T>,
+    ) -> Result<Self, ErrorWithPath> {
+        let worker_warc_system = inner
+            .fs()
+            .create_worker_file_provider(worker_id, recrawl_number)?;
         Ok(Self::new(worker_id, inner, worker_warc_system)?)
     }
 
@@ -105,19 +109,11 @@ impl<T> SupportsLinkState for WorkerContext<T>
 where
     T: SupportsLinkState,
 {
-    type Error = T::Error;
+    type LinkStateManager = T::LinkStateManager;
 
     delegate::delegate! {
         to self.inner {
-            fn crawled_websites(&self) -> Result<u64, Self::Error>;
-
-            async fn update_link_state(&self, url: &UrlWithDepth, state: LinkStateType) -> Result<(), Self::Error>;
-
-            async fn update_link_state_with_payload(&self, url: &UrlWithDepth, state: LinkStateType, payload: Vec<u8>) -> Result<(), Self::Error>;
-
-            async fn get_link_state(&self, url: &UrlWithDepth) -> Result<Option<LinkState>, Self::Error>;
-
-            async fn check_if_there_are_any_crawlable_links(&self, max_age: Duration) -> bool;
+            fn get_link_state_manager(&self) -> &Self::LinkStateManager;
         }
     }
 }
@@ -143,7 +139,7 @@ where
 
     delegate::delegate! {
         to self.inner {
-            async fn get_robots_instance(&self) -> Self::RobotsManager;
+            fn get_robots_manager(&self) -> &Self::RobotsManager;
         }
     }
 }
@@ -152,11 +148,11 @@ impl<T> SupportsBlackList for WorkerContext<T>
 where
     T: SupportsBlackList,
 {
-    type BlackList = T::BlackList;
+    type BlacklistManager = T::BlacklistManager;
 
     delegate::delegate! {
         to self.inner {
-            async fn get_blacklist(&self) -> Self::BlackList;
+            fn get_blacklist_manager(&self) -> &Self::BlacklistManager;
         }
     }
 }
@@ -180,7 +176,7 @@ where
 {
     delegate::delegate! {
         to self.inner {
-            fn configs(&self) -> &Configs;
+            fn configs(&self) -> &Config;
         }
     }
 }
@@ -263,6 +259,18 @@ where
     }
 }
 
+impl<T> SupportsDomainHandling for WorkerContext<T>
+where
+    T: SupportsDomainHandling,
+{
+    type DomainHandler = T::DomainHandler;
+    delegate::delegate! {
+        to self.inner {
+            fn get_domain_manager(&self) -> &Self::DomainHandler;
+        }
+    }
+}
+
 impl<T> SupportsCrawlResults for WorkerContext<T>
 where
     T: AsyncContext + SupportsSlimCrawlResults + SupportsConfigs,
@@ -286,11 +294,9 @@ where
             RawVecData::ExternalFile { file } => {
                 log::debug!("Store external");
                 if self.configs().crawl.store_big_file_hints_in_warc {
-                    self.worker_warc_writer.execute_on_writer(
-                        |value| {
-                            write_warc(value, result)
-                        }
-                    ).await?;
+                    self.worker_warc_writer
+                        .execute_on_writer(|value| write_warc(value, result))
+                        .await?;
                 }
                 StoredDataHint::External(file.clone())
             }
@@ -317,7 +323,7 @@ where
                     return Ok(Some(found.inflate(None)));
                 }
                 StoredDataHint::Warc(pointers) => {
-                    let read = pointers.read_in_context(&self.worker_warc_writer).await?;
+                    let read = pointers.read_in_context(Some(&self.worker_warc_writer)).await?;
                     return Ok(Some(found.inflate(read)));
                 }
                 StoredDataHint::Associated => unreachable!(),
@@ -328,9 +334,27 @@ where
     }
 }
 
+impl<T> SupportsCrawling for WorkerContext<T>
+where
+    T: SupportsCrawling,
+{
+    type Client = T::Client;
+    type Error = T::Error;
+
+    delegate::delegate! {
+        to self.inner {
+            fn create_crawl_task<S>(&self, seed: S) -> Result<CrawlTask<S, Self::Client>, Self::Error>
+            where
+                S: BasicSeed;
+
+            fn create_crawl_id(&self) -> String;
+        }
+    }
+}
+
 #[cfg(test)]
 pub mod test {
-    use crate::config::Configs;
+    use crate::config::Config;
     use crate::contexts::local::LocalContext;
     use crate::contexts::traits::{SupportsCrawlResults, SupportsSlimCrawlResults};
     use crate::contexts::worker::context::WorkerContext;
@@ -458,7 +482,7 @@ pub mod test {
         .unwrap();
 
         let wwr = ThreadsafeMultiFileWarcWriter::new_for_worker(Arc::new(
-            fs.create_worker_file_provider(0).await.unwrap(),
+            fs.create_worker_file_provider(0, 0).unwrap(),
         ))
         .unwrap();
 
@@ -495,33 +519,29 @@ pub mod test {
             std::fs::remove_dir_all("test").unwrap();
         }
 
-        let mut cfg = Configs::default();
+        let mut cfg = Config::default();
         cfg.paths.root = "test".parse().unwrap();
 
-        let local = Arc::new(
-            LocalContext::new(cfg, RuntimeContext::unbound())
-                .await
-                .unwrap(),
-        );
+        let local = Arc::new(LocalContext::new(cfg, &RuntimeContext::unbound()).unwrap());
 
-        let worker = WorkerContext::create(0, local.clone()).await.unwrap();
+        let worker = WorkerContext::create(0, 0, local.clone()).unwrap();
         let test_data1 = create_testdata_with_on_seed(None);
         const BIG_DATA: [u8; ByteUnit::Gigabyte(1).as_u64() as usize - 20] =
             [b'a'; { ByteUnit::Gigabyte(1).as_u64() as usize - 20 }];
 
         let test_data2 = create_test_data(
-            UrlWithDepth::from_seed("https://www.oofsize.de/").unwrap(),
+            UrlWithDepth::from_url("https://www.oofsize.de/").unwrap(),
             Some(RawVecData::from_vec(BIG_DATA.to_vec())),
         );
         let test_data3 = create_test_data(
-            UrlWithDepth::from_seed("https://www.catsanddogs.de/").unwrap(),
+            UrlWithDepth::from_url("https://www.catsanddogs.de/").unwrap(),
             None,
         );
         worker.store_crawled_website(&test_data1).await.unwrap();
         worker.store_crawled_website(&test_data2).await.unwrap();
         worker.store_crawled_website(&test_data3).await.unwrap();
 
-        let x = UrlWithDepth::from_seed("https://www.oofsize.de/").unwrap();
+        let x = UrlWithDepth::from_url("https://www.oofsize.de/").unwrap();
 
         let found = worker.retrieve_slim_crawled_website(&x).await.unwrap();
         println!("{:?}", found);
@@ -548,33 +568,29 @@ pub mod test {
             std::fs::remove_dir_all("test").unwrap();
         }
 
-        let mut cfg = Configs::default();
+        let mut cfg = Config::default();
         cfg.paths.root = "test".parse().unwrap();
 
-        let local = Arc::new(
-            LocalContext::new(cfg, RuntimeContext::unbound())
-                .await
-                .unwrap(),
-        );
+        let local = Arc::new(LocalContext::new(cfg, &RuntimeContext::unbound()).unwrap());
 
-        let worker = WorkerContext::create(0, local.clone()).await.unwrap();
+        let worker = WorkerContext::create(0, 0, local.clone()).unwrap();
         let test_data1 = create_testdata_with_on_seed(None);
         const BIG_DATA: [u8; ByteUnit::Gigabyte(1).as_u64() as usize - 20] =
             [b'a'; { ByteUnit::Gigabyte(1).as_u64() as usize - 20 }];
 
         let test_data2 = create_test_data_unknown(
-            UrlWithDepth::from_seed("https://www.oofsize.de/").unwrap(),
+            UrlWithDepth::from_url("https://www.oofsize.de/").unwrap(),
             RawVecData::from_vec(BIG_DATA.to_vec()),
         );
         let test_data3 = create_test_data(
-            UrlWithDepth::from_seed("https://www.catsanddogs.de/").unwrap(),
+            UrlWithDepth::from_url("https://www.catsanddogs.de/").unwrap(),
             None,
         );
         worker.store_crawled_website(&test_data1).await.unwrap();
         worker.store_crawled_website(&test_data2).await.unwrap();
         worker.store_crawled_website(&test_data3).await.unwrap();
 
-        let x = UrlWithDepth::from_seed("https://www.oofsize.de/").unwrap();
+        let x = UrlWithDepth::from_url("https://www.oofsize.de/").unwrap();
 
         let found = worker
             .retrieve_crawled_website(&x)

@@ -81,8 +81,8 @@ mod test {
     use crate::crawl::crawler::result::test::create_test_data;
     use crate::crawl::crawler::slim::{SlimCrawlResult, StoredDataHint};
     use crate::url::UrlWithDepth;
-    use camino::Utf8PathBuf;
     use crate::warc_ext::{WarcSkipInstruction, WarcSkipPointer, WarcSkipPointerWithPath};
+    use camino::Utf8PathBuf;
 
     #[test]
     fn serde_test() {
@@ -100,7 +100,7 @@ mod test {
         assert_eq!(ptr, y);
 
         let x = create_test_data(
-            UrlWithDepth::from_seed("https://www.google.de").unwrap(),
+            UrlWithDepth::from_url("https://www.google.de").unwrap(),
             None,
         );
         let slim = SlimCrawlResult::new(&x, ptr);

@@ -12,9 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod lists;
-pub mod manager;
+mod lists;
+mod manage;
+mod manager;
+mod traits;
 
-pub use lists::BlackListType;
-pub use lists::PolyBlackList;
+use cfg_if::cfg_if;
+pub use manage::*;
+pub use manager::manager_impl::InMemoryBlacklistManager;
+pub use manager::manager_impl::InMemoryBlacklistManagerInitialisationError;
+#[cfg(test)]
+pub use manager::BlacklistError;
 pub use manager::BlacklistManager;
+pub use traits::*;
+
+cfg_if! {
+    if #[cfg(test)] {
+        pub use lists::*;
+    } else {
+        pub use lists::PolyBlackList;
+    }
+}
