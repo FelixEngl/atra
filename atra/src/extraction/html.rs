@@ -234,10 +234,10 @@ mod selectors {
     Base can have anything except data: and javascript:
      */
 
+    /// A matcher for href locations
     pub static HREF_LOCATION_MATCHER: Lazy<Regex> =
         Lazy::new(|| Regex::new("location\\s*\\.\\s*href\\s*=\\s*'\\s*([^']*)\\s*'\\s*;?").unwrap());
 
-    // todo: use form action https://github.com/apache/nutch/blob/master/src/plugin/parse-html/src/java/org/apache/nutch/parse/html/DOMContentUtils.java#L330
     // Ignore [ping] of area/a
     static_selectors! {
         pub [
@@ -245,9 +245,7 @@ mod selectors {
             HREF_HOLDER = "a,area,link"
             SRC_HOLDER = "audio,embed,iframe,img,input,source,track,video"
             SCRIPT_HOLDER = "script"
-            // TARGET_ELEMENTS = "a,area,base,link,script,audio,embed,iframe,img,input,script,source,track,video"
             ON_CLICK = "[onclick]"
-            // SCRIPT = "script"
             FORM_HOLDER = "form[action]"
             META_NO_FOLLOW = "meta[name=\"robots\"][content=\"nofollow\"]"
         ]
