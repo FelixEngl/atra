@@ -171,11 +171,12 @@ pub mod test {
 
         CrawlResult::new(
             OffsetDateTime::now_utc(),
-            ResponseData::reconstruct(
+            ResponseData::new(
                 content.unwrap_or_else(|| RawVecData::from_vec(b"<html><body>hello world, this is a test file \r\n WARC/1.1\r\n or whatever!</body></html>".to_vec())),
                 seed,
                 Some(header),
                 StatusCode::OK,
+                None,
                 None
             ),
             Some(links),
@@ -206,7 +207,7 @@ pub mod test {
 
         CrawlResult::new(
             OffsetDateTime::now_utc(),
-            ResponseData::reconstruct(content, seed, None, StatusCode::OK, None),
+            ResponseData::new(content, seed, None, StatusCode::OK, None, None),
             Some(links),
             None,
             AtraFileInformation::new(InterpretedProcessibleFileFormat::HTML, None, None),

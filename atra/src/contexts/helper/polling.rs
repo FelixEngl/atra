@@ -21,7 +21,7 @@ use crate::queue::{
     UrlQueuePollResult,
 };
 use crate::runtime::ShutdownReceiver;
-use crate::sync::barrier::ContinueOrStop;
+use crate::sync::ContinueOrStop;
 use crate::url::guard::{GuardianError, UrlGuardian};
 use crate::url::{AtraOriginProvider, UrlWithDepth, UrlWithGuard};
 use std::error::Error;

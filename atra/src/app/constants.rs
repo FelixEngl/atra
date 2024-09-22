@@ -60,6 +60,7 @@ pub fn create_example_config() -> crate::config::configs::Config {
             subdomains: false,
             cache: true,
             use_cookies: true,
+            generate_web_graph: true,
             cookies: Some(CookieSettings {
                 default: Some("My Default cookie".to_string()),
                 per_host: Some({

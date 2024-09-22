@@ -280,7 +280,7 @@ mod test {
 
     #[tokio::test]
     async fn can_extract_data() {
-        let page = ResponseData::new(
+        let page = ResponseData::from_response(
             FetchedRequestData::new(
                 RawData::from_vec(include_bytes!("../../testdata/samples/HTML attribute reference - HTML_ HyperText Markup Language _ MDN.html").to_vec()),
                 None,

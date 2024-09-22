@@ -19,6 +19,8 @@ use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::select;
 use tokio_util::sync::CancellationToken;
+use crate::runtime::ShutdownChild;
+use crate::sync::CancellationTokenProvider;
 
 /// The result of the [WorkerBarrier]
 #[derive(Debug)]
@@ -36,13 +38,23 @@ pub struct WorkerBarrier {
 }
 
 impl WorkerBarrier {
-    pub fn new(number_of_worker: NonZeroUsize) -> Self {
+    pub fn new(number_of_workers: NonZeroUsize, cancellation_token: CancellationToken) -> Self {
         Self {
-            number_of_workers: number_of_worker,
+            number_of_workers,
             // Start one greater than 0, this way we can make sure that increment counter returns true if all decide to quit.
             cancel_requester_count_plus_one: AtomicUsize::new(1),
-            cancellation_token: CancellationToken::new(),
+            cancellation_token,
         }
+    }
+
+    pub fn new_with_dependence_to<C: CancellationTokenProvider>(
+        number_of_workers: NonZeroUsize,
+        token_provider: &C
+    ) -> Self {
+        Self::new(
+            number_of_workers,
+            token_provider.child_token()
+        )
     }
 
     /// Check if it was cancelled
@@ -136,12 +148,12 @@ impl WorkerBarrier {
         }
 
         select! {
-            _ = queue_changed_subscription.changed() => {
-                self.subscription_triggered(context, cause_provider, "queue")
-            }
             _ = self.cancellation_token.cancelled() => {
                 log::info!("Worker {} stopping!.", context.worker_id());
                 ContinueOrStop::Cancelled(cause_provider())
+            }
+            _ = queue_changed_subscription.changed() => {
+                self.subscription_triggered(context, cause_provider, "queue")
             }
             _ = guardian_changed_subscription.changed() => {
                 self.subscription_triggered(context, cause_provider, "guardian")

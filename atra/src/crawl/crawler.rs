@@ -426,7 +426,7 @@ where
                     }
 
                     log::trace!("Fetched: {}", target);
-                    let mut response_data = ResponseData::new(page, target.clone());
+                    let mut response_data = ResponseData::from_response(page, target.clone());
 
                     let file_information = AtraFileInformation::determine(context, &response_data);
 

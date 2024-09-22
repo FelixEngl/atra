@@ -31,6 +31,10 @@ pub enum LinkHandlingError {
     UrlQueue(#[from] QueueError),
     #[error(transparent)]
     LinkNetError(#[from] LinkNetError),
+    // #[error(transparent)]
+    // DataUrlError(#[from] data_url::DataUrlError),
+    // #[error(transparent)]
+    // MimeParserError(#[from] mime::FromStrError),
 }
 
 

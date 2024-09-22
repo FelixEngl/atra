@@ -19,6 +19,7 @@ use crate::url::UrlWithDepth;
 use reqwest::header::HeaderMap;
 use reqwest::StatusCode;
 use std::str::FromStr;
+use crate::format::mime::MimeType;
 
 /// The response for a request
 #[derive(Debug)]
@@ -31,18 +32,20 @@ pub struct ResponseData {
     pub headers: Option<HeaderMap>,
     /// The status code of the page request.
     pub status_code: StatusCode,
-    /// The final destination of the page if redirects were performed [Not implemented in the chrome feature].
+    /// The final destination of the page if redirects were performed.
     pub final_redirect_destination: Option<String>,
+    /// Set if it is a data url
+    pub data_url_meta: Option<MimeType>
 }
 
 impl ResponseData {
-    #[cfg(test)]
-    pub fn reconstruct(
+    pub fn new(
         content: RawVecData,
         url: UrlWithDepth,
         headers: Option<HeaderMap>,
         status_code: StatusCode,
         final_redirect_destination: Option<String>,
+        data_url_meta: Option<MimeType>
     ) -> Self {
         Self {
             content,
@@ -50,16 +53,18 @@ impl ResponseData {
             headers,
             status_code,
             final_redirect_destination,
+            data_url_meta
         }
     }
 
-    pub fn new(page_response: FetchedRequestData, url: UrlWithDepth) -> Self {
+    pub fn from_response(page_response: FetchedRequestData, url: UrlWithDepth) -> Self {
         Self {
             content: page_response.content,
             url,
             headers: page_response.headers,
             status_code: page_response.status_code,
             final_redirect_destination: page_response.final_url,
+            data_url_meta: None
         }
     }
 

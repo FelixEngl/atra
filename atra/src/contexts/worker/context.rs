@@ -217,7 +217,7 @@ where
 
     delegate::delegate! {
         to self.inner {
-            fn web_graph_manager(&self) -> &Self::WebGraphManager;
+            fn web_graph_manager(&self) -> Option<&Self::WebGraphManager>;
         }
     }
 }

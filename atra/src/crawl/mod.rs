@@ -31,7 +31,7 @@ use crate::contexts::Context;
 use crate::queue::QueueError;
 use crate::queue::{AbortCause, QueueExtractionError, UrlQueuePollResult};
 use crate::runtime::ShutdownReceiver;
-use crate::sync::barrier::{ContinueOrStop, WorkerBarrier};
+use crate::sync::{ContinueOrStop, WorkerBarrier};
 
 use crate::link_state::LinkStateManager;
 #[cfg(test)]

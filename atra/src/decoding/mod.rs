@@ -394,7 +394,7 @@ mod test {
             false,
         );
         (
-            ResponseData::new(
+            ResponseData::from_response(
                 data,
                 UrlWithDepth::from_url("https://www.example.com").unwrap(),
             ),
@@ -426,7 +426,7 @@ mod test {
             false,
         );
         (
-            ResponseData::new(
+            ResponseData::from_response(
                 data,
                 UrlWithDepth::from_url("https://www.example.com").unwrap(),
             ),
@@ -454,7 +454,7 @@ mod test {
             false,
         );
         (
-            ResponseData::new(
+            ResponseData::from_response(
                 data,
                 UrlWithDepth::from_url("https://www.example.com").unwrap(),
             ),
@@ -482,7 +482,7 @@ mod test {
             false,
         );
         (
-            ResponseData::new(
+            ResponseData::from_response(
                 data,
                 UrlWithDepth::from_url("https://www.example.com").unwrap(),
             ),
@@ -515,7 +515,7 @@ mod test {
             false,
         );
         (
-            ResponseData::new(
+            ResponseData::from_response(
                 data,
                 UrlWithDepth::from_url("https://www.example.com").unwrap(),
             ),

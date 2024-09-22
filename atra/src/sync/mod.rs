@@ -12,4 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod barrier;
+mod barrier;
+
+use tokio_util::sync::CancellationToken;
+pub use barrier::{WorkerBarrier, ContinueOrStop};
+
+
+/// A provider for cancellation tokens.
+pub trait CancellationTokenProvider {
+    /// Provides a clone of the owned token
+    fn clone_token(&self) -> CancellationToken;
+
+    /// Provides a child of the owned token
+    fn child_token(&self) -> CancellationToken;
+}
+
+
+impl CancellationTokenProvider for CancellationToken {
+    #[inline(always)]
+    fn clone_token(&self) -> CancellationToken {
+        self.clone()
+    }
+
+    #[inline(always)]
+    fn child_token(&self) -> CancellationToken {
+        CancellationToken::clone_token(self)
+    }
+}

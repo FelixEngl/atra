@@ -60,6 +60,9 @@ pub struct CrawlConfig {
     /// Store the big file hints also in the warc
     pub store_big_file_hints_in_warc: bool,
 
+    /// If set generates the webgraph. This can impact the overall performance of the crawl.
+    pub generate_web_graph: bool,
+
     /// The maximum size to download. (in byte)
     pub max_file_size: Option<NonZeroU64>,
 
@@ -148,6 +151,7 @@ impl Default for CrawlConfig {
             decode_big_files_up_to: None,
             stopword_registry: None,
             gbdr: None,
+            generate_web_graph: true
         }
     }
 }

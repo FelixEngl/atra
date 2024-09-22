@@ -23,7 +23,7 @@ use crate::crawl::{crawl, ErrorConsumer, ExitState};
 use crate::link_state::{LinkStateLike, LinkStateManager, RawLinkState};
 use crate::queue::{QueueError, SupportsForcedQueueElement, UrlQueue, UrlQueueElement};
 use crate::runtime::{AtraRuntime, GracefulShutdownWithGuard, OptionalAtraHandle, RuntimeContext, ShutdownReceiver};
-use crate::sync::barrier::{ContinueOrStop, WorkerBarrier};
+use crate::sync::{ContinueOrStop, WorkerBarrier};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use rocksdb::IteratorMode;
@@ -204,10 +204,14 @@ impl Atra {
                 let mut recrawl_ct = 0;
                 loop {
                     let guard = self.shutdown().guard();
-                    let barrier = WorkerBarrier::new(unsafe { NonZeroUsize::new_unchecked(1) });
+                    let shutdown = self.shutdown.get().child().clone();
+                    let barrier = WorkerBarrier::new_with_dependence_to(
+                        unsafe { NonZeroUsize::new_unchecked(1) },
+                        &shutdown
+                    );
                     let value = match crawl(
                         WorkerContext::create(0, recrawl_ct, context.clone())?,
-                        self.shutdown.get().child().clone(),
+                        shutdown,
                         Arc::new(barrier),
                         GlobalErrorConsumer::new(),
                     ).await {
@@ -265,7 +269,12 @@ impl Atra {
                 loop {
                     let mut set = JoinSet::new();
                     let worker_count = worker.unwrap_or(num_cpus());
-                    let barrier = Arc::new(WorkerBarrier::new(worker_count));
+                    let barrier = Arc::new(
+                        WorkerBarrier::new_with_dependence_to(
+                            worker_count,
+                            self.shutdown.get().child()
+                        )
+                    );
                     for i in 0..worker_count.get() {
                         log::info!("Spawn Worker: {i}");
                         let b = barrier.clone();

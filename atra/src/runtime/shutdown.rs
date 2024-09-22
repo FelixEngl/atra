@@ -1,4 +1,4 @@
-// Copyright 2024 Felix Engl
+// Copyright 2024. Felix Engl
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -29,10 +29,12 @@ pub trait ShutdownReceiver: Clone {
 }
 
 
+
 mod shutdown {
     use std::sync::Arc;
     use tokio_util::sync::{CancellationToken, DropGuard};
     use crate::runtime::{ShutdownReceiver, ShutdownSender};
+    use crate::sync::CancellationTokenProvider;
 
     /// A root shutdown element. Does not provide any significant
     /// functionality to the outside world.
@@ -47,7 +49,7 @@ mod shutdown {
             Self { inner: CancellationToken::new() }
         }
 
-        /// Creates a child shutdown.
+        /// Creates a new child shutdown.
         fn create_child(&self) -> ShutdownChild {
             ShutdownChild {
                 inner: self.inner.child_token()
@@ -81,6 +83,16 @@ mod shutdown {
             Self {
                 inner: self.inner.clone()
             }
+        }
+    }
+
+    impl CancellationTokenProvider for ShutdownRoot {
+        fn clone_token(&self) -> CancellationToken {
+            self.inner.clone()
+        }
+
+        fn child_token(&self) -> CancellationToken {
+            self.inner.child_token()
         }
     }
 
@@ -222,6 +234,17 @@ mod shutdown {
     pub struct ShutdownChild {
         inner: CancellationToken
     }
+
+    impl CancellationTokenProvider for ShutdownChild {
+        fn clone_token(&self) -> CancellationToken {
+            self.inner.clone()
+        }
+
+        fn child_token(&self) -> CancellationToken {
+            self.inner.child_token()
+        }
+    }
+
     impl ShutdownSender for ShutdownChild {
         fn shutdown(&self) {
             self.inner.cancel();

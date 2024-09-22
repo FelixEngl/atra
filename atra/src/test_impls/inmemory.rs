@@ -381,8 +381,12 @@ where
 {
     type WebGraphManager = TestLinkNetManager;
 
-    fn web_graph_manager(&self) -> &Self::WebGraphManager {
-        &self.link_net_manager
+    fn web_graph_manager(&self) -> Option<&Self::WebGraphManager> {
+        if self.configs.crawl.generate_web_graph {
+            Some(&self.link_net_manager)
+        } else {
+            None
+        }
     }
 }
 

@@ -178,7 +178,7 @@ pub mod traits {
         type WebGraphManager: WebGraphManager;
 
         /// Returns the link net manager
-        fn web_graph_manager(&self) -> &Self::WebGraphManager;
+        fn web_graph_manager(&self) -> Option<&Self::WebGraphManager>;
     }
 
     /// The context needed for tokenizing to work

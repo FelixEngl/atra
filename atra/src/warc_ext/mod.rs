@@ -51,7 +51,7 @@ mod test {
         const HTML_DATA: &str = "<html><body>Hello World!</body></html>";
         let result = CrawlResult::new(
             OffsetDateTime::now_utc(),
-            ResponseData::new(
+            ResponseData::from_response(
                 FetchedRequestData::new(
                     RawVecData::from_vec(HTML_DATA.as_bytes().to_vec()),
                     None,
@@ -101,7 +101,7 @@ mod test {
         const HTML_DATA: &str = "<html><body>Hello World! WARBLGARBL</body></html>";
         let result = CrawlResult::new(
             OffsetDateTime::now_utc(),
-            ResponseData::new(
+            ResponseData::from_response(
                 FetchedRequestData::new(
                     RawVecData::from_vec(HTML_DATA.as_bytes().to_vec()),
                     None,

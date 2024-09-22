@@ -44,12 +44,14 @@ use rocksdb::DB;
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::BufWriter;
+use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use text_processing::stopword_registry::StopWordRegistry;
 use text_processing::tf_idf::{Idf, Tf};
 use time::OffsetDateTime;
 use crate::contexts::local::LocalContextInitError;
+use crate::format::mime::MimeType;
 
 /// The state of the app
 #[derive(Debug)]
@@ -64,7 +66,7 @@ pub struct LocalContext {
     crawled_data: CrawlDB,
     host_manager: InMemoryUrlGuardian,
     configs: Config,
-    links_net_manager: Arc<QueuingWebGraphManager>,
+    web_graph_manager: Option<Arc<QueuingWebGraphManager>>,
     ct_discovered_websites: AtomicUsize,
     stop_word_registry: Option<StopWordRegistry>,
     gdbr_filer_registry: Option<GdbrIdentifierRegistry<Tf, Idf, L2R_L2LOSS_SVR>>,
@@ -119,11 +121,18 @@ impl LocalContext {
         log::info!("Init robots manager.");
         let robots = OffMemoryRobotsManager::new(db.clone(), configs.system.robots_cache_size);
         log::info!("Init web graph writer.");
-        let web_graph_manager = QueuingWebGraphManager::new(
-            configs.system.web_graph_cache_size,
-            configs.paths.file_web_graph(),
-            &runtime_context,
-        )?;
+
+
+
+        let web_graph_manager =
+            configs.crawl.generate_web_graph.then(
+                || QueuingWebGraphManager::new(
+                    configs.system.web_graph_cache_size,
+                    configs.paths.file_web_graph(),
+                    &runtime_context,
+                ).map(Arc::new)
+            ).transpose()?;
+
         log::info!("Init stopword registry.");
         let stop_word_registry = configs
             .crawl
@@ -165,7 +174,7 @@ impl LocalContext {
             host_manager: InMemoryUrlGuardian::default(),
             started_at: OffsetDateTime::now_utc(),
             ct_discovered_websites: AtomicUsize::new(0),
-            links_net_manager: Arc::new(web_graph_manager),
+            web_graph_manager,
             stop_word_registry,
             gdbr_filer_registry,
             domain_manager,
@@ -202,9 +211,9 @@ impl SupportsLinkSeeding for LocalContext {
     type Error = LinkHandlingError;
 
     async fn register_seed<S: BasicSeed>(&self, seed: &S) -> Result<(), LinkHandlingError> {
-        self.links_net_manager
-            .add(WebGraphEntry::create_seed(seed))
-            .await?;
+        if let Some(ref manager) = self.web_graph_manager {
+            manager.add(WebGraphEntry::create_seed(seed)).await?;
+        }
         Ok(())
     }
 
@@ -218,15 +227,15 @@ impl SupportsLinkSeeding for LocalContext {
         for link in links {
             match link {
                 ExtractedLink::OnSeed { url, .. } => {
-                    self.links_net_manager
-                        .add(WebGraphEntry::create_link(from, url))
-                        .await?;
+                    if let Some(ref manager) = self.web_graph_manager {
+                        manager.add(WebGraphEntry::create_link(from, url)).await?;
+                    }
                     for_insert.push(url.clone());
                 }
                 ExtractedLink::Outgoing { url, .. } => {
-                    self.links_net_manager
-                        .add(WebGraphEntry::create_link(from, url))
-                        .await?;
+                    if let Some(ref manager) = self.web_graph_manager {
+                        manager.add(WebGraphEntry::create_link(from, url)).await?;
+                    }
                     if self.link_state_manager.get_link_state(url).await?.is_none() {
                         let recrawl: Option<RecrawlYesNo> = if let Some(origin) = url.atra_origin()
                         {
@@ -249,7 +258,14 @@ impl SupportsLinkSeeding for LocalContext {
                             .await?;
                     }
                 }
-                ExtractedLink::Data { .. } => {
+                ExtractedLink::Data { url, extraction_method, base } => {
+                    // let parsed = data_url::DataUrl::process(&url.url.as_str())?;
+                    //
+                    // /// TODO: this is expensive. But mime does not provide a better API
+                    // let mime_type = MimeType::new_single(parsed.mime_type().to_string().parse()?);
+
+
+
                     // todo data-urls: How to handle?
                     log::warn!("data-urls are at the moment unsupported.")
                 }
@@ -296,8 +312,12 @@ impl SupportsConfigs for LocalContext {
 impl SupportsWebGraph for LocalContext {
     type WebGraphManager = QueuingWebGraphManager;
 
-    fn web_graph_manager(&self) -> &Self::WebGraphManager {
-        &self.links_net_manager
+    fn web_graph_manager(&self) -> Option<&Self::WebGraphManager> {
+        if let Some(ref value) = self.web_graph_manager {
+            Some(value.deref())
+        } else {
+            None
+        }
     }
 }
 impl SupportsBlackList for LocalContext {
