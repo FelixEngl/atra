@@ -19,7 +19,6 @@ use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::select;
 use tokio_util::sync::CancellationToken;
-use crate::runtime::ShutdownChild;
 use crate::sync::CancellationTokenProvider;
 
 /// The result of the [WorkerBarrier]

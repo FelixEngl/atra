@@ -177,7 +177,6 @@ pub mod test {
                 Some(header),
                 StatusCode::OK,
                 None,
-                None
             ),
             Some(links),
             Some(encoding_rs::UTF_8),
@@ -207,7 +206,7 @@ pub mod test {
 
         CrawlResult::new(
             OffsetDateTime::now_utc(),
-            ResponseData::new(content, seed, None, StatusCode::OK, None, None),
+            ResponseData::new(content, seed, None, StatusCode::OK, None),
             Some(links),
             None,
             AtraFileInformation::new(InterpretedProcessibleFileFormat::HTML, None, None),

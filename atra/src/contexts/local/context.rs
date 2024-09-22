@@ -51,7 +51,6 @@ use text_processing::stopword_registry::StopWordRegistry;
 use text_processing::tf_idf::{Idf, Tf};
 use time::OffsetDateTime;
 use crate::contexts::local::LocalContextInitError;
-use crate::format::mime::MimeType;
 
 /// The state of the app
 #[derive(Debug)]
@@ -258,7 +257,7 @@ impl SupportsLinkSeeding for LocalContext {
                             .await?;
                     }
                 }
-                ExtractedLink::Data { url, extraction_method, base } => {
+                ExtractedLink::Data { .. } => {
                     // let parsed = data_url::DataUrl::process(&url.url.as_str())?;
                     //
                     // /// TODO: this is expensive. But mime does not provide a better API
