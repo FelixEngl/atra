@@ -47,8 +47,8 @@ pub enum ExitState {
     NoMoreElements,
 }
 
-unsafe impl Send for ExitState{}
-unsafe impl Sync for ExitState{}
+unsafe impl Send for ExitState {}
+unsafe impl Sync for ExitState {}
 
 /// A consumer for some kind of error. Allows to return an error if necessary to stop the crawling.
 pub trait ErrorConsumer<E> {

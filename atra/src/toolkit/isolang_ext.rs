@@ -17,10 +17,12 @@ use std::convert::Infallible;
 use std::error::Error as StdError;
 use whatlang::Lang;
 
+/// Converts something to an isolang
 pub trait ToIsoLang {
     fn to_isolang(self) -> Language;
 }
 
+/// Try to convert something to an isolang
 pub trait TryToIsoLang {
     type Error: StdError;
 

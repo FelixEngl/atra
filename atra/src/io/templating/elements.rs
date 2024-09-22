@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt::Write;
+use crate::io::serial::SerialProvider;
+use crate::io::templating::TemplateError::ArgumentMissing;
+use crate::io::templating::{FileNameTemplate, FileNameTemplateArgs, TemplateError};
 use data_encoding::BASE64URL_NOPAD;
+use std::fmt::Write;
 use time::format_description::{parse_owned, OwnedFormatItem};
 use time::OffsetDateTime;
-use crate::io::serial::SerialProvider;
-use crate::io::templating::{FileNameTemplate, FileNameTemplateArgs, TemplateError};
-use crate::io::templating::TemplateError::ArgumentMissing;
 
 #[derive(Debug, Clone)]
 pub enum FileNameTemplateElement {
@@ -31,7 +31,6 @@ pub enum FileNameTemplateElement {
     CustomSerial(SerialProvider),
     FileNameTemplate(FileNameTemplate),
 }
-
 
 impl FileNameTemplateElement {
     pub fn formatted_timestamp(

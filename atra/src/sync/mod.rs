@@ -14,9 +14,8 @@
 
 mod barrier;
 
+pub use barrier::{ContinueOrStop, WorkerBarrier};
 use tokio_util::sync::CancellationToken;
-pub use barrier::{WorkerBarrier, ContinueOrStop};
-
 
 /// A provider for cancellation tokens.
 pub trait CancellationTokenProvider {
@@ -26,7 +25,6 @@ pub trait CancellationTokenProvider {
     /// Provides a child of the owned token
     fn child_token(&self) -> CancellationToken;
 }
-
 
 impl CancellationTokenProvider for CancellationToken {
     #[inline(always)]

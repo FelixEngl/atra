@@ -26,9 +26,9 @@ use nom::multi::separated_list1;
 use nom::sequence::{delimited, preceded};
 use nom::IResult;
 use nom::Parser;
+use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::str::FromStr;
-use serde::{Deserialize, Serialize};
 
 /// Defines what kind of seed is used
 /// CLI Syntax:

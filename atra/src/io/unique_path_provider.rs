@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::io::serial::{SerialProvider};
-use crate::io::templating::{FileNameTemplate, FileNameTemplateArgs, RecoverInstruction, TemplateError};
+use crate::io::serial::SerialProvider;
+use crate::io::templating::{
+    FileNameTemplate, FileNameTemplateArgs, RecoverInstruction, TemplateError,
+};
 use camino::{Utf8Path, Utf8PathBuf};
 use std::fmt::Debug;
 
@@ -47,10 +49,7 @@ impl UniquePathProvider {
     }
 }
 
-
-
-impl UniquePathProvider
-{
+impl UniquePathProvider {
     pub fn provide_path(
         &self,
         template: &FileNameTemplate,
@@ -109,7 +108,7 @@ impl UniquePathProviderWithTemplate {
 
     pub fn current_path_with_args(
         &self,
-        args: &FileNameTemplateArgs
+        args: &FileNameTemplateArgs,
     ) -> Result<Utf8PathBuf, TemplateError> {
         self.provider.current_path(&self.template, Some(args))
     }
@@ -118,28 +117,32 @@ impl UniquePathProviderWithTemplate {
         self.provider.current_path(&self.template, None)
     }
 
-
     pub fn get_recover_information(&self) -> RecoverInstruction {
         RecoverInstruction {
             serial_state: self.provider.serial_provider.current_serial(),
-            instructions: self.template.get_recover_information()
+            instructions: self.template.get_recover_information(),
         }
     }
 
     pub fn recover(&mut self, recover_instruction: RecoverInstruction) {
         if let Some(serial_state) = recover_instruction.serial_state {
-            self.provider.serial_provider.set_current_serial(serial_state)
+            self.provider
+                .serial_provider
+                .set_current_serial(serial_state)
         }
-        self.template.recover(recover_instruction.instructions.as_slice())
+        self.template
+            .recover(recover_instruction.instructions.as_slice())
     }
 }
 
 #[cfg(test)]
 mod test {
-    use camino::Utf8PathBuf;
     use crate::io::serial::{SerialProviderKind, SerialValue};
-    use crate::io::templating::{file_name_template, RecoverInstruction, RecoverInstructionElement};
+    use crate::io::templating::{
+        file_name_template, RecoverInstruction, RecoverInstructionElement,
+    };
     use crate::io::unique_path_provider::{UniquePathProvider, UniquePathProviderWithTemplate};
+    use camino::Utf8PathBuf;
 
     fn provide_template() -> UniquePathProviderWithTemplate {
         let template_base = file_name_template!("hello_world" _ "whatever").unwrap();
@@ -150,16 +153,13 @@ mod test {
             .unwrap();
 
         UniquePathProviderWithTemplate::new(
-            UniquePathProvider::new(
-                "test/tata",
-                SerialProviderKind::Long.into()
-            ),
-            template
+            UniquePathProvider::new("test/tata", SerialProviderKind::Long.into()),
+            template,
         )
     }
 
     #[test]
-    fn can_properly_provide_current(){
+    fn can_properly_provide_current() {
         let next = provide_template();
         assert_eq!(
             Utf8PathBuf::from("test/tata\\hello_world_whatever_12_rc_1_0.warc"),
@@ -178,7 +178,6 @@ mod test {
             next.current_path_no_args().unwrap(),
             "Failed with current!"
         );
-
 
         assert_eq!(
             Utf8PathBuf::from("test/tata\\hello_world_whatever_12_rc_1_1.warc"),
@@ -210,8 +209,8 @@ mod test {
             instructions: vec![
                 (0, RecoverInstructionElement::SubElement(vec![])),
                 (2, RecoverInstructionElement::Dynamic("12".to_string())),
-                (6, RecoverInstructionElement::Dynamic("1".to_string()))
-            ]
+                (6, RecoverInstructionElement::Dynamic("1".to_string())),
+            ],
         };
         assert_eq!(expected, next.get_recover_information());
 

@@ -133,8 +133,8 @@ impl AtraHandleOption for OptionalAtraHandle {
 
     fn main_or_current(&self) -> Handle {
         match self {
-            None => {Handle::current()}
-            Some(handle) => {handle.main.clone()}
+            None => Handle::current(),
+            Some(handle) => handle.main.clone(),
         }
     }
 

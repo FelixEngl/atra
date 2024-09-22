@@ -15,20 +15,20 @@
 mod error;
 mod instruction;
 
-use std::fs::File;
-use std::io::{BufReader, BufWriter};
-use std::num::NonZeroUsize;
-use camino::Utf8PathBuf;
-use time::Duration;
-pub use instruction::*;
-pub use error::*;
 use crate::app::args::RunMode;
-use crate::app::{ApplicationMode, AtraArgs};
 use crate::app::config::{discover, discover_or_default, try_load_from_path};
 use crate::app::constants::{create_example_config, ATRA_LOGO, ATRA_WELCOME};
 use crate::app::view::view;
+use crate::app::{ApplicationMode, AtraArgs};
 use crate::config::{BudgetSetting, Config};
 use crate::contexts::local::LocalContext;
+use camino::Utf8PathBuf;
+pub use error::*;
+pub use instruction::*;
+use std::fs::File;
+use std::io::{BufReader, BufWriter};
+use std::num::NonZeroUsize;
+use time::Duration;
 
 /// Consumes the args and returns everything necessary to execute Atra
 pub(crate) fn prepare_instruction(args: AtraArgs) -> Result<Instruction, InstructionError> {
@@ -94,16 +94,12 @@ pub(crate) fn prepare_instruction(args: AtraArgs) -> Result<Instruction, Instruc
 
                 config.system.log_to_file = log_to_file;
 
-                Ok(
-                    Instruction::RunInstruction(
-                        RunInstruction {
-                            mode: ApplicationMode::Single,
-                            config,
-                            seeds: Some(seeds),
-                            recover_mode: false
-                        }
-                    )
-                )
+                Ok(Instruction::RunInstruction(RunInstruction {
+                    mode: ApplicationMode::Single,
+                    config,
+                    seeds: Some(seeds),
+                    recover_mode: false,
+                }))
             }
             RunMode::MULTI {
                 session_name,
@@ -145,14 +141,14 @@ pub(crate) fn prepare_instruction(args: AtraArgs) -> Result<Instruction, Instruc
                     config.system.log_level = log_level;
                 }
 
-                Ok(Instruction::RunInstruction(
-                    RunInstruction {
-                        mode: ApplicationMode::Multi(threads.map(|value| NonZeroUsize::new(value)).flatten()),
-                        config,
-                        seeds: Some(seeds),
-                        recover_mode: false
-                    }
-                ))
+                Ok(Instruction::RunInstruction(RunInstruction {
+                    mode: ApplicationMode::Multi(
+                        threads.map(|value| NonZeroUsize::new(value)).flatten(),
+                    ),
+                    config,
+                    seeds: Some(seeds),
+                    recover_mode: false,
+                }))
             }
             RunMode::INIT => {
                 println!("{}\n\n{}\n\n", ATRA_WELCOME, ATRA_LOGO);
@@ -185,9 +181,8 @@ pub(crate) fn prepare_instruction(args: AtraArgs) -> Result<Instruction, Instruc
             RunMode::RECOVER {
                 threads,
                 log_to_file,
-                path
+                path,
             } => {
-
                 let path = Utf8PathBuf::from(path);
 
                 let mut config = if path.is_dir() {
@@ -202,21 +197,24 @@ pub(crate) fn prepare_instruction(args: AtraArgs) -> Result<Instruction, Instruc
                     } else {
                         return Err(std::io::Error::new(
                             std::io::ErrorKind::InvalidInput,
-                            format!("The path {} points to a config file but doesn't have a parent!", path)
-                        ).into())
+                            format!(
+                                "The path {} points to a config file but doesn't have a parent!",
+                                path
+                            ),
+                        )
+                        .into());
                     };
                     cfg
                 } else {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::InvalidInput,
                         format!("The path {} is neither a config file nor a path to a folder containing a config!", path)
-                    ).into())
+                    ).into());
                 };
 
                 if log_to_file {
                     config.system.log_to_file = log_to_file;
                 }
-
 
                 let mode = match threads {
                     None => {
@@ -233,20 +231,25 @@ pub(crate) fn prepare_instruction(args: AtraArgs) -> Result<Instruction, Instruc
                     }
                     Some(threads) => {
                         log::info!("#Threads set to {threads}, going single mode!");
-                        ApplicationMode::Multi(Some(unsafe{NonZeroUsize::new_unchecked(threads)}))
+                        ApplicationMode::Multi(Some(unsafe {
+                            NonZeroUsize::new_unchecked(threads)
+                        }))
                     }
                 };
 
-                Ok(Instruction::RunInstruction(
-                    RunInstruction {
-                        mode,
-                        config,
-                        seeds: None,
-                        recover_mode: true,
-                    }
-                ))
+                Ok(Instruction::RunInstruction(RunInstruction {
+                    mode,
+                    config,
+                    seeds: None,
+                    recover_mode: true,
+                }))
             }
-            RunMode::VIEW { path, internals, extracted_links, headers } => {
+            RunMode::VIEW {
+                path,
+                internals,
+                extracted_links,
+                headers,
+            } => {
                 let path = Utf8PathBuf::from(path);
 
                 let config = if path.is_dir() {
@@ -261,15 +264,19 @@ pub(crate) fn prepare_instruction(args: AtraArgs) -> Result<Instruction, Instruc
                     } else {
                         return Err(std::io::Error::new(
                             std::io::ErrorKind::InvalidInput,
-                            format!("The path {} points to a config file but doesn't have a parent!", path)
-                        ).into())
+                            format!(
+                                "The path {} points to a config file but doesn't have a parent!",
+                                path
+                            ),
+                        )
+                        .into());
                     };
                     cfg
                 } else {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::InvalidInput,
                         format!("The path {} is neither a config file nor a path to a folder containing a config!", path)
-                    ).into())
+                    ).into());
                 };
 
                 println!("{}\n\n{}\n\n\n", ATRA_WELCOME, ATRA_LOGO);
@@ -279,7 +286,8 @@ pub(crate) fn prepare_instruction(args: AtraArgs) -> Result<Instruction, Instruc
                     .build()
                     .expect("Fatal: Was not able to initialize runtime!");
                 runtime.block_on(async move {
-                    let local = LocalContext::new_without_runtime(config).expect("Was not able to load context for reading!");
+                    let local = LocalContext::new_without_runtime(config)
+                        .expect("Was not able to load context for reading!");
                     view(local, internals, extracted_links, headers, false);
                 });
                 Ok(Instruction::Nothing)

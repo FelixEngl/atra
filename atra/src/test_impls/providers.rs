@@ -20,21 +20,24 @@ use crate::test_impls::{FakeClient, FakeResponse, FakeResponseError};
 use crate::url::AtraUri;
 use std::error::Error;
 
+/// A provider for a client used to download things.
 pub trait ClientProvider {
     type Client: AtraClient;
 
     type Error: Error + Send + Sync;
 
+    /// Provide a client for a context and a specific seed.
     fn provide<C, T>(&self, context: &C, seed: &T) -> Result<Self::Client, Self::Error>
     where
         C: SupportsCrawling + SupportsConfigs,
         T: BasicSeed;
 }
 
+/// The default implementation for Atra
 #[derive(Default)]
-pub struct DefaultProvider;
+pub struct DefaultAtraProvider;
 
-impl ClientProvider for DefaultProvider {
+impl ClientProvider for DefaultAtraProvider {
     type Client = ClientWithUserAgent;
     type Error = reqwest::Error;
 
@@ -55,6 +58,8 @@ impl ClientProvider for DefaultProvider {
     }
 }
 
+
+/// A fake client provider.
 pub struct FakeClientProvider {
     inner: FakeClient,
 }
@@ -87,3 +92,4 @@ impl ClientProvider for FakeClientProvider {
         Ok(self.inner.clone())
     }
 }
+

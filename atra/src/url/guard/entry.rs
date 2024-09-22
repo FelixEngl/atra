@@ -25,14 +25,17 @@ pub struct GuardEntry {
 }
 
 impl GuardEntry {
+    /// Returns true if the guarded entry is in use.
     pub fn is_in_use(&self) -> bool {
         self.is_in_use
     }
 
+    /// Returns the last modification timestamp
     pub fn last_modification(&self) -> Option<SystemTime> {
         self.last_modification
     }
 
+    /// The depth of the protected domain.
     pub fn depth(&self) -> Depth {
         self.depth
     }

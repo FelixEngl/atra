@@ -14,6 +14,7 @@
 
 use thiserror::Error;
 
+/// Error while parsing an instruction.
 #[derive(Debug, Error)]
 pub enum InstructionError {
     #[error(transparent)]

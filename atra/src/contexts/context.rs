@@ -17,7 +17,6 @@ use traits::*;
 /// A trait for marking a context trait
 pub trait BaseContext {}
 
-
 macro_rules! create_abstract_traits {
     ($($(#[$meta:meta])* $t_name: ident {$($name: ident),+ $(,)?}),+) => {
         $(
@@ -53,15 +52,12 @@ create_abstract_traits! {
     }
 }
 
-
-
-
 pub mod traits {
     use crate::blacklist::BlacklistManager;
     use crate::client::traits::AtraClient;
     use crate::config::Config;
     use crate::contexts::BaseContext;
-    use crate::crawl::{SlimCrawlResult};
+    use crate::crawl::SlimCrawlResult;
     use crate::crawl::{CrawlResult, CrawlTask};
     use crate::extraction::ExtractedLink;
     use crate::gdbr::identifier::GdbrRegistry;
@@ -90,7 +86,6 @@ pub mod traits {
     /// Can basically do nothing alone and is only a helper interface for the
     /// required interfaces.
     pub trait AsyncContext: BaseContext + Send + Sync + 'static {}
-
 
     pub trait SupportsLinkSeeding: BaseContext {
         type Error: Error + Send + Sync;
@@ -152,11 +147,13 @@ pub mod traits {
 
     pub trait SupportsUrlQueue: BaseContext + Send + Sync {
         /// The url queue used by this
-        type UrlQueue: UrlQueue<UrlWithDepth> + SupportsForcedQueueElement<UrlWithDepth> + Send + Sync;
+        type UrlQueue: UrlQueue<UrlWithDepth>
+            + SupportsForcedQueueElement<UrlWithDepth>
+            + Send
+            + Sync;
 
         /// Returns true if poll possible
         async fn can_poll(&self) -> bool;
-
 
         /// Get the instance of the url queue.
         fn url_queue(&self) -> &Self::UrlQueue;
@@ -273,5 +270,4 @@ pub mod traits {
 
         fn get_domain_manager(&self) -> &Self::DomainHandler;
     }
-
 }

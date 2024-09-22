@@ -31,12 +31,15 @@ use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::Sender;
 use ubyte::ByteUnit;
 
+/// The entry of a webgraph.
 #[derive(Debug)]
 pub enum WebGraphEntry {
+    /// A seed
     Seed {
         origin: AtraUrlOrigin,
         seed: AtraUri,
     },
+    /// A normal link
     Link {
         from: AtraUri,
         to: AtraUri,
@@ -44,6 +47,7 @@ pub enum WebGraphEntry {
 }
 
 impl WebGraphEntry {
+    #[inline]
     pub fn create_link(from: &UrlWithDepth, to: &UrlWithDepth) -> Self {
         Self::Link {
             from: from.url.clone(),
@@ -51,6 +55,7 @@ impl WebGraphEntry {
         }
     }
 
+    #[inline]
     pub fn create_seed(seed: &impl BasicSeed) -> Self {
         Self::Seed {
             origin: seed.origin().to_owned(),
@@ -58,6 +63,7 @@ impl WebGraphEntry {
         }
     }
 
+    /// A helper method for consuming lines.
     fn collect(&self, out: &mut impl EntryLineConsumer) {
         fn recognize_atra_uri(uri: &AtraUri, out: &mut impl EntryLineConsumer) -> String {
             let result = match uri.try_as_str() {
@@ -92,6 +98,7 @@ impl WebGraphEntry {
     }
 }
 
+/// A consumer for an entry line
 trait EntryLineConsumer {
     fn push(&mut self, value: String);
 }
@@ -108,8 +115,9 @@ impl EntryLineConsumer for Vec<String> {
     }
 }
 
+/// Error while working with the webgraph
 #[derive(Debug, Error)]
-pub enum LinkNetError {
+pub enum WebGraphError {
     #[error(transparent)]
     IOError(#[from] io::Error),
     #[error("The file at {0:?} is not valid!")]
@@ -120,7 +128,7 @@ pub enum LinkNetError {
 
 /// Manages the webgraph
 pub trait WebGraphManager {
-    async fn add(&self, link_net_entry: WebGraphEntry) -> Result<(), LinkNetError>;
+    async fn add(&self, link_net_entry: WebGraphEntry) -> Result<(), WebGraphError>;
 }
 
 /// The default size for a links cache. Usually 10k links are cached.
@@ -139,7 +147,7 @@ impl QueuingWebGraphManager {
         capacity: NonZeroUsize,
         path: impl AsRef<Path>,
         shutdown_and_handle: &RuntimeContext,
-    ) -> Result<Self, LinkNetError> {
+    ) -> Result<Self, WebGraphError> {
         let p = path.as_ref();
         if let Some(parent) = p.parent() {
             std::fs::create_dir_all(parent)?;
@@ -155,7 +163,7 @@ impl QueuingWebGraphManager {
         let meta = file.metadata()?;
 
         if !meta.is_file() {
-            return Err(LinkNetError::IOError(io::Error::from(
+            return Err(WebGraphError::IOError(io::Error::from(
                 ErrorKind::Unsupported,
             )));
         }
@@ -168,29 +176,28 @@ impl QueuingWebGraphManager {
             for value in StdBufReader::new(&file).lines() {
                 if let Ok(value) = value {
                     if value.starts_with("@prefix") {
-                        graph_prefix =
-                            graph_prefix
-                                || (value.contains(" : ") && value.contains("http://atra.de/graph#"));
-                        domain_prefix =
-                            domain_prefix
-                                || (value.contains(" o: ") && value.contains("http://atra.de/graph/origin#"));
-                        domain_label_prefix =
-                            domain_label_prefix
-                                || (value.contains(" ol: ") && value.contains("http://atra.de/graph/origin-label#"));
-                        rnfs_prefix =
-                            rnfs_prefix
-                                || (value.contains(" rdfs: ") && value.contains("http://www.w3.org/2000/01/rdf-schema#"));
+                        graph_prefix = graph_prefix
+                            || (value.contains(" : ") && value.contains("http://atra.de/graph#"));
+                        domain_prefix = domain_prefix
+                            || (value.contains(" o: ")
+                                && value.contains("http://atra.de/graph/origin#"));
+                        domain_label_prefix = domain_label_prefix
+                            || (value.contains(" ol: ")
+                                && value.contains("http://atra.de/graph/origin-label#"));
+                        rnfs_prefix = rnfs_prefix
+                            || (value.contains(" rdfs: ")
+                                && value.contains("http://www.w3.org/2000/01/rdf-schema#"));
                     }
                 }
                 if graph_prefix && domain_prefix && domain_label_prefix && rnfs_prefix {
-                    break
+                    break;
                 }
             }
             if !graph_prefix || !domain_prefix || !domain_label_prefix || !rnfs_prefix {
                 log::error!(
                     "graph_prefix: {graph_prefix} domain_prefix: {domain_prefix} domain_label_prefix: {domain_label_prefix} rnfs_prefix: {rnfs_prefix}"
                 );
-                return Err(LinkNetError::InvalidFile(
+                return Err(WebGraphError::InvalidFile(
                     path.as_ref().as_os_str().to_os_string(),
                 ));
             }
@@ -214,13 +221,10 @@ impl QueuingWebGraphManager {
             File::from_std(file),
         );
 
-
-        if let Ok(handle) = shutdown_and_handle
-            .handle()
-            .try_io_or_main_or_current()
-        {
+        if let Ok(handle) = shutdown_and_handle.handle().try_io_or_main_or_current() {
             log::debug!("Found Runtime. Setting up writer.");
-            let (queue_in, mut queue_out) = tokio::sync::mpsc::channel::<WebGraphEntry>(capacity.get());
+            let (queue_in, mut queue_out) =
+                tokio::sync::mpsc::channel::<WebGraphEntry>(capacity.get());
             let guard = shutdown_and_handle.shutdown_guard().guard();
 
             async fn write_buffer(entry: &mut Vec<String>, writer: &mut BufWriter<File>) {
@@ -233,57 +237,58 @@ impl QueuingWebGraphManager {
 
             // todo: may need scaling
             handle.spawn(async move {
-                    let _guard = guard;
-                    log::debug!("WebGraphWriter: Start writer thread");
+                let _guard = guard;
+                log::debug!("WebGraphWriter: Start writer thread");
 
-                    let mut buffer = Vec::with_capacity(32);
-                    let mut entry_buffer = Vec::new();
+                let mut buffer = Vec::with_capacity(32);
+                let mut entry_buffer = Vec::new();
 
-                    while queue_out.recv_many(&mut buffer, 32).await > 0 {
-                        log::trace!("WebGraphWriter:Write {} entries", buffer.len());
-                        for value in &buffer {
-                            value.collect(&mut entry_buffer);
-                        }
-                        buffer.clear();
-                        write_buffer(&mut entry_buffer, &mut writer).await;
+                while queue_out.recv_many(&mut buffer, 32).await > 0 {
+                    log::trace!("WebGraphWriter:Write {} entries", buffer.len());
+                    for value in &buffer {
+                        value.collect(&mut entry_buffer);
                     }
+                    buffer.clear();
+                    write_buffer(&mut entry_buffer, &mut writer).await;
+                }
 
-                    debug_assert!(buffer.is_empty());
-                    debug_assert!(entry_buffer.is_empty());
+                debug_assert!(buffer.is_empty());
+                debug_assert!(entry_buffer.is_empty());
 
-                    match writer.flush().await {
-                        Ok(_) => {}
-                        Err(err) => {
-                            log::error!("WebGraphWriter: Failed to flush data: {err}");
-                        }
+                match writer.flush().await {
+                    Ok(_) => {}
+                    Err(err) => {
+                        log::error!("WebGraphWriter: Failed to flush data: {err}");
                     }
-                    let file = writer.into_inner();
-                    match file.sync_all().await {
-                        Ok(_) => {}
-                        Err(err) => {
-                            log::error!("WebGraphWriter: Failed to sync to file: {err}");
-                        }
+                }
+                let file = writer.into_inner();
+                match file.sync_all().await {
+                    Ok(_) => {}
+                    Err(err) => {
+                        log::error!("WebGraphWriter: Failed to sync to file: {err}");
                     }
-                    log::debug!("WebGraphWriter: Stopping writer thread");
-                });
+                }
+                log::debug!("WebGraphWriter: Stopping writer thread");
+            });
 
-            Ok(Self { queue_in: Some(queue_in) })
+            Ok(Self {
+                queue_in: Some(queue_in),
+            })
         } else {
             log::debug!("No Runtime found. Piping entries to nirvana.");
             Ok(Self { queue_in: None })
         }
-
     }
 }
 
 impl WebGraphManager for QueuingWebGraphManager {
-    async fn add(&self, link_net_entry: WebGraphEntry) -> Result<(), LinkNetError> {
+    async fn add(&self, link_net_entry: WebGraphEntry) -> Result<(), WebGraphError> {
         if let Some(ref sender) = self.queue_in {
             match sender.send(link_net_entry).await {
                 Ok(_) => Ok(()),
                 Err(SendError(value)) => {
                     log::error!("Failed to write {:?} to the external file", value);
-                    Err(LinkNetError::SendError(value))
+                    Err(WebGraphError::SendError(value))
                 }
             }
         } else {
@@ -294,6 +299,9 @@ impl WebGraphManager for QueuingWebGraphManager {
 
 #[cfg(test)]
 mod test {
+    use crate::runtime::{
+        GracefulShutdownWithGuard, OptionalAtraHandle, RuntimeContext, ShutdownReceiver,
+    };
     use crate::url::AtraUri;
     use crate::web_graph::{QueuingWebGraphManager, WebGraphEntry, WebGraphManager};
     use log::LevelFilter;
@@ -305,7 +313,6 @@ mod test {
     use std::sync::Arc;
     use tokio::sync::Barrier;
     use tokio::task::JoinSet;
-    use crate::runtime::{GracefulShutdownWithGuard, OptionalAtraHandle, RuntimeContext, ShutdownReceiver};
 
     #[tokio::test]
     async fn can_write_propery() {
@@ -331,10 +338,7 @@ mod test {
             QueuingWebGraphManager::new(
                 10.try_into().unwrap(),
                 "./atra_data/example.ttl",
-                &RuntimeContext::new(
-                    guard,
-                    OptionalAtraHandle::None,
-                ),
+                &RuntimeContext::new(guard, OptionalAtraHandle::None),
             )
             .unwrap(),
         );

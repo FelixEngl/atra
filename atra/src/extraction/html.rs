@@ -44,7 +44,9 @@ pub fn extract_links<'a, C>(
     Cow<'a, UrlWithDepth>,
     HashSet<(LinkOrigin, CompactString)>,
     Vec<Cow<'static, str>>,
-)> where C: SupportsGdbrRegistry + SupportsConfigs
+)>
+where
+    C: SupportsGdbrRegistry + SupportsConfigs,
 {
     let cfg = context.configs();
 
@@ -235,8 +237,9 @@ mod selectors {
      */
 
     /// A matcher for href locations
-    pub static HREF_LOCATION_MATCHER: Lazy<Regex> =
-        Lazy::new(|| Regex::new("location\\s*\\.\\s*href\\s*=\\s*'\\s*([^']*)\\s*'\\s*;?").unwrap());
+    pub static HREF_LOCATION_MATCHER: Lazy<Regex> = Lazy::new(|| {
+        Regex::new("location\\s*\\.\\s*href\\s*=\\s*'\\s*([^']*)\\s*'\\s*;?").unwrap()
+    });
 
     // Ignore [ping] of area/a
     static_selectors! {
@@ -252,26 +255,23 @@ mod selectors {
     }
 }
 
-
 #[cfg(test)]
 mod test {
     use scraper::Html;
 
     #[test]
-    fn can_recognize_properly(){
+    fn can_recognize_properly() {
         const HTML: &str = r#"
             <html><body><button onclick="javascript:location.href = '  http://www.google.com/'"></button></button></html>
         "#;
 
         let html = Html::parse_document(HTML);
         for element in html.select(&crate::extraction::html::selectors::ON_CLICK) {
-            let found = crate::extraction::html::selectors::HREF_LOCATION_MATCHER.captures(element.attr("onclick").unwrap());
+            let found = crate::extraction::html::selectors::HREF_LOCATION_MATCHER
+                .captures(element.attr("onclick").unwrap());
             if let Some(found) = found {
                 if let Some(found) = found.get(1) {
-                    assert_eq!(
-                        "http://www.google.com/",
-                        found.as_str()
-                    );
+                    assert_eq!("http://www.google.com/", found.as_str());
                     return;
                 }
             }

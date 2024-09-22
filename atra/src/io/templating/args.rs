@@ -66,4 +66,3 @@ impl Extend<(String, Cow<'static, str>)> for FileNameTemplateArgs {
         self.0.extend(iter)
     }
 }
-

@@ -151,7 +151,7 @@ impl Default for CrawlConfig {
             decode_big_files_up_to: None,
             stopword_registry: None,
             gbdr: None,
-            generate_web_graph: true
+            generate_web_graph: true,
         }
     }
 }

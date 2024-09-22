@@ -226,6 +226,7 @@ impl AtraUri {
         }
     }
 
+    /// Triesto return the underlying URL. Returns None if it fails.
     pub fn as_url(&self) -> Option<&Url> {
         match self {
             AtraUri::Url(value) => Some(value),
@@ -253,6 +254,7 @@ impl AtraUri {
         }
     }
 
+    /// Returns the file extension.
     pub fn file_extension(&self) -> Option<&str> {
         match self {
             AtraUri::Url(value) => {

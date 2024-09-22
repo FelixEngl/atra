@@ -15,13 +15,13 @@
 // use std::fmt::{Display};
 use console::Term;
 // use dialoguer::{Select, theme};
-use rocksdb::IteratorMode;
 use crate::contexts::local::LocalContext;
 use crate::contexts::traits::{SupportsLinkState, SupportsUrlQueue};
 use crate::crawl::{SlimCrawlResult, StoredDataHint};
 use crate::link_state::{LinkStateLike, LinkStateManager};
 use crate::url::AtraUri;
-use crate::warc_ext::{ WarcSkipInstruction};
+use crate::warc_ext::WarcSkipInstruction;
+use rocksdb::IteratorMode;
 // use strum::{Display, VariantArray};
 // #[derive(Debug, Display, VariantArray)]
 // enum Targets {
@@ -55,8 +55,14 @@ use crate::warc_ext::{ WarcSkipInstruction};
 //     Quit
 // }
 
-pub fn view(local: LocalContext, internals: bool, extracted_links: bool, headers: bool, force_legacy: bool) {
-    if !console::user_attended() || force_legacy  {
+pub fn view(
+    local: LocalContext,
+    internals: bool,
+    extracted_links: bool,
+    headers: bool,
+    force_legacy: bool,
+) {
+    if !console::user_attended() || force_legacy {
         println!("Not a user attended terminal. Falling back to legacy.");
         view_legacy(local, internals, extracted_links, headers);
         return;
@@ -71,7 +77,6 @@ pub fn view(local: LocalContext, internals: bool, extracted_links: bool, headers
 
     println!("Currently only legacy view is supported.");
     view_legacy(local, internals, extracted_links, headers);
-
 
     // loop {
     //     let selection = Select::with_theme(
@@ -125,30 +130,42 @@ pub fn view(local: LocalContext, internals: bool, extracted_links: bool, headers
     // }
 }
 
-
 fn view_legacy(local: LocalContext, internals: bool, extracted_links: bool, headers: bool) {
     println!("##### ATRA STATS #####");
-    println!("    Links in Queue:        {}", local.url_queue().len_blocking());
+    println!(
+        "    Links in Queue:        {}",
+        local.url_queue().len_blocking()
+    );
     println!("    Links in CrawlDB:      {}", local.crawl_db().len());
-    println!("    Links in StateManager: {}", local.get_link_state_manager().len());
+    println!(
+        "    Links in StateManager: {}",
+        local.get_link_state_manager().len()
+    );
     println!("##### ATRA STATS #####");
 
     println!("\n\nCrawled Websides:\n");
     println!("\n-----------------------\n");
-    for (k, v) in local.crawl_db().iter(IteratorMode::Start).filter_map(
-        |value| value.ok()
-    ).map(|(k, v)| {
-        let k: AtraUri = String::from_utf8_lossy(k.as_ref()).parse().unwrap();
-        let v: SlimCrawlResult = bincode::deserialize(v.as_ref()).unwrap();
-        (k, v)
-    }) {
+    for (k, v) in local
+        .crawl_db()
+        .iter(IteratorMode::Start)
+        .filter_map(|value| value.ok())
+        .map(|(k, v)| {
+            let k: AtraUri = String::from_utf8_lossy(k.as_ref()).parse().unwrap();
+            let v: SlimCrawlResult = bincode::deserialize(v.as_ref()).unwrap();
+            (k, v)
+        })
+    {
         println!("{k}");
         println!("    Meta:");
         println!("        Status Code: {}", v.meta.status_code);
         if let Some(lang) = v.meta.language {
-            println!("        Status Code: {} (confidence: {})", lang.lang().to_name(), lang.confidence());
+            println!(
+                "        Status Code: {} (confidence: {})",
+                lang.lang().to_name(),
+                lang.confidence()
+            );
         } else {
-            println!("        Language: -!-", );
+            println!("        Language: -!-",);
         }
         let file_info = v.meta.file_information;
         println!("        Atra Filetype: {}", file_info.format);
@@ -158,7 +175,10 @@ fn view_legacy(local: LocalContext, internals: bool, extracted_links: bool, head
             }
         }
         if let Some(detected) = file_info.detected {
-            println!("            Detected File Format: {}", detected.most_probable_file_format());
+            println!(
+                "            Detected File Format: {}",
+                detected.most_probable_file_format()
+            );
         }
 
         println!("        Created At: {}", v.meta.created_at);
@@ -169,7 +189,9 @@ fn view_legacy(local: LocalContext, internals: bool, extracted_links: bool, head
             println!("        Encoding: -!-");
         }
 
-        let linkstate = local.get_link_state_manager().get_link_state_sync(&v.meta.url);
+        let linkstate = local
+            .get_link_state_manager()
+            .get_link_state_sync(&v.meta.url);
         if let Ok(Some(state)) = linkstate {
             println!("        Linkstate:");
             println!("            State: {}", state.kind());
@@ -190,7 +212,11 @@ fn view_legacy(local: LocalContext, internals: bool, extracted_links: bool, head
                 if !headers.is_empty() {
                     println!("        Headers:");
                     for (k, v) in headers.iter() {
-                        println!("            \"{}\": \"{}\"", k, String::from_utf8_lossy(v.as_bytes()).to_string());
+                        println!(
+                            "            \"{}\": \"{}\"",
+                            k,
+                            String::from_utf8_lossy(v.as_bytes()).to_string()
+                        );
                     }
                 } else {
                     println!("        Headers: -!-");
@@ -215,19 +241,42 @@ fn view_legacy(local: LocalContext, internals: bool, extracted_links: bool, head
                 StoredDataHint::External(ref value) => {
                     println!("        External: {} - {}", value.exists(), value);
                 }
-                StoredDataHint::Warc(ref value) => {
-                    match value {
-                        WarcSkipInstruction::Single { pointer, is_base64, header_signature_octet_count } => {
-                            println!("        Single Warc: {} - {} ({}, {}, {:?})", pointer.path().exists(), pointer.path(), is_base64, header_signature_octet_count, pointer.pointer());
-                        }
-                        WarcSkipInstruction::Multiple { pointers, header_signature_octet_count, is_base64 } => {
-                            println!("        Multiple Warc: ({}, {})", is_base64, header_signature_octet_count);
-                            for pointer in pointers {
-                                println!("            {} - {} ({}, {}, {:?})", pointer.path().exists(), pointer.path(), is_base64, header_signature_octet_count, pointer.pointer());
-                            }
+                StoredDataHint::Warc(ref value) => match value {
+                    WarcSkipInstruction::Single {
+                        pointer,
+                        is_base64,
+                        header_signature_octet_count,
+                    } => {
+                        println!(
+                            "        Single Warc: {} - {} ({}, {}, {:?})",
+                            pointer.path().exists(),
+                            pointer.path(),
+                            is_base64,
+                            header_signature_octet_count,
+                            pointer.pointer()
+                        );
+                    }
+                    WarcSkipInstruction::Multiple {
+                        pointers,
+                        header_signature_octet_count,
+                        is_base64,
+                    } => {
+                        println!(
+                            "        Multiple Warc: ({}, {})",
+                            is_base64, header_signature_octet_count
+                        );
+                        for pointer in pointers {
+                            println!(
+                                "            {} - {} ({}, {}, {:?})",
+                                pointer.path().exists(),
+                                pointer.path(),
+                                is_base64,
+                                header_signature_octet_count,
+                                pointer.pointer()
+                            );
                         }
                     }
-                }
+                },
                 StoredDataHint::InMemory(ref value) => {
                     println!("        InMemory: {}", value.len());
                 }

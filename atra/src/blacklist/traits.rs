@@ -35,4 +35,5 @@ pub trait BlacklistType<SelfT = Self>: Blacklist {
         I: IntoIterator<Item = S>;
 }
 
+/// A marker interface for a manageable list.
 pub trait ManageableBlacklist: Blacklist + BlacklistType + Debug + Sized {}

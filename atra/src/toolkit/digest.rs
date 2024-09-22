@@ -17,6 +17,7 @@ use std::sync::LazyLock;
 
 static EMPTY_HASH: LazyLock<Vec<u8>> = LazyLock::new(|| labeled_xxh128_digest_impl(b""));
 
+/// Make a labeled digest.
 #[inline]
 fn labeled_xxh128_digest_impl<B: AsRef<[u8]>>(data: B) -> Vec<u8> {
     let mut output = Vec::new();

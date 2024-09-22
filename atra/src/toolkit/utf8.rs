@@ -35,6 +35,7 @@ pub struct DecodedChar {
 }
 
 impl DecodedChar {
+    /// Creates a new decoded char.
     #[inline(always)]
     pub const fn new(c: char, invalid_encounters: usize) -> Self {
         Self {
@@ -43,6 +44,7 @@ impl DecodedChar {
         }
     }
 
+    /// Returns true if only valid values are encountered.
     #[inline(always)]
     pub const fn encountered_only_valid(&self) -> bool {
         self.invalid_encounters == 0
@@ -226,10 +228,13 @@ pub struct RobustUtf8Reader<'a, R> {
     _lifeline: PhantomData<&'a ()>,
 }
 
+/// The capacity of the buffer used.
 const MEMORY_CAPACITY: usize = 7;
+/// Minimum amount of bytes needed so make sure we have a valid char.
 const MIN_MEMORY_SIZE: usize = 4;
 
 impl<'a, R> RobustUtf8Reader<'a, R> {
+    /// Creates a new reader.
     pub fn new(input: R) -> Self {
         Self {
             input,
@@ -239,6 +244,7 @@ impl<'a, R> RobustUtf8Reader<'a, R> {
         }
     }
 
+    /// Returns true if the readeris stopped.
     pub fn stopped(&self) -> bool {
         self.stopped
     }
@@ -248,6 +254,7 @@ impl<'a, R> RobustUtf8Reader<'a, R>
 where
     R: Read,
 {
+    /// Fill the buffer with bytes from the reader.
     fn fill_memory(&mut self) -> Result<(), std::io::Error> {
         if MIN_MEMORY_SIZE <= self.memory.len() {
             Ok(())
@@ -296,6 +303,7 @@ where
         Ok(buf.len())
     }
 
+    /// Pushes some bytes back to the front.
     fn push_back_to_front(&mut self, buf: &[u8]) {
         match buf.len() {
             0 => {}
@@ -308,6 +316,7 @@ where
         }
     }
 
+    /// Try to pop the front.
     fn pop_front_safe(&mut self) -> Result<Option<u8>, std::io::Error> {
         if let Some(value) = self.memory.pop_front() {
             Ok(Some(value))

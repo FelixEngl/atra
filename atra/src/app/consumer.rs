@@ -20,14 +20,8 @@ use crate::link_state::{LinkStateDBError, LinkStateError};
 use crate::queue::QueueError;
 use thiserror::Error;
 
-pub struct GlobalErrorConsumer;
 
-impl GlobalErrorConsumer {
-    pub fn new() -> Self {
-        Self
-    }
-}
-
+/// The global error definition
 #[derive(Debug, Error)]
 pub enum GlobalError {
     #[error(transparent)]
@@ -48,6 +42,14 @@ pub enum GlobalError {
     IOError(#[from] std::io::Error),
     #[error(transparent)]
     RequestError(#[from] reqwest::Error),
+}
+
+pub struct GlobalErrorConsumer;
+
+impl GlobalErrorConsumer {
+    pub fn new() -> Self {
+        Self
+    }
 }
 
 impl ErrorConsumer<GlobalError> for GlobalErrorConsumer {

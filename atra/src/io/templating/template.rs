@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt::{Display, Formatter, Write};
 use crate::io::serial::SerialProvider;
-use crate::io::templating::{FileNameTemplateArgs, FileNameTemplateElement, RecoverInstructionElement, TemplateError};
+use crate::io::templating::{
+    FileNameTemplateArgs, FileNameTemplateElement, RecoverInstructionElement, TemplateError,
+};
+use std::fmt::{Display, Formatter, Write};
 
 /// A template for a filename
 #[derive(Debug, Clone)]
@@ -22,7 +24,6 @@ use crate::io::templating::{FileNameTemplateArgs, FileNameTemplateElement, Recov
 pub struct FileNameTemplate {
     parts: Vec<FileNameTemplateElement>,
 }
-
 
 impl FileNameTemplate {
     pub fn new(parts: Vec<FileNameTemplateElement>) -> Self {
@@ -68,20 +69,24 @@ impl FileNameTemplate {
     }
 
     pub fn get_recover_information(&self) -> Vec<(usize, RecoverInstructionElement)> {
-        self.parts.iter().enumerate().filter_map(|(i, value)| {
-            match value {
+        self.parts
+            .iter()
+            .enumerate()
+            .filter_map(|(i, value)| match value {
                 FileNameTemplateElement::Dynamic(value) => {
                     Some((i, RecoverInstructionElement::Dynamic(value.clone())))
                 }
-                FileNameTemplateElement::CustomSerial(value) => {
-                    Some((i, RecoverInstructionElement::CustomSerial(value.current_serial())))
-                }
-                FileNameTemplateElement::FileNameTemplate(value) => {
-                    Some((i, RecoverInstructionElement::SubElement(value.get_recover_information())))
-                }
-                _ => {None}
-            }
-        }).collect()
+                FileNameTemplateElement::CustomSerial(value) => Some((
+                    i,
+                    RecoverInstructionElement::CustomSerial(value.current_serial()),
+                )),
+                FileNameTemplateElement::FileNameTemplate(value) => Some((
+                    i,
+                    RecoverInstructionElement::SubElement(value.get_recover_information()),
+                )),
+                _ => None,
+            })
+            .collect()
     }
 }
 

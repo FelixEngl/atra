@@ -18,18 +18,19 @@ mod constants;
 pub mod consumer;
 mod logging;
 
-#[cfg(test)]
-mod terminal;
 mod config;
 mod instruction;
+#[cfg(test)]
+mod terminal;
 mod view;
 
+use crate::app::instruction::{prepare_instruction, Instruction, RunInstruction};
 use anyhow::Error;
-use atra::{Atra};
 pub use args::AtraArgs;
 pub use atra::ApplicationMode;
-use crate::app::instruction::{prepare_instruction, Instruction, RunInstruction};
+use atra::Atra;
 
+/// Execute the [`args`]
 pub fn exec_args(args: AtraArgs) {
     match prepare_instruction(args) {
         Ok(Instruction::RunInstruction(instruction)) => {
@@ -42,10 +43,10 @@ pub fn exec_args(args: AtraArgs) {
     }
 }
 
-/// Execute the
+/// Execute the [`instruction`]
 fn execute(instruction: RunInstruction) {
     let (mut atra, runtime) = Atra::build_with_runtime(instruction.mode);
-    
+
     runtime.block_on(async move {
         let shutdown = atra.shutdown().get().clone();
 
@@ -66,7 +67,6 @@ fn execute(instruction: RunInstruction) {
                     shutdown.shutdown();
                 }
             }
-
 
             if let Some(shutdown_result) = shutdown_result {
                 shutdown_result
@@ -90,12 +90,12 @@ fn execute(instruction: RunInstruction) {
 mod test {
     use crate::app::args::RunMode;
     use crate::app::atra::ApplicationMode;
+    use crate::app::instruction::RunInstruction;
     use crate::app::{execute, AtraArgs};
     use crate::config::crawl::UserAgent;
     use crate::config::{BudgetSetting, Config, CrawlConfig};
     use crate::seed::SeedDefinition;
     use time::Duration;
-    use crate::app::instruction::RunInstruction;
 
     #[test]
     pub fn can_generate_example_config() {
@@ -137,26 +137,22 @@ mod test {
         config.delay = Some(Duration::milliseconds(300));
         config.user_agent = UserAgent::Custom("TestCrawl/Atra/v0.1.0".to_string());
 
-        execute(
-            RunInstruction {
-                mode: ApplicationMode::Multi(None),
-                config: Config::new(
-                    Default::default(),
-                    Default::default(),
-                    Default::default(),
-                    config,
-                ),
-                seeds: Some(
-                    SeedDefinition::Multi(vec![
-                        "http://www.antsandelephants.de".to_string(),
-                        "http://www.aperco.info".to_string(),
-                        "http://www.applab.de/".to_string(),
-                        "http://www.carefornetworks.de/".to_string(),
-                        "https://ticktoo.com/".to_string(),
-                    ])
-                ),
-                recover_mode: false
-            }
-        )
+        execute(RunInstruction {
+            mode: ApplicationMode::Multi(None),
+            config: Config::new(
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                config,
+            ),
+            seeds: Some(SeedDefinition::Multi(vec![
+                "http://www.antsandelephants.de".to_string(),
+                "http://www.aperco.info".to_string(),
+                "http://www.applab.de/".to_string(),
+                "http://www.carefornetworks.de/".to_string(),
+                "https://ticktoo.com/".to_string(),
+            ])),
+            recover_mode: false,
+        })
     }
 }

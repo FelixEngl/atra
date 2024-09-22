@@ -16,6 +16,7 @@ use crate::blacklist::{
     create_managed_blacklist, Blacklist, BlacklistError, BlacklistManager, BlacklistType,
     ManagedBlacklist, ManagedBlacklistSender, PolyBlackList, RegexBlackList,
 };
+use crate::client::traits::{AtraClient, AtraResponse};
 use crate::config::Config;
 use crate::contexts::local::LinkHandlingError;
 use crate::contexts::traits::*;
@@ -35,11 +36,11 @@ use crate::queue::{QueueError, SupportsForcedQueueElement, UrlQueueElementRef};
 use crate::recrawl_management::DomainLastCrawledManager;
 use crate::robots::{CachedRobots, RobotsError, RobotsManager};
 use crate::seed::{BasicSeed, UnguardedSeed};
-use crate::test_impls::providers::{ClientProvider, DefaultProvider};
+use crate::test_impls::providers::{ClientProvider, DefaultAtraProvider};
 use crate::url::guard::InMemoryUrlGuardian;
 use crate::url::{AtraOriginProvider, AtraUri};
 use crate::url::{AtraUrlOrigin, UrlWithDepth};
-use crate::web_graph::{LinkNetError, WebGraphEntry, WebGraphManager};
+use crate::web_graph::{WebGraphError, WebGraphEntry, WebGraphManager};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use liblinear::solver::L2R_L2LOSS_SVR;
@@ -52,16 +53,15 @@ use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
-use texting_robots::{get_robots_url, Robot};
 use text_processing::stopword_registry::StopWordRegistry;
 use text_processing::tf_idf::{Idf, Tf};
+use texting_robots::{get_robots_url, Robot};
 use time::{Duration, OffsetDateTime};
 use tokio::sync::watch::Receiver;
 use tokio::sync::Mutex;
-use crate::client::traits::{AtraClient, AtraResponse};
 
 #[derive(Debug)]
-pub struct TestContext<Provider = DefaultProvider> {
+pub struct TestContext<Provider = DefaultAtraProvider> {
     pub ct_crawled_websites: AtomicUsize,
     pub ct_found_websites: AtomicUsize,
     pub link_state_manager: InMemoryLinkStateManager,
@@ -136,9 +136,9 @@ where
     }
 }
 
-impl Default for TestContext<DefaultProvider> {
+impl Default for TestContext<DefaultAtraProvider> {
     fn default() -> Self {
-        Self::new(Config::default(), DefaultProvider::default())
+        Self::new(Config::default(), DefaultAtraProvider::default())
     }
 }
 
@@ -558,7 +558,7 @@ pub struct TestLinkNetManager {
 }
 
 impl WebGraphManager for TestLinkNetManager {
-    async fn add(&self, link_net_entry: WebGraphEntry) -> Result<(), LinkNetError> {
+    async fn add(&self, link_net_entry: WebGraphEntry) -> Result<(), WebGraphError> {
         self.link_net.lock().await.push(link_net_entry);
         Ok(())
     }
@@ -571,8 +571,8 @@ pub struct TestUrlQueue {
     counter: crate::queue::UrlQueueElementRefCounter,
 }
 
-unsafe impl Send for TestUrlQueue{}
-unsafe impl Sync for TestUrlQueue{}
+unsafe impl Send for TestUrlQueue {}
+unsafe impl Sync for TestUrlQueue {}
 
 impl TestUrlQueue {
     fn wrap(&self, value: UrlQueueElement<UrlWithDepth>) -> UrlQueueElementRef<UrlWithDepth> {
@@ -718,7 +718,6 @@ impl LinkStateManager for InMemoryLinkStateManager {
             .map(|value| unsafe { RawLinkState::from_slice_unchecked(&value) }))
     }
 
-
     async fn get_link_state(
         &self,
         url: &UrlWithDepth,
@@ -757,10 +756,7 @@ impl LinkStateManager for InMemoryLinkStateManager {
         }
     }
 
-    async fn collect_all_links<F: Fn(IsSeedYesNo, UrlWithDepth) -> ()>(
-        &self,
-        collector: F,
-    ) {
+    async fn collect_all_links<F: Fn(IsSeedYesNo, UrlWithDepth) -> ()>(&self, collector: F) {
         let lock = self.state.read().unwrap();
         for (k, v) in lock.iter() {
             let raw = RawLinkState::from_slice(v.as_ref()).unwrap();
@@ -786,8 +782,6 @@ impl DomainLastCrawledManager for InMemoryDomainManager {
         self.inner.read().unwrap().get(domain).cloned()
     }
 }
-
-
 
 /// An in memory variant of a robots.txt manager
 /// Ideal for smaller crawls

@@ -29,6 +29,5 @@ pub struct RunInstruction {
     pub mode: ApplicationMode,
     pub config: Config,
     pub seeds: Option<SeedDefinition>,
-    pub recover_mode: bool
+    pub recover_mode: bool,
 }
-

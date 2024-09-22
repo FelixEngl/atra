@@ -41,7 +41,9 @@ use crate::fetching::ResponseData;
 use crate::format::supported::InterpretedProcessibleFileFormat;
 use crate::format::AtraFileInformation;
 use crate::io::fs::AtraFS;
-use crate::link_state::{IsSeedYesNo, LinkStateKind, LinkStateLike, LinkStateManager, RecrawlYesNo};
+use crate::link_state::{
+    IsSeedYesNo, LinkStateKind, LinkStateLike, LinkStateManager, RecrawlYesNo,
+};
 use crate::queue::{QueueError, UrlQueue, UrlQueueElement};
 use crate::recrawl_management::DomainLastCrawledManager;
 use crate::robots::{GeneralRobotsInformation, RobotsInformation};
@@ -159,26 +161,26 @@ where
     ) -> Result<(), EC::Error>
     where
         Cont: SupportsGdbrRegistry
-        + SupportsConfigs
-        + SupportsRobotsManager
-        + SupportsBlackList
-        + SupportsLinkState
-        + SupportsSlimCrawlResults
-        + SupportsFileSystemAccess
-        + SupportsCrawlResults
-        + SupportsLinkSeeding
-        + SupportsUrlQueue
-        + SupportsCrawling
-        + SupportsDomainHandling,
+            + SupportsConfigs
+            + SupportsRobotsManager
+            + SupportsBlackList
+            + SupportsLinkState
+            + SupportsSlimCrawlResults
+            + SupportsFileSystemAccess
+            + SupportsCrawlResults
+            + SupportsLinkSeeding
+            + SupportsUrlQueue
+            + SupportsCrawling
+            + SupportsDomainHandling,
         Shutdown: ShutdownReceiver,
         E: From<<Cont as SupportsSlimCrawlResults>::Error>
-        + From<<Cont as SupportsLinkSeeding>::Error>
-        + From<<Cont as SupportsCrawlResults>::Error>
-        + From<<<Cont as SupportsLinkState>::LinkStateManager as LinkStateManager>::Error>
-        + From<<Cont as SupportsCrawling>::Error>
-        + From<QueueError>
-        + From<io::Error>
-        + Display,
+            + From<<Cont as SupportsLinkSeeding>::Error>
+            + From<<Cont as SupportsCrawlResults>::Error>
+            + From<<<Cont as SupportsLinkState>::LinkStateManager as LinkStateManager>::Error>
+            + From<<Cont as SupportsCrawling>::Error>
+            + From<QueueError>
+            + From<io::Error>
+            + Display,
         EC: ErrorConsumer<E>,
     {
         let configuration = &context.configs().crawl;
@@ -193,8 +195,8 @@ where
                 self.client.user_agent().to_string(),
                 configuration.max_robots_age.clone(),
             )
-                .bind_to_domain(&self.client, self.seed.url())
-                .await,
+            .bind_to_domain(&self.client, self.seed.url())
+            .await,
         );
 
         let budget = configuration
@@ -237,8 +239,8 @@ where
                 &mut interval_manager,
                 None,
             )
-                .await
-                .urls
+            .await
+            .urls
             {
                 match value.loc {
                     Location::None => {}
@@ -259,21 +261,20 @@ where
         let origin = self.seed.origin();
         let manager = context.get_domain_manager();
 
-
         if let Some(recrawl_interval) = configuration
             .budget
             .get_budget_for(origin)
             .get_recrawl_interval()
         {
-            let needs_recrawl_protection =
-                if let Ok(Some(value)) = context.get_link_state_manager()
-                    .get_link_state(self.seed.url())
-                    .await
-                {
-                    value.kind().is_processed_and_stored()
-                } else {
-                    false
-                };
+            let needs_recrawl_protection = if let Ok(Some(value)) = context
+                .get_link_state_manager()
+                .get_link_state(self.seed.url())
+                .await
+            {
+                value.kind().is_processed_and_stored()
+            } else {
+                false
+            };
 
             if needs_recrawl_protection {
                 if let Some(time) = manager.get_last_access(origin).await {
@@ -299,13 +300,13 @@ where
         }
 
         while let Some((is_seed, target)) = queue.pop_front() {
-            let old_link_state = match context.get_link_state_manager().get_link_state(self.seed.url()).await {
-                Ok(value) => {
-                    value.map(|value| value.kind())
-                }
-                Err(err) => {
-                    return consumer.consume_crawl_error(err.into())
-                }
+            let old_link_state = match context
+                .get_link_state_manager()
+                .get_link_state(self.seed.url())
+                .await
+            {
+                Ok(value) => value.map(|value| value.kind()),
+                Err(err) => return consumer.consume_crawl_error(err.into()),
             };
 
             if shutdown.is_shutdown() {
@@ -314,7 +315,8 @@ where
                     context,
                     &target,
                     old_link_state.unwrap_or(LinkStateKind::Discovered),
-                ).await;
+                )
+                .await;
                 return Ok(());
             }
             log::trace!("Queue.len() => {}", queue.len());
@@ -326,7 +328,8 @@ where
                     context,
                     &target,
                     old_link_state.unwrap_or(LinkStateKind::Discovered),
-                ).await;
+                )
+                .await;
                 continue;
             }
 
@@ -351,7 +354,8 @@ where
                                 context,
                                 &target,
                                 LinkStateKind::ReservedForCrawl,
-                            ).await
+                            )
+                            .await
                             {
                                 Ok(_) => {}
                                 Err(_) => {
@@ -360,7 +364,8 @@ where
                                         context,
                                         &target,
                                         old_link_state.unwrap_or(LinkStateKind::Discovered),
-                                    ).await;
+                                    )
+                                    .await;
                                     log::info!("Failed setting of linkstate of {target}, continue without further processing.");
                                     continue;
                                 }
@@ -377,7 +382,8 @@ where
                             LinkStateKind::ReservedForCrawl,
                             Some(is_seed.into()),
                             Some(checker.has_recrawl().into()),
-                        ).await
+                        )
+                        .await
                         {
                             Ok(_) => {}
                             Err(_) => {
@@ -386,7 +392,8 @@ where
                                     context,
                                     &target,
                                     old_link_state.unwrap_or(LinkStateKind::Discovered),
-                                ).await;
+                                )
+                                .await;
                                 log::info!("Failed setting of linkstate of {target}, continue without further processing.");
                                 continue;
                             }
@@ -420,7 +427,9 @@ where
                         context,
                         &target,
                         LinkStateKind::Crawled,
-                    ).await.is_err()
+                    )
+                    .await
+                    .is_err()
                     {
                         log::info!("Failed to set link state of {target}.");
                     }
@@ -439,8 +448,8 @@ where
                                     &file_information,
                                     &decoded,
                                 )
-                                    .ok()
-                                    .flatten();
+                                .ok()
+                                .flatten();
 
                                 let result = context
                                     .configs()
@@ -467,7 +476,8 @@ where
                                     context,
                                     &target,
                                     LinkStateKind::InternalError,
-                                ).await;
+                                )
+                                .await;
                                 continue;
                             }
                         };
@@ -504,7 +514,8 @@ where
                             context,
                             &target,
                             LinkStateKind::Discovered,
-                        ).await;
+                        )
+                        .await;
                     }
                     log::debug!(
                         "Number of links in {}: {}",
@@ -539,7 +550,8 @@ where
                                     context,
                                     &target,
                                     LinkStateKind::Discovered,
-                                ).await;
+                                )
+                                .await;
                             }
                         }
                     } else {
@@ -554,7 +566,8 @@ where
                             context,
                             &target,
                             LinkStateKind::Discovered,
-                        ).await;
+                        )
+                        .await;
                     }
 
                     log::trace!("CrawlResult {}", response_data.url);
@@ -576,7 +589,8 @@ where
                                 context,
                                 &target,
                                 LinkStateKind::Discovered,
-                            ).await;
+                            )
+                            .await;
                         }
                         _ => {
                             log::debug!("Stored: {}", result.meta.url);
@@ -588,7 +602,9 @@ where
                         context,
                         &target,
                         LinkStateKind::ProcessedAndStored,
-                    ).await.is_err()
+                    )
+                    .await
+                    .is_err()
                     {
                         log::error!("Failed setting of linkstate of {target}.");
                     }
@@ -601,7 +617,9 @@ where
                         context,
                         &target,
                         LinkStateKind::InternalError,
-                    ).await.is_err()
+                    )
+                    .await
+                    .is_err()
                     {
                         log::error!("Failed recovery of linkstate of {target}.");
                     }
@@ -648,9 +666,9 @@ impl<'a, R: RobotsInformation, B: Blacklist> UrlChecker<'a, R, B> {
         let result = !task.links_visited.contains(url)
             && !self.blacklist.has_match_for(&url.try_as_str())
             && self
-            .configured_robots
-            .check_if_allowed(&task.client, url)
-            .await
+                .configured_robots
+                .check_if_allowed(&task.client, url)
+                .await
             && self.budget.is_in_budget(url);
 
         if result {

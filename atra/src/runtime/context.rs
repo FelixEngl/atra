@@ -23,10 +23,7 @@ pub struct RuntimeContext {
 
 impl RuntimeContext {
     pub fn new(shutdown: GracefulShutdownWithGuard, handle: OptionalAtraHandle) -> Self {
-        Self {
-            shutdown,
-            handle,
-        }
+        Self { shutdown, handle }
     }
 
     /// Creates an unbound

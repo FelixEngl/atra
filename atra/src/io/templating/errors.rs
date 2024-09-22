@@ -23,4 +23,3 @@ pub enum TemplateError {
     #[error("The required argument value {0:?} is missing!")]
     ArgumentMissing(&'static str),
 }
-

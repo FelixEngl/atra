@@ -17,11 +17,12 @@ mod rocksdb_ext;
 mod database_error;
 mod options;
 
-use rocksdb::{DBIteratorWithThreadMode, DBWithThreadMode, IteratorMode, MultiThreaded, ReadOptions, DB};
 pub use database_error::*;
 pub use options::*;
+use rocksdb::{
+    DBIteratorWithThreadMode, DBWithThreadMode, IteratorMode, MultiThreaded, ReadOptions, DB,
+};
 pub use rocksdb_ext::*;
-
 
 pub fn get_len(db: &DB, handle: std::sync::Arc<rocksdb::BoundColumnFamily>) -> usize {
     let mut options = ReadOptions::default();
@@ -33,10 +34,7 @@ pub fn get_len(db: &DB, handle: std::sync::Arc<rocksdb::BoundColumnFamily>) -> u
         }
     };
 
-    let mut iter = db.raw_iterator_cf_opt(
-        &handle,
-        options
-    );
+    let mut iter = db.raw_iterator_cf_opt(&handle, options);
     iter.seek_to_first();
     let mut ct: usize = 0;
     while iter.valid() {
@@ -46,7 +44,11 @@ pub fn get_len(db: &DB, handle: std::sync::Arc<rocksdb::BoundColumnFamily>) -> u
     ct
 }
 
-pub fn execute_iter<'a>(db: &'a DB, handle: std::sync::Arc<rocksdb::BoundColumnFamily<'a>>, mode: IteratorMode) -> DBIteratorWithThreadMode<'a, DBWithThreadMode<MultiThreaded>> {
+pub fn execute_iter<'a>(
+    db: &'a DB,
+    handle: std::sync::Arc<rocksdb::BoundColumnFamily<'a>>,
+    mode: IteratorMode,
+) -> DBIteratorWithThreadMode<'a, DBWithThreadMode<MultiThreaded>> {
     let mut options = ReadOptions::default();
     options.fill_cache(false);
     match db.flush_cf(&handle) {
@@ -56,9 +58,5 @@ pub fn execute_iter<'a>(db: &'a DB, handle: std::sync::Arc<rocksdb::BoundColumnF
         }
     };
 
-    db.iterator_cf_opt(
-        &handle,
-        options,
-        mode
-    )
+    db.iterator_cf_opt(&handle, options, mode)
 }

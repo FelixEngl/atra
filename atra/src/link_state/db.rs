@@ -19,7 +19,10 @@ use crate::link_state::{
 };
 use crate::url::UrlWithDepth;
 use crate::{db_health_check, declare_column_families};
-use rocksdb::{BoundColumnFamily, DBIteratorWithThreadMode, DBWithThreadMode, MultiThreaded, ReadOptions, DB, IteratorMode};
+use rocksdb::{
+    BoundColumnFamily, DBIteratorWithThreadMode, DBWithThreadMode, IteratorMode, MultiThreaded,
+    ReadOptions, DB,
+};
 use std::ops::RangeBounds;
 use std::sync::Arc;
 use tokio::task::yield_now;
@@ -146,14 +149,15 @@ impl LinkStateRockDB {
         get_len(&self.db, self.cf_handle())
     }
 
-    pub fn iter(&self, mode: IteratorMode) -> DBIteratorWithThreadMode<DBWithThreadMode<MultiThreaded>> {
+    pub fn iter(
+        &self,
+        mode: IteratorMode,
+    ) -> DBIteratorWithThreadMode<DBWithThreadMode<MultiThreaded>> {
         execute_iter(&self.db, self.cf_handle(), mode)
     }
 }
 
 impl LinkStateDB for LinkStateRockDB {
-
-
     fn set_state(
         &self,
         url: &UrlWithDepth,

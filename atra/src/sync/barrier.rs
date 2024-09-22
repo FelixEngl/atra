@@ -14,12 +14,12 @@
 
 use crate::contexts::traits::{SupportsUrlGuarding, SupportsUrlQueue, SupportsWorkerId};
 use crate::queue::UrlQueue;
+use crate::sync::CancellationTokenProvider;
 use crate::url::guard::UrlGuardian;
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::select;
 use tokio_util::sync::CancellationToken;
-use crate::sync::CancellationTokenProvider;
 
 /// The result of the [WorkerBarrier]
 #[derive(Debug)]
@@ -48,12 +48,9 @@ impl WorkerBarrier {
 
     pub fn new_with_dependence_to<C: CancellationTokenProvider>(
         number_of_workers: NonZeroUsize,
-        token_provider: &C
+        token_provider: &C,
     ) -> Self {
-        Self::new(
-            number_of_workers,
-            token_provider.child_token()
-        )
+        Self::new(number_of_workers, token_provider.child_token())
     }
 
     /// Check if it was cancelled
@@ -158,7 +155,5 @@ impl WorkerBarrier {
                 self.subscription_triggered(context, cause_provider, "guardian")
             }
         }
-
-
     }
 }

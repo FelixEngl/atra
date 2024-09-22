@@ -27,6 +27,7 @@ where
     (managed, ManagedBlacklistSender::new(blacklist))
 }
 
+///
 #[derive(Debug)]
 pub struct ManagedBlacklistSender<T: ManageableBlacklist> {
     sender: Arc<RwLock<T>>,
@@ -51,6 +52,7 @@ where
         Self { sender }
     }
 
+    /// Update the blacklist.
     pub fn update(&self, new: T) {
         let mut received = self.sender.write().unwrap();
         *received = new

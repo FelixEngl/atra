@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use clap::{Parser, Subcommand};
-use std::str::FromStr;
 use crate::config::crawl::UserAgent;
 use crate::seed::SeedDefinition;
+use clap::{Parser, Subcommand};
+use std::str::FromStr;
 
 #[derive(Parser, Debug, Default)]
 #[command(author, version, about, long_about = None)]
@@ -110,22 +110,16 @@ pub enum RunMode {
         headers: bool,
         /// The path to the folder with the atra data
         path: String,
-    }
+    },
 }
-
-
-
-
-
-
 
 #[cfg(test)]
 mod test {
+    use crate::app::instruction::{prepare_instruction, Instruction};
     use crate::app::{execute, AtraArgs};
     use crate::config::crawl::UserAgent;
     use crate::seed::SeedDefinition;
     use log::max_level;
-    use crate::app::instruction::{prepare_instruction, Instruction};
 
     #[test]
     fn works() {

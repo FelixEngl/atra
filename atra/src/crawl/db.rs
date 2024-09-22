@@ -18,8 +18,8 @@ use crate::database::DBActionType::{Read, Write};
 use crate::database::{execute_iter, get_len, DatabaseError, RawDatabaseError, RawIOError};
 use crate::db_health_check;
 use crate::declare_column_families;
-use crate::url::{UrlWithDepth};
-use rocksdb::{DBIteratorWithThreadMode, DBWithThreadMode, MultiThreaded, DB, IteratorMode};
+use crate::url::UrlWithDepth;
+use rocksdb::{DBIteratorWithThreadMode, DBWithThreadMode, IteratorMode, MultiThreaded, DB};
 use std::sync::Arc;
 
 /// Manages the crawled websites in a database until it is flushed
@@ -85,7 +85,10 @@ impl CrawlDB {
         get_len(&self.db, self.cf_handle())
     }
 
-    pub fn iter(&self, mode: IteratorMode) -> DBIteratorWithThreadMode<DBWithThreadMode<MultiThreaded>> {
+    pub fn iter(
+        &self,
+        mode: IteratorMode,
+    ) -> DBIteratorWithThreadMode<DBWithThreadMode<MultiThreaded>> {
         execute_iter(&self.db, self.cf_handle(), mode)
     }
 }

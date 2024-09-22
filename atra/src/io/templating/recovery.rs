@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use serde::{Deserialize, Serialize};
 use crate::io::serial::SerialValue;
 use crate::io::templating::FileNameTemplateElement;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 #[serde(rename = "R")]
@@ -22,7 +22,7 @@ pub struct RecoverInstruction {
     #[serde(rename = "SS")]
     pub serial_state: Option<SerialValue>,
     #[serde(rename = "I")]
-    pub instructions: Vec<(usize, RecoverInstructionElement)>
+    pub instructions: Vec<(usize, RecoverInstructionElement)>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
@@ -33,7 +33,7 @@ pub enum RecoverInstructionElement {
     #[serde(rename = "C")]
     CustomSerial(Option<SerialValue>),
     #[serde(rename = "S")]
-    SubElement(Vec<(usize, RecoverInstructionElement)>)
+    SubElement(Vec<(usize, RecoverInstructionElement)>),
 }
 
 impl RecoverInstructionElement {
@@ -42,7 +42,7 @@ impl RecoverInstructionElement {
             (Self::Dynamic(value), FileNameTemplateElement::Dynamic(targ)) => {
                 let _ = std::mem::replace(targ, value.clone());
             }
-            (Self::CustomSerial(value), FileNameTemplateElement::CustomSerial(target))=> {
+            (Self::CustomSerial(value), FileNameTemplateElement::CustomSerial(target)) => {
                 if let Some(value) = value {
                     target.set_current_serial(value.clone())
                 }

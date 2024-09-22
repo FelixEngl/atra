@@ -19,7 +19,6 @@ pub mod dropping;
 pub mod header_map_extensions;
 pub mod isolang_ext;
 mod language_detection;
-mod limited_buffer;
 pub mod selectors;
 pub mod serde_ext;
 pub mod utf8;

@@ -46,7 +46,8 @@ pub trait LinkStateManager {
         is_seed: Option<IsSeedYesNo>,
         recrawl: Option<RecrawlYesNo>,
     ) -> Result<(), Self::Error> {
-        self.update_link_state(url, state, is_seed, recrawl, None::<Option<&[u8]>>).await
+        self.update_link_state(url, state, is_seed, recrawl, None::<Option<&[u8]>>)
+            .await
     }
 
     async fn update_link_state_no_meta<P>(
@@ -70,7 +71,6 @@ pub trait LinkStateManager {
         self.update_link_state(url, state, None, None, None::<Option<&[u8]>>)
             .await
     }
-
 
     fn get_link_state_sync(&self, url: &UrlWithDepth) -> Result<Option<RawLinkState>, Self::Error>;
 

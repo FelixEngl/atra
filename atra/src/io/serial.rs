@@ -12,24 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use serde::{Deserialize, Serialize};
 use std::sync::atomic::*;
 use std::sync::Arc;
-use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, strum::Display, Serialize, Deserialize, Eq, PartialEq)]
 pub enum SerialValue {
-    #[strum(to_string = "{0}")] Byte(u8),
-    #[strum(to_string = "{0}")] Short(u16),
-    #[strum(to_string = "{0}")] Int(u32),
-    #[strum(to_string = "{0}")] Long(u64),
+    #[strum(to_string = "{0}")]
+    Byte(u8),
+    #[strum(to_string = "{0}")]
+    Short(u16),
+    #[strum(to_string = "{0}")]
+    Int(u32),
+    #[strum(to_string = "{0}")]
+    Long(u64),
 }
 
-impl Default for  SerialValue {
+impl Default for SerialValue {
     fn default() -> Self {
         Self::Int(0)
     }
 }
-
 
 macro_rules! create_froms {
     ($($t: ty),+) => {
@@ -48,7 +51,7 @@ macro_rules! create_froms {
     };
 }
 
-create_froms!{u8, u16, u32, u64}
+create_froms! {u8, u16, u32, u64}
 
 #[derive(Copy, Clone)]
 pub enum SerialProviderKind {
@@ -56,131 +59,109 @@ pub enum SerialProviderKind {
     Byte,
     Short,
     Int,
-    Long
+    Long,
 }
 
 #[derive(Debug, Clone)]
 pub enum SerialProvider {
     NoSerial,
-    Byte{state:AtomicU8SerialState},
-    Short{state:AtomicU16SerialState},
-    Int{state:AtomicU32SerialState},
-    Long{state:AtomicU64SerialState},
+    Byte { state: AtomicU8SerialState },
+    Short { state: AtomicU16SerialState },
+    Int { state: AtomicU32SerialState },
+    Long { state: AtomicU64SerialState },
 }
-
 
 /// Provides a serial
 impl SerialProvider {
     pub fn new(serial_kind: SerialProviderKind) -> Self {
         match serial_kind {
-            SerialProviderKind::None => {Self::NoSerial}
-            SerialProviderKind::Byte => {SerialProvider::Byte {state: Default::default()}}
-            SerialProviderKind::Short => {SerialProvider::Short {state: Default::default()}}
-            SerialProviderKind::Int => {SerialProvider::Int {state: Default::default()}}
-            SerialProviderKind::Long => {SerialProvider::Long {state: Default::default()}}
+            SerialProviderKind::None => Self::NoSerial,
+            SerialProviderKind::Byte => SerialProvider::Byte {
+                state: Default::default(),
+            },
+            SerialProviderKind::Short => SerialProvider::Short {
+                state: Default::default(),
+            },
+            SerialProviderKind::Int => SerialProvider::Int {
+                state: Default::default(),
+            },
+            SerialProviderKind::Long => SerialProvider::Long {
+                state: Default::default(),
+            },
         }
     }
 
     pub fn with_initial_state(initial_state: SerialValue) -> Self {
         match initial_state {
-            SerialValue::Byte(value) => {
-                SerialProvider::Byte {state: AtomicU8SerialState::with_init_value(value)}
-            }
-            SerialValue::Short(value) => {
-                SerialProvider::Short {state: AtomicU16SerialState::with_init_value(value)}
-            }
-            SerialValue::Int(value) => {
-                SerialProvider::Int {state: AtomicU32SerialState::with_init_value(value)}
-            }
-            SerialValue::Long(value) => {
-                SerialProvider::Long {state: AtomicU64SerialState::with_init_value(value)}
-            }
+            SerialValue::Byte(value) => SerialProvider::Byte {
+                state: AtomicU8SerialState::with_init_value(value),
+            },
+            SerialValue::Short(value) => SerialProvider::Short {
+                state: AtomicU16SerialState::with_init_value(value),
+            },
+            SerialValue::Int(value) => SerialProvider::Int {
+                state: AtomicU32SerialState::with_init_value(value),
+            },
+            SerialValue::Long(value) => SerialProvider::Long {
+                state: AtomicU64SerialState::with_init_value(value),
+            },
         }
     }
 
     pub fn kind(&self) -> SerialProviderKind {
         match self {
-            SerialProvider::NoSerial => {SerialProviderKind::None}
-            SerialProvider::Byte { .. } => {SerialProviderKind::Byte}
-            SerialProvider::Short { .. } => {SerialProviderKind::Short}
-            SerialProvider::Int { .. } => {SerialProviderKind::Int}
-            SerialProvider::Long { .. } => {SerialProviderKind::Long}
+            SerialProvider::NoSerial => SerialProviderKind::None,
+            SerialProvider::Byte { .. } => SerialProviderKind::Byte,
+            SerialProvider::Short { .. } => SerialProviderKind::Short,
+            SerialProvider::Int { .. } => SerialProviderKind::Int,
+            SerialProvider::Long { .. } => SerialProviderKind::Long,
         }
     }
 
     pub fn provide_serial(&self) -> Option<SerialValue> {
         match self {
-            SerialProvider::NoSerial => {
-                None
-            }
-            SerialProvider::Byte { state } => {
-                Some(SerialValue::Byte(state.get_next_serial()))
-            }
-            SerialProvider::Short { state } => {
-                Some(SerialValue::Short(state.get_next_serial()))
-            }
-            SerialProvider::Int { state } => {
-                Some(SerialValue::Int(state.get_next_serial()))
-            }
-            SerialProvider::Long { state } => {
-                Some(SerialValue::Long(state.get_next_serial()))
-            }
+            SerialProvider::NoSerial => None,
+            SerialProvider::Byte { state } => Some(SerialValue::Byte(state.get_next_serial())),
+            SerialProvider::Short { state } => Some(SerialValue::Short(state.get_next_serial())),
+            SerialProvider::Int { state } => Some(SerialValue::Int(state.get_next_serial())),
+            SerialProvider::Long { state } => Some(SerialValue::Long(state.get_next_serial())),
         }
     }
 
     pub fn current_serial(&self) -> Option<SerialValue> {
         match self {
-            SerialProvider::NoSerial => {
-                None
-            }
-            SerialProvider::Byte { state } => {
-                Some(SerialValue::Byte(state.get_current_serial()))
-            }
-            SerialProvider::Short { state } => {
-                Some(SerialValue::Short(state.get_current_serial()))
-            }
-            SerialProvider::Int { state } => {
-                Some(SerialValue::Int(state.get_current_serial()))
-            }
-            SerialProvider::Long { state } => {
-                Some(SerialValue::Long(state.get_current_serial()))
-            }
+            SerialProvider::NoSerial => None,
+            SerialProvider::Byte { state } => Some(SerialValue::Byte(state.get_current_serial())),
+            SerialProvider::Short { state } => Some(SerialValue::Short(state.get_current_serial())),
+            SerialProvider::Int { state } => Some(SerialValue::Int(state.get_current_serial())),
+            SerialProvider::Long { state } => Some(SerialValue::Long(state.get_current_serial())),
         }
     }
 
     pub fn set_current_serial(&self, serial: SerialValue) {
         match self {
             SerialProvider::NoSerial => {}
-            SerialProvider::Byte { state } => {
-                state.set_current_serial(serial.into())
-            }
-            SerialProvider::Short { state } => {
-                state.set_current_serial(serial.into())
-            }
-            SerialProvider::Int { state } => {
-                state.set_current_serial(serial.into())
-            }
-            SerialProvider::Long { state } => {
-                state.set_current_serial(serial.into())
-            }
+            SerialProvider::Byte { state } => state.set_current_serial(serial.into()),
+            SerialProvider::Short { state } => state.set_current_serial(serial.into()),
+            SerialProvider::Int { state } => state.set_current_serial(serial.into()),
+            SerialProvider::Long { state } => state.set_current_serial(serial.into()),
         }
     }
 }
 
-
 impl Default for SerialProvider {
     fn default() -> Self {
-        Self::Int {state: Default::default()}
+        Self::Int {
+            state: Default::default(),
+        }
     }
 }
-
 
 impl From<SerialProviderKind> for SerialProvider {
     fn from(value: SerialProviderKind) -> Self {
         Self::new(value)
     }
 }
-
 
 macro_rules! create_normal_provider {
     ($($ty: ty: $t: ident),+) => {
@@ -211,7 +192,7 @@ macro_rules! create_normal_provider {
                     pub fn get_current_serial(&self) -> $ty {
                         self.state.load(Ordering::Acquire)
                     }
-                    
+
                     pub fn set_current_serial(&self, value: $ty) {
                         self.state.store(value, Ordering::Release)
                     }

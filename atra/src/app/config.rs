@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::config::Config as AtraConfig;
 use camino::Utf8Path;
 use config::Config;
-use crate::config::Config as AtraConfig;
 
+/// Try to load the config from the [`path`]
 pub fn try_load_from_path<P: AsRef<Utf8Path>>(path: P) -> Result<AtraConfig, config::ConfigError> {
     Config::builder()
         .add_source(config::File::with_name("./config").required(false))
@@ -42,6 +43,7 @@ pub fn discover_or_default() -> Result<AtraConfig, config::ConfigError> {
     }
 }
 
+/// Try to discover the config at default paths
 pub fn discover() -> Result<AtraConfig, config::ConfigError> {
     Config::builder()
         .add_source(config::File::with_name("./config").required(false))
@@ -55,15 +57,15 @@ pub fn discover() -> Result<AtraConfig, config::ConfigError> {
 
 #[cfg(test)]
 mod test {
+    use crate::app::config::try_load_from_path;
     use crate::config::Config as AtraConfig;
     use config::Config;
     use std::fs::File;
     use std::io::Read;
     use std::io::{BufReader, BufWriter, Write};
-    use crate::app::config::try_load_from_path;
 
     #[test]
-    fn test_loading(){
+    fn test_loading() {
         let loaded = try_load_from_path("testdata/configs/sub").unwrap();
         println!("{}", loaded.system.robots_cache_size)
     }

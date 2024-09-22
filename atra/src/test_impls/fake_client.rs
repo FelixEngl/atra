@@ -22,6 +22,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use thiserror::Error;
 
+/// A fake client for simulating downloads.
 #[derive(Clone)]
 pub struct FakeClient {
     value: Arc<RwLock<HashMap<AtraUri, Result<FakeResponse, FakeResponseError>>>>,

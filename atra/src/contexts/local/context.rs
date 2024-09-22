@@ -16,11 +16,12 @@ use crate::blacklist::{InMemoryBlacklistManager, PolyBlackList};
 use crate::client::{build_classic_client, ClientWithUserAgent};
 use crate::config::configs::Config;
 use crate::contexts::local::errors::LinkHandlingError;
+use crate::contexts::local::LocalContextInitError;
 use crate::contexts::traits::*;
 use crate::contexts::BaseContext;
 use crate::crawl::db::CrawlDB;
 use crate::crawl::{CrawlTask, SlimCrawlResult};
-use crate::database::{open_db};
+use crate::database::open_db;
 use crate::database::DatabaseError;
 use crate::extraction::ExtractedLink;
 use crate::gdbr::identifier::{GdbrIdentifierRegistry, InitHelper};
@@ -50,7 +51,6 @@ use std::sync::Arc;
 use text_processing::stopword_registry::StopWordRegistry;
 use text_processing::tf_idf::{Idf, Tf};
 use time::OffsetDateTime;
-use crate::contexts::local::LocalContextInitError;
 
 /// The state of the app
 #[derive(Debug)]
@@ -74,17 +74,16 @@ pub struct LocalContext {
 }
 
 impl LocalContext {
-
     pub fn new_without_runtime(config: Config) -> Result<Self, LocalContextInitError> {
-        let other = RuntimeContext::new(
-            GracefulShutdownWithGuard::new(),
-            None
-        );
+        let other = RuntimeContext::new(GracefulShutdownWithGuard::new(), None);
         Self::new(config, &other)
     }
 
     /// Creates the state for Atra.
-    pub fn new(configs: Config, runtime_context: &RuntimeContext) -> Result<Self, LocalContextInitError> {
+    pub fn new(
+        configs: Config,
+        runtime_context: &RuntimeContext,
+    ) -> Result<Self, LocalContextInitError> {
         let output_path = configs.paths.root_path();
         if !output_path.exists() {
             std::fs::create_dir_all(output_path)?;
@@ -121,16 +120,18 @@ impl LocalContext {
         let robots = OffMemoryRobotsManager::new(db.clone(), configs.system.robots_cache_size);
         log::info!("Init web graph writer.");
 
-
-
-        let web_graph_manager =
-            configs.crawl.generate_web_graph.then(
-                || QueuingWebGraphManager::new(
+        let web_graph_manager = configs
+            .crawl
+            .generate_web_graph
+            .then(|| {
+                QueuingWebGraphManager::new(
                     configs.system.web_graph_cache_size,
                     configs.paths.file_web_graph(),
                     &runtime_context,
-                ).map(Arc::new)
-            ).transpose()?;
+                )
+                .map(Arc::new)
+            })
+            .transpose()?;
 
         log::info!("Init stopword registry.");
         let stop_word_registry = configs
@@ -262,8 +263,6 @@ impl SupportsLinkSeeding for LocalContext {
                     //
                     // /// TODO: this is expensive. But mime does not provide a better API
                     // let mime_type = MimeType::new_single(parsed.mime_type().to_string().parse()?);
-
-
 
                     // todo data-urls: How to handle?
                     log::warn!("data-urls are at the moment unsupported.")

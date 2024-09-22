@@ -166,7 +166,7 @@ pub enum WarcFieldValueParseError {
     MediaTypeNotParseable(String),
     #[cfg(feature = "atra-fieldnames")]
     #[error(transparent)]
-    ParseLanguageError(#[from] ParseLanguageError)
+    ParseLanguageError(#[from] ParseLanguageError),
 }
 
 /// The values supported in the warc map
@@ -311,7 +311,7 @@ impl WarcFieldValue {
             WarcFieldValue::Encoding(value) => out.write(value.name().as_bytes())?,
             WarcFieldValue::Bool(value) => out.write(if *value { b"true" } else { b"false" })?,
             #[cfg(feature = "atra-fieldnames")]
-            WarcFieldValue::Language(value) => out.write(value.to_639_3().as_bytes())?
+            WarcFieldValue::Language(value) => out.write(value.to_639_3().as_bytes())?,
         })
     }
 }

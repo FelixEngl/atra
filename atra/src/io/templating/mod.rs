@@ -12,17 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod args;
+mod elements;
+mod errors;
 mod recovery;
 mod template;
-mod args;
-mod errors;
-mod elements;
 
+pub use args::*;
+pub use elements::*;
+pub use errors::*;
 pub use recovery::*;
 pub use template::*;
-pub use args::*;
-pub use errors::*;
-pub use elements::*;
 
 macro_rules! file_name_template_element {
     ($result: ident, $value: literal $($tt:tt)*) => {
@@ -152,7 +152,6 @@ macro_rules! file_name_template {
 
 pub(crate) use {file_name_template, file_name_template_element};
 
-
 #[cfg(test)]
 mod test {
     use crate::io::serial::SerialProvider;
@@ -165,7 +164,7 @@ mod test {
         let template1 = file_name_template!(
             "wasser" _ "<ist>" _ "nass"
         )
-            .expect("Why?");
+        .expect("Why?");
 
         let mut s = String::new();
         s.push('a');
@@ -173,7 +172,7 @@ mod test {
         let template = file_name_template!(
             s _ "test" _ ref template1 _ arg@"testi" _ "here" _ dyn@123 _ timestamp _ serial ".exe"
         )
-            .expect("Why?");
+        .expect("Why?");
 
         let mut result = String::new();
 

@@ -94,7 +94,6 @@ pub fn write_warc<W: SpecialWarcWriter>(
         log_consume!(builder.atra_language_hint(language.lang()));
     }
 
-
     if let Some(ref redir) = content.meta.final_redirect_destination {
         let urilike = unsafe { UriLikeFieldValue::from_string_unchecked(redir) };
         log_consume!(builder.target_uri(urilike));
@@ -230,7 +229,9 @@ pub fn write_warc<W: SpecialWarcWriter>(
             match position {
                 Position::First => {
                     // warc_type set beforehand
-                    log_consume!(sub_builder.atra_header_length(header_signature_octet_count as u64));
+                    log_consume!(
+                        sub_builder.atra_header_length(header_signature_octet_count as u64)
+                    );
                 }
                 Position::Middle => {
                     log_consume!(
@@ -247,7 +248,9 @@ pub fn write_warc<W: SpecialWarcWriter>(
                 }
                 Position::Only => {
                     // Combination of first and last
-                    log_consume!(sub_builder.atra_header_length(header_signature_octet_count as u64));
+                    log_consume!(
+                        sub_builder.atra_header_length(header_signature_octet_count as u64)
+                    );
                     log_consume!(
                         sub_builder.warc_record_id_string(&Uuid::new_v4().as_urn().to_string())
                     );

@@ -19,7 +19,7 @@ use crate::link_state::{
     RawLinkState, RecrawlYesNo,
 };
 use crate::url::{AtraUri, UrlWithDepth};
-use rocksdb::{DBIteratorWithThreadMode, DBWithThreadMode, MultiThreaded, DB, IteratorMode};
+use rocksdb::{DBIteratorWithThreadMode, DBWithThreadMode, IteratorMode, MultiThreaded, DB};
 use std::sync::Arc;
 use std::time::Duration;
 use time::OffsetDateTime;
@@ -44,7 +44,10 @@ impl DatabaseLinkStateManager<LinkStateRockDB> {
         self.db.len()
     }
 
-    pub fn iter(&self, mode: IteratorMode) -> DBIteratorWithThreadMode<DBWithThreadMode<MultiThreaded>> {
+    pub fn iter(
+        &self,
+        mode: IteratorMode,
+    ) -> DBIteratorWithThreadMode<DBWithThreadMode<MultiThreaded>> {
         self.db.iter(mode)
     }
 }
@@ -84,7 +87,6 @@ impl<DB: LinkStateDB> LinkStateManager for DatabaseLinkStateManager<DB> {
             escalate => escalate,
         }
     }
-
 
     async fn get_link_state(
         &self,
@@ -148,10 +150,7 @@ impl<DB: LinkStateDB> LinkStateManager for DatabaseLinkStateManager<DB> {
         })
     }
 
-    async fn collect_all_links<F: Fn(IsSeedYesNo, UrlWithDepth) -> ()>(
-        &self,
-        collector: F,
-    ) {
+    async fn collect_all_links<F: Fn(IsSeedYesNo, UrlWithDepth) -> ()>(&self, collector: F) {
         self.db.collect_values(|_, k, v| {
             let raw = unsafe { RawLinkState::from_slice_unchecked(v.as_ref()) };
             let uri: AtraUri = String::from_utf8_lossy(k).parse().unwrap();
