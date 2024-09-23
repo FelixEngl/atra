@@ -27,7 +27,7 @@ pub fn read_body<R: Seek + Read>(
 ) -> Result<Option<Vec<u8>>, Error> {
     let header_octet_count = header_octet_count as u64;
     reader.seek(SeekFrom::Start(
-        pointer.position() + pointer.warc_header_offset() as u64 + header_octet_count,
+        pointer.file_offset() + pointer.warc_header_offset() as u64 + header_octet_count,
     ))?;
     let mut to_read = (pointer.body_octet_count() - header_octet_count) as usize;
     if to_read == 0 {

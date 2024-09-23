@@ -39,7 +39,7 @@ use crate::crawl::ErrorConsumer;
 use crate::data::{process, RawData, RawVecData};
 use crate::fetching::ResponseData;
 use crate::format::supported::InterpretedProcessibleFileFormat;
-use crate::format::AtraFileInformation;
+use crate::format::{AtraFileInformation, FileFormatData};
 use crate::io::fs::AtraFS;
 use crate::link_state::{
     IsSeedYesNo, LinkStateKind, LinkStateLike, LinkStateManager, RecrawlYesNo,
@@ -437,7 +437,10 @@ where
                     log::trace!("Fetched: {}", target);
                     let mut response_data = ResponseData::from_response(page, target.clone());
 
-                    let file_information = AtraFileInformation::determine(context, &response_data);
+                    let file_information = AtraFileInformation::determine(
+                        context,
+                        FileFormatData::from_response(&response_data)
+                    );
 
                     let (language, analyzed, links) =
                         match process(context, &response_data, &file_information).await {

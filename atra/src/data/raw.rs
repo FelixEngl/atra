@@ -20,6 +20,7 @@ use std::cmp::min;
 use std::fs::File;
 use std::io;
 use std::io::{Cursor, IoSliceMut, Read, SeekFrom};
+use crate::format::FileContent;
 
 pub type RawVecData = RawData<Vec<u8>>;
 
@@ -60,6 +61,22 @@ impl RawData<Vec<u8>> {
     #[inline]
     pub fn from_vec(data: Vec<u8>) -> Self {
         Self::from_in_memory(data)
+    }
+}
+
+impl<'a, T: AsRef<[u8]>> FileContent for RawData<T> where Self: 'a {
+    type CursorLike = DataHolderCursor<&'a T>;
+    type InMemory = T;
+    type Error = io::Error;
+
+    #[inline(always)]
+    fn cursor(&self, context: &impl SupportsFileSystemAccess) -> Result<Option<Self::CursorLike>, Self::Error> {
+        RawData::cursor(self, context)
+    }
+
+    #[inline(always)]
+    fn as_in_memory(&self) -> Option<&T> {
+        RawData::as_in_memory(self)
     }
 }
 

@@ -324,7 +324,7 @@ fn do_decode<'a>(
 mod test {
     use crate::decoding::decode;
     use crate::fetching::{FetchedRequestData, ResponseData};
-    use crate::format::AtraFileInformation;
+    use crate::format::{AtraFileInformation, FileFormatData};
     use crate::test_impls::*;
     use encoding_rs::Encoding;
     use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
@@ -339,7 +339,7 @@ mod test {
                 let original_enc = $encoding;
                 let (website, content) = $sample(original_enc);
                 let context = TestContext::default();
-                let format = AtraFileInformation::determine(&context, &website);
+                let format = AtraFileInformation::determine(&context, FileFormatData::from_response(&website));
                 let decoded = decode(&context, &website, &format).await.unwrap();
                 assert_eq!(content, decoded.as_in_memory().unwrap().as_ref(), "The selected encoding {} does not equal the selected decoding {}", original_enc.name(), decoded.encoding().unwrap().name());
             }
@@ -352,7 +352,7 @@ mod test {
                 let original_enc = $encoding;
                 let (website, content) = $sample(original_enc);
                 let context = TestContext::default();
-                let format = AtraFileInformation::determine(&context, &website);
+                let format = AtraFileInformation::determine(&context, FileFormatData::from_response(&website));
                 let decoded = decode(&context, &website, &format).await.unwrap();
                 assert_eq!(original_enc, decoded.encoding().unwrap(), "The selected encoding {} does not equal the selected decoding {}", original_enc.name(), decoded.encoding().unwrap().name());
                 assert_eq!(content, decoded.as_in_memory().unwrap().as_ref());

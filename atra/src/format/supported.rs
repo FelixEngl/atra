@@ -16,7 +16,7 @@ use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
 use crate::fetching::ResponseData;
 use crate::format::file_format_detection::DetectedFileFormat;
 use crate::format::mime::MimeType;
-use crate::format::mime_ext;
+use crate::format::{FileContent, FileFormatData, mime_ext};
 use file_format::{FileFormat, Kind};
 use mime::Mime;
 use serde::{Deserialize, Serialize};
@@ -149,8 +149,8 @@ macro_rules! supports_fileending_method {
     ($(
         $typ: ident: $pattern:pat $(if $guard:expr)? $(,)?
     )+) => {
-        fn extension_2_supported_file_format(response: &ResponseData) -> Option<InterpretedProcessibleFileFormat>{
-            if let Some(file_endings) = response.url.url().get_file_endings() {
+        fn extension_2_supported_file_format(data: &FileFormatData<impl AsRef<[u8]>>) -> Option<InterpretedProcessibleFileFormat>{
+            if let Some(file_endings) = data.url.and_then(|value| value.get_file_endings()) {
                 let last = *file_endings.last()?;
                 match last {
                     $(
@@ -193,14 +193,15 @@ impl InterpretedProcessibleFileFormat {
     }
 
     /// Tries to guess the supported file type.
-    pub fn guess<C>(
-        page: &ResponseData,
+    pub fn guess<C, D>(
+        data: &FileFormatData<D>,
         mime: Option<&MimeType>,
         file_format: Option<&DetectedFileFormat>,
         context: &C,
     ) -> InterpretedProcessibleFileFormat
     where
         C: SupportsFileSystemAccess + SupportsConfigs,
+        D: FileContent
     {
         let mut is_text = false;
 
@@ -313,7 +314,7 @@ impl InterpretedProcessibleFileFormat {
             }
         }
 
-        if let Some(found) = Self::extension_2_supported_file_format(page) {
+        if let Some(found) = Self::extension_2_supported_file_format(data) {
             return found;
         }
 
@@ -327,7 +328,7 @@ impl InterpretedProcessibleFileFormat {
 
         fn guess_if_html<const HAYSTACK_SIZE: usize>(
             context: &impl SupportsFileSystemAccess,
-            page: &ResponseData,
+            page: &FileFormatData<impl FileContent>,
         ) -> bool {
             if let Ok(Some(mut reader)) = page.content.cursor(context) {
                 let mut haystack = [0u8; HAYSTACK_SIZE];
@@ -343,15 +344,15 @@ impl InterpretedProcessibleFileFormat {
         // Grabbing straws
 
         if is_text {
-            if guess_if_html::<512>(context, page) {
+            if guess_if_html::<512>(context, data) {
                 Self::HTML
             } else {
                 Self::Decodeable
             }
-        } else if let Ok(Some(reader)) = page.content.cursor(context) {
+        } else if let Ok(Some(reader)) = data.content.cursor(context) {
             let mut result = Vec::new();
             if context.configs().system.max_file_size_in_memory < 512 {
-                if guess_if_html::<512>(context, page) {
+                if guess_if_html::<512>(context, data) {
                     Self::HTML
                 } else {
                     Self::Unknown

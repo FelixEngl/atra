@@ -23,7 +23,6 @@ use thiserror::Error;
 pub const LINK_STATE_DB_CF: &'static str = "ls";
 pub const CRAWL_DB_CF: &'static str = "cr";
 pub const ROBOTS_TXT_DB_CF: &'static str = "rt";
-pub const SEED_ID_DB_CF: &'static str = "si";
 pub const DOMAIN_MANAGER_DB_CF: &'static str = "dm";
 
 /// Errors when opening a database.

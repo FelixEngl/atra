@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
+use crate::format::{FileContent, FileFormatData};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum DetectedFileFormat {
@@ -39,13 +40,16 @@ impl DetectedFileFormat {
 }
 
 /// Infers the file format for some kind of data.
-pub(crate) fn infer_file_formats(
-    page: &ResponseData,
+pub(crate) fn infer_file_formats<D>(
+    data: &FileFormatData<D>,
     mime: Option<&MimeType>,
     context: &impl SupportsFileSystemAccess,
-) -> Option<DetectedFileFormat> {
+) -> Option<DetectedFileFormat>
+where
+    D: FileContent,
+{
     let mut formats = HashMap::new();
-    if let Ok(Some(value)) = page.content.cursor(context) {
+    if let Ok(Some(value)) = data.content.cursor(context) {
         match FileFormat::from_reader(value) {
             Ok(value) => {
                 formats.insert(value, 1);
@@ -73,7 +77,7 @@ pub(crate) fn infer_file_formats(
         }
     }
 
-    if let Some(file_extension) = page.url.url().file_extension() {
+    if let Some(file_extension) = data.url.and_then(|value| value.url().file_extension()) {
         if let Some(infered) = FileFormat::from_extension(file_extension) {
             for inf in infered {
                 match formats.entry(*inf) {

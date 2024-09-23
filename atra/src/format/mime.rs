@@ -24,8 +24,9 @@ use scraper::Html;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 
-use crate::url::AtraUri;
+use crate::url::{AtraUri, UrlWithDepth};
 pub use mime::*;
+use crate::format::{FileContent, FileFormatData};
 
 #[derive(Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash, Serialize, Deserialize)]
 pub struct MimeType {
@@ -257,7 +258,10 @@ impl<'a, 'b> Iterator for MimeParamsIter<'a, 'b> {
     }
 }
 
-pub fn determine_mime_information(response: &ResponseData) -> Option<MimeType> {
+pub fn determine_mime_information<D>(data: &FileFormatData<D>) -> Option<MimeType>
+where
+    D: FileContent,
+{
     static_selectors! {
         [
             META_CONTENT = "meta[http-equiv=\"Content-Type\"][content]"
@@ -300,9 +304,8 @@ pub fn determine_mime_information(response: &ResponseData) -> Option<MimeType> {
         return found_fast;
     }
 
-    let mimes_from_header = response
+    let mimes_from_header = data
         .headers
-        .as_ref()
         .map(|value| {
             if let Some(content_type_header_value) = value.get(reqwest::header::CONTENT_TYPE) {
                 if let Ok(content_type_header_value) = content_type_header_value.to_str() {
@@ -320,19 +323,22 @@ pub fn determine_mime_information(response: &ResponseData) -> Option<MimeType> {
         })
         .flatten();
 
-    if let Some(mut mimes_from_header) = mimes_from_header {
-        if mimes_from_header.iter().any(|value| value.type_() == HTML) {
-            if let Some(dat) = response.content.as_in_memory() {
-                mimes_from_header.extend(parse_page_raw(response.get_url_parsed(), dat.as_slice()))
-            } else {
-                log::debug!(
-                    "Unable to parse the html because of its size: {:?}!",
-                    response.content
-                );
+    match (mimes_from_header, data.url) {
+        (Some(mut mimes_from_header), Some(url)) => {
+            if mimes_from_header.iter().any(|value| value.type_() == HTML) {
+                if let Some(dat) = data.content.as_in_memory() {
+                    mimes_from_header.extend(parse_page_raw(url.url(), dat.as_slice()))
+                } else {
+                    log::debug!(
+                        "Unable to parse the html because of its size: {:?}!",
+                        data.content
+                    );
+                }
             }
+            (!mimes_from_header.is_empty()).then(|| mimes_from_header.into())
         }
-        (!mimes_from_header.is_empty()).then(|| mimes_from_header.into())
-    } else {
-        mimes_from_header.map(|value| value.into())
+        (mimes_from_header, _) => {
+            mimes_from_header.map(|value| value.into())
+        }
     }
 }

@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct WarcSkipPointer {
     /// Offset from the start of the file to the start of the WARC-Header
-    position: u64,
+    file_offset: u64,
     /// The number of octets in the whole body
     body_octet_count: u64,
     /// The size of the warc header in bytes
@@ -27,16 +27,16 @@ pub struct WarcSkipPointer {
 }
 
 impl WarcSkipPointer {
-    pub fn new(position: u64, warc_header_offset: u32, body_octet_count: u64) -> Self {
+    pub fn new(file_offset: u64, warc_header_offset: u32, body_octet_count: u64) -> Self {
         Self {
-            position,
+            file_offset,
             body_octet_count,
             warc_header_offset,
         }
     }
 
-    pub fn position(&self) -> u64 {
-        self.position
+    pub fn file_offset(&self) -> u64 {
+        self.file_offset
     }
 
     pub fn body_octet_count(&self) -> u64 {
@@ -68,7 +68,7 @@ impl WarcSkipPointerWithPath {
 
     delegate::delegate! {
         to self.skip_pointer {
-            pub fn position(&self) -> u64;
+            pub fn file_offset(&self) -> u64;
             pub fn warc_header_offset(&self) -> u32;
             pub fn body_octet_count(&self) -> u64;
         }

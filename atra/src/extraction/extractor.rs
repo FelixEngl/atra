@@ -14,7 +14,7 @@
 
 use super::ExtractedLink;
 use crate::contexts::traits::{SupportsConfigs, SupportsGdbrRegistry};
-use crate::data::Decoded;
+use crate::data::{Decoded, RawVecData};
 use crate::extraction::extractor_method::ExtractorMethod;
 use crate::fetching::ResponseData;
 use crate::format::AtraFileInformation;
@@ -26,6 +26,7 @@ use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use strum::{Display, EnumString};
+use crate::url::UrlWithDepth;
 /*
     To register a new extractor, create a extractor_decode_action_declaration
     and extractor_sub_extractor_declaration.
@@ -47,7 +48,7 @@ impl Extractor {
     async fn apply_extractors<const FALLBACK_MODE: bool, C>(
         &self,
         context: &C,
-        response: ProcessedData<'_>,
+        data: ProcessedData<'_>,
         result: &mut ExtractorResult,
     ) where
         C: SupportsConfigs + SupportsGdbrRegistry,
@@ -57,11 +58,11 @@ impl Extractor {
             if FALLBACK_MODE ^ extractor.is_fallback() {
                 continue;
             }
-            if extractor.can_apply(&response) {
+            if extractor.can_apply(&data) {
                 if result.apply_extractor(extractor.extractor_method) {
                     match extractor
                         .extractor_method
-                        .extract_links(context, &response, result)
+                        .extract_links(context, &data, result)
                         .await
                     {
                         Ok(value) => {
@@ -70,8 +71,8 @@ impl Extractor {
                         Err(err) => {
                             log::warn!(
                                 "Failed {extractor} for {} {} with: {}",
-                                response.0.url.url,
-                                response.1,
+                                data.url.url,
+                                data.file_info,
                                 err
                             );
                         }
@@ -82,8 +83,8 @@ impl Extractor {
             } else {
                 log::debug!(
                     "{extractor} is not compatible with {} {}!",
-                    response.0.url.url,
-                    response.1
+                    data.url.url,
+                    data.file_info
                 )
             }
         }
@@ -103,7 +104,7 @@ impl Extractor {
     {
         log::trace!("Extractor: {:?} - {}", identified_type.format, response.url);
         let mut result = ExtractorResult::default();
-        let holder = ProcessedData(response, identified_type, decoded, lang);
+        let holder = ProcessedData::new_from_response(response, identified_type, decoded, lang);
         self.apply_extractors::<false, _>(context, holder, &mut result)
             .await;
         if result.no_extractor_applied() || result.is_empty() {
@@ -129,12 +130,30 @@ impl Default for Extractor {
 
 /// A reference to all contents available to extract the data.
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct ProcessedData<'a>(
-    pub &'a ResponseData,
-    pub &'a AtraFileInformation,
-    pub &'a Decoded<String, Utf8PathBuf>,
-    pub Option<&'a LanguageInformation>,
-);
+pub(crate) struct ProcessedData<'a> {
+    pub url: &'a UrlWithDepth,
+    pub raw_data: &'a RawVecData,
+    pub file_info: &'a AtraFileInformation,
+    pub decoded: &'a Decoded<String, Utf8PathBuf>,
+    pub language: Option<&'a LanguageInformation>,
+}
+
+impl<'a> ProcessedData<'a> {
+    pub fn new_from_response(
+        data: &'a ResponseData,
+        file_info: &'a AtraFileInformation,
+        decoded: &'a Decoded<String, Utf8PathBuf>,
+        language: Option<&'a LanguageInformation>,
+    ) -> Self {
+        Self {
+            url: &data.url,
+            raw_data: &data.content,
+            file_info,
+            decoded,
+            language
+        }
+    }
+}
 
 /// The result of an extraction, contains the extracted links as well es the applied extractors.
 #[derive(Debug, Default)]
@@ -273,7 +292,7 @@ mod test {
     use crate::extraction::extractor::Extractor;
     use crate::fetching::FetchedRequestData;
     use crate::fetching::ResponseData;
-    use crate::format::AtraFileInformation;
+    use crate::format::{AtraFileInformation, FileFormatData};
     use crate::test_impls::TestContext;
     use crate::toolkit::LanguageInformation;
     use crate::url::UrlWithDepth;
@@ -294,7 +313,7 @@ mod test {
 
         let context = TestContext::default();
 
-        let identified_type = AtraFileInformation::determine(&context, &page);
+        let identified_type = AtraFileInformation::determine(&context, (&page).into());
 
         let preprocessed = process(&context, &page, &identified_type).await.unwrap();
 

@@ -19,5 +19,9 @@ mod js;
 pub mod links;
 pub mod marker;
 mod raw;
+mod archive_decoding;
+mod errors;
 
 pub use links::ExtractedLink;
+
+pub use errors::*;
