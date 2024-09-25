@@ -13,11 +13,12 @@
 // limitations under the License.
 
 use std::fmt::{Display, Formatter};
+use std::io::{Read, Seek};
 use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
 use warc::media_type::MediaType;
 use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
-use crate::data::RawVecData;
+use crate::data::{DataHolderCursor, RawVecData};
 use crate::fetching::ResponseData;
 use crate::format::file_format_detection::{DetectedFileFormat, infer_file_formats};
 use crate::format::FileContent;
@@ -33,7 +34,7 @@ pub struct AtraFileInformation {
     pub detected: Option<DetectedFileFormat>,
 }
 
-impl<'a> From<&'a ResponseData> for FileFormatData<'a, RawVecData> {
+impl<'a> From<&'a ResponseData> for FileFormatData<'a, RawVecData, DataHolderCursor<'a>> {
     #[inline(always)]
     fn from(value: &'a ResponseData) -> Self {
         Self::from_response(value)
@@ -54,13 +55,14 @@ impl AtraFileInformation {
         }
     }
 
-    pub fn determine<C, D>(
+    pub fn determine<C, D, R>(
         context: &C,
-        data: FileFormatData<D>,
+        data: FileFormatData<D, R>,
     ) -> Self
     where
         C: SupportsConfigs + SupportsFileSystemAccess,
-        D: FileContent
+        D: FileContent<R>,
+        R: Read + Seek
     {
         let mime = determine_mime_information(&data);
 
@@ -127,20 +129,20 @@ impl Display for AtraFileInformation {
 
 /// The data used to identify a file format.
 #[derive(Debug, Copy, Clone)]
-pub struct FileFormatData<'a, T> where T: FileContent {
+pub struct FileFormatData<'a, T, R> where T: FileContent<R>, R: Seek + Read {
     pub(crate) headers: Option<&'a HeaderMap>,
     pub(crate) content: &'a T,
     pub(crate) url: Option<&'a UrlWithDepth>,
     pub(crate) file_extension: Option<&'a str>
 }
 
-impl<'a, T> FileFormatData<'a, T> where T: FileContent {
+impl<'a, T, R> FileFormatData<'a, T, R> where T: FileContent<R>, R: Seek + Read {
     pub fn new(headers: Option<&'a HeaderMap>, content: &'a T, url: Option<&'a UrlWithDepth>) -> Self {
         Self { headers, content, url, file_extension: None }
     }
 }
 
-impl<'a> FileFormatData<'a, RawVecData> {
+impl<'a> FileFormatData<'a, RawVecData, DataHolderCursor<'a>> {
     pub fn from_response(result: &'a ResponseData) -> Self {
         Self {
             headers: result.headers.as_ref(),

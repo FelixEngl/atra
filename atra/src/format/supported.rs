@@ -21,7 +21,7 @@ use file_format::{FileFormat, Kind};
 use mime::Mime;
 use serde::{Deserialize, Serialize};
 use std::cmp::max;
-use std::io::Read;
+use std::io::{Read, Seek};
 use std::str::FromStr;
 use strum::Display;
 // https://gonze.com/playlists/playlist-format-survey.html#M3U
@@ -149,7 +149,11 @@ macro_rules! supports_fileending_method {
     ($(
         $typ: ident: $pattern:pat $(if $guard:expr)? $(,)?
     )+) => {
-        fn extension_2_supported_file_format(data: &FileFormatData<impl AsRef<[u8]>>) -> Option<InterpretedProcessibleFileFormat>{
+        fn extension_2_supported_file_format<D, R>(data: &FileFormatData<D, R>) -> Option<InterpretedProcessibleFileFormat>
+        where
+            D: FileContent<R>,
+            R: Seek + Read
+        {
             if let Some(file_endings) = data.url.and_then(|value| value.get_file_endings()) {
                 let last = *file_endings.last()?;
                 match last {
@@ -193,15 +197,16 @@ impl InterpretedProcessibleFileFormat {
     }
 
     /// Tries to guess the supported file type.
-    pub fn guess<C, D>(
-        data: &FileFormatData<D>,
+    pub fn guess<C, D, R>(
+        data: &FileFormatData<D, R>,
         mime: Option<&MimeType>,
         file_format: Option<&DetectedFileFormat>,
         context: &C,
     ) -> InterpretedProcessibleFileFormat
     where
         C: SupportsFileSystemAccess + SupportsConfigs,
-        D: FileContent
+        D: FileContent<R>,
+        R: Seek + Read
     {
         let mut is_text = false;
 
@@ -326,10 +331,14 @@ impl InterpretedProcessibleFileFormat {
             }
         }
 
-        fn guess_if_html<const HAYSTACK_SIZE: usize>(
+        fn guess_if_html<const HAYSTACK_SIZE: usize, D, R>(
             context: &impl SupportsFileSystemAccess,
-            page: &FileFormatData<impl FileContent>,
-        ) -> bool {
+            page: &FileFormatData<D, R>,
+        ) -> bool
+        where
+            D: FileContent<R>,
+            R: Seek + Read
+        {
             if let Ok(Some(mut reader)) = page.content.cursor(context) {
                 let mut haystack = [0u8; HAYSTACK_SIZE];
                 match reader.read(&mut haystack) {
@@ -344,7 +353,7 @@ impl InterpretedProcessibleFileFormat {
         // Grabbing straws
 
         if is_text {
-            if guess_if_html::<512>(context, data) {
+            if guess_if_html::<512, _, _>(context, data) {
                 Self::HTML
             } else {
                 Self::Decodeable
@@ -352,7 +361,7 @@ impl InterpretedProcessibleFileFormat {
         } else if let Ok(Some(reader)) = data.content.cursor(context) {
             let mut result = Vec::new();
             if context.configs().system.max_file_size_in_memory < 512 {
-                if guess_if_html::<512>(context, data) {
+                if guess_if_html::<512, _, _>(context, data) {
                     Self::HTML
                 } else {
                     Self::Unknown

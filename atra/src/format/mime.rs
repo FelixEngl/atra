@@ -23,7 +23,7 @@ use mime::{Mime, MimeIter, Name, Params};
 use scraper::Html;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
-
+use std::io::{Read, Seek};
 use crate::url::{AtraUri, UrlWithDepth};
 pub use mime::*;
 use crate::format::{FileContent, FileFormatData};
@@ -258,9 +258,10 @@ impl<'a, 'b> Iterator for MimeParamsIter<'a, 'b> {
     }
 }
 
-pub fn determine_mime_information<D>(data: &FileFormatData<D>) -> Option<MimeType>
+pub fn determine_mime_information<D, R>(data: &FileFormatData<D, R>) -> Option<MimeType>
 where
-    D: FileContent,
+    D: FileContent<R>,
+    R: Seek + Read
 {
     static_selectors! {
         [
@@ -327,7 +328,7 @@ where
         (Some(mut mimes_from_header), Some(url)) => {
             if mimes_from_header.iter().any(|value| value.type_() == HTML) {
                 if let Some(dat) = data.content.as_in_memory() {
-                    mimes_from_header.extend(parse_page_raw(url.url(), dat.as_slice()))
+                    mimes_from_header.extend(parse_page_raw(url.url(), dat.as_ref()))
                 } else {
                     log::debug!(
                         "Unable to parse the html because of its size: {:?}!",

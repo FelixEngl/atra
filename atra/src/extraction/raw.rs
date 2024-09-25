@@ -115,6 +115,7 @@ mod test {
     use super::extract_possible_urls;
     use crate::toolkit::utf8::RobustUtf8Reader;
     use bytes::Buf;
+    use encoding_rs::*;
     use itertools::Itertools;
 
     #[test]
@@ -172,5 +173,68 @@ mod test {
             "Failed found {}",
             found.0
         );
+    }
+
+    #[test]
+    fn test_different_encodings() {
+        const TEST_DATA: &str = include_str!("../../testdata/samples/Amazon.html");
+
+        static ENCODINGS: &'static [&'static Encoding] = &[
+            UTF_8,
+            BIG5,
+            EUC_JP,
+            EUC_KR,
+            GB18030,
+            GBK,
+            IBM866,
+            SHIFT_JIS,
+            ISO_8859_2,
+            ISO_8859_3,
+            ISO_8859_4,
+            ISO_8859_5,
+            ISO_8859_6,
+            ISO_8859_7,
+            ISO_8859_8,
+            ISO_8859_8_I,
+            ISO_8859_10,
+            ISO_8859_13,
+            ISO_8859_14,
+            ISO_8859_15,
+            ISO_8859_16,
+            ISO_2022_JP,
+            WINDOWS_874,
+            WINDOWS_1250,
+            WINDOWS_1251,
+            WINDOWS_1252,
+            WINDOWS_1253,
+            WINDOWS_1256,
+            WINDOWS_1254,
+            WINDOWS_1255,
+            WINDOWS_1257,
+            WINDOWS_1258,
+            KOI8_R,
+            KOI8_U,
+            X_MAC_CYRILLIC
+        ];
+
+        for encoding in ENCODINGS.iter().cloned() {
+            let (content, used_enc, _) = encoding.encode(TEST_DATA);
+            assert_eq!(
+                encoding,
+                used_enc,
+                "The used encoding {} differs from the expected one {}",
+                used_enc.name(),
+                encoding.name()
+            );
+            let extracted = extract_possible_urls(RobustUtf8Reader::new(content.as_ref()));
+            match extracted {
+                Ok(value) => {
+                    println!("OK:  {}: {}", encoding.name(), value.len());
+                }
+                Err(err) => {
+                    println!("ERR: {}: {}", encoding.name(), err);
+                }
+            }
+        }
     }
 }

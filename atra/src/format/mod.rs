@@ -20,15 +20,8 @@ use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
 
 pub use file_content::*;
-use warc::media_type::MediaType;
 
 use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
-use crate::data::RawVecData;
-use crate::fetching::ResponseData;
-use crate::format::file_format_detection::{DetectedFileFormat, infer_file_formats};
-use crate::format::mime::{determine_mime_information, MimeType};
-use crate::format::supported::InterpretedProcessibleFileFormat;
-use crate::url::UrlWithDepth;
 
 pub mod file_format_detection;
 pub mod mime;

@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
+use std::io::{Read, Seek};
 use crate::format::{FileContent, FileFormatData};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -40,13 +41,14 @@ impl DetectedFileFormat {
 }
 
 /// Infers the file format for some kind of data.
-pub(crate) fn infer_file_formats<D>(
-    data: &FileFormatData<D>,
+pub(crate) fn infer_file_formats<D, R>(
+    data: &FileFormatData<D, R>,
     mime: Option<&MimeType>,
     context: &impl SupportsFileSystemAccess,
 ) -> Option<DetectedFileFormat>
 where
-    D: FileContent,
+    D: FileContent<R>,
+    R: Seek + Read
 {
     let mut formats = HashMap::new();
     if let Ok(Some(value)) = data.content.cursor(context) {

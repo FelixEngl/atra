@@ -29,18 +29,22 @@ pub async fn extract_from_zip<C, R>(
     context: &C,
 ) -> Result<(), LinkExtractionError> where
     C: SupportsGdbrRegistry + SupportsConfigs,
-    R: Read + Seek
+    R: Read + Seek + Clone
 {
     let mut zip_reader = zip::read::ZipArchive::new(reader)?;
-    let extracted_result = HashSet::new();
-    for idx in 0..zip_reader.len() {
+    // let extracted_result = HashSet::new();
+    let len = zip_reader.len();
+    for idx in 0..len {
         match zip_reader.by_index_raw(idx) {
             Ok(file) => {
                 if file.is_file() {
-
+                    drop(file);
+                    let copy = zip_reader.clone();
                     let content = ZipFileContent::new(
-                        zip_reader.clone(),
-
+                        copy,
+                        idx,
+                        context.configs().system.max_file_size_in_memory as usize,
+                        None
                     );
 
                     let data = FileFormatData::new(
@@ -62,10 +66,11 @@ pub async fn extract_from_zip<C, R>(
                         log::trace!("The archive {err} of {} is unsupported.", root_url)
                     }
                     ZipError::FileNotFound => {
-                        log::trace!("The entry {name} in {} does not exist.", )
+
+                        // log::trace!("The entry {:?}({idx}) in {} does not exist.", zip_reader.name_for_index(idx), root_url)
                     }
                     ZipError::InvalidPassword => {
-                        log::trace!("Failed to decrypt {name} in {}", root_url)
+                        // log::trace!("Failed to decrypt {:?}({idx}) in {}", zip_reader.name_for_index(idx), root_url)
                     }
                     unknown => {
                         log::trace!("Had an unkown error while unzipping {}: {unknown}", root_url)

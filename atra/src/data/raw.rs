@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use std::cmp::min;
 use std::fs::File;
 use std::io;
-use std::io::{Cursor, IoSliceMut, Read, SeekFrom};
+use std::io::{Cursor, IoSliceMut, Read, Seek, SeekFrom};
 use crate::format::FileContent;
 
 pub type RawVecData = RawData<Vec<u8>>;
@@ -64,14 +64,13 @@ impl RawData<Vec<u8>> {
     }
 }
 
-impl<'a, T: AsRef<[u8]>> FileContent for RawData<T> where Self: 'a {
-    type CursorLike = DataHolderCursor<&'a T>;
+impl<'a, T: AsRef<[u8]>> FileContent<DataHolderCursor<'a>> for RawData<T> {
     type InMemory = T;
     type Error = io::Error;
 
     #[inline(always)]
-    fn cursor(&self, context: &impl SupportsFileSystemAccess) -> Result<Option<Self::CursorLike>, Self::Error> {
-        RawData::cursor(self, context)
+    fn cursor(&self, context: &impl SupportsFileSystemAccess) -> Result<Option<DataHolderCursor<'a>>, Self::Error> {
+        unsafe{std::mem::transmute(RawData::cursor(self, context))}
     }
 
     #[inline(always)]
@@ -95,12 +94,12 @@ impl<T: AsRef<[u8]>> RawData<T> {
     pub fn cursor(
         &self,
         context: &impl SupportsFileSystemAccess,
-    ) -> io::Result<Option<DataHolderCursor<&T>>> {
+    ) -> io::Result<Option<DataHolderCursor>> {
         match self {
             RawData::None => Ok(None),
             RawData::InMemory { data } => Ok(Some(DataHolderCursor::InMemory {
-                len: data.as_ref().len(),
-                cursor: Cursor::new(data),
+                len: data.as_ref().len() as u64,
+                cursor: Cursor::new(data.as_ref()),
             })),
             RawData::ExternalFile { file: name } => {
                 let file = File::options()
@@ -134,21 +133,21 @@ impl<T: AsRef<[u8]>> RawData<T> {
 }
 
 /// A cursor for navigating over some kind of data
-pub enum DataHolderCursor<T: AsRef<[u8]>> {
-    InMemory { len: usize, cursor: Cursor<T> },
+pub enum DataHolderCursor<'a> {
+    InMemory { len: u64, cursor: Cursor<&'a [u8]> },
     FileSystem { len: u64, cursor: File },
 }
 
-impl<T: AsRef<[u8]>> DataHolderCursor<T> {
+impl<'a> DataHolderCursor<'a> {
     pub fn len(&self) -> u64 {
         match self {
-            DataHolderCursor::InMemory { len, .. } => *len as u64,
+            DataHolderCursor::InMemory { len, .. } => *len,
             DataHolderCursor::FileSystem { len, .. } => *len,
         }
     }
 }
 
-impl<T: AsRef<[u8]>> io::Seek for DataHolderCursor<T> {
+impl<'a> io::Seek for DataHolderCursor<'a> {
     delegate::delegate! {
         to match self {
             Self::InMemory{cursor, ..} => cursor,
@@ -161,7 +160,7 @@ impl<T: AsRef<[u8]>> io::Seek for DataHolderCursor<T> {
     }
 }
 
-impl<T: AsRef<[u8]>> Read for DataHolderCursor<T> {
+impl<'a> Read for DataHolderCursor<'a> {
     delegate::delegate! {
         to match self {
             Self::InMemory{cursor, ..} => cursor,
