@@ -214,7 +214,7 @@ mod test {
             WINDOWS_1258,
             KOI8_R,
             KOI8_U,
-            X_MAC_CYRILLIC
+            X_MAC_CYRILLIC,
         ];
 
         for encoding in ENCODINGS.iter().cloned() {

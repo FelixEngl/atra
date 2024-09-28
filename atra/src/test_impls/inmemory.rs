@@ -40,7 +40,7 @@ use crate::test_impls::providers::{ClientProvider, DefaultAtraProvider};
 use crate::url::guard::InMemoryUrlGuardian;
 use crate::url::{AtraOriginProvider, AtraUri};
 use crate::url::{AtraUrlOrigin, UrlWithDepth};
-use crate::web_graph::{WebGraphError, WebGraphEntry, WebGraphManager};
+use crate::web_graph::{WebGraphEntry, WebGraphError, WebGraphManager};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use liblinear::solver::L2R_L2LOSS_SVR;
@@ -449,7 +449,7 @@ where
         let hint = match &result.content {
             RawVecData::None => StoredDataHint::None,
             RawVecData::InMemory { data } => StoredDataHint::InMemory(data.clone()),
-            RawVecData::ExternalFile { file } => StoredDataHint::External(file.clone()),
+            RawVecData::ExternalFile { path: file } => StoredDataHint::External(file.clone()),
         };
         let slim = SlimCrawlResult::new(result, hint);
         self.store_slim_crawled_website(slim).await?;

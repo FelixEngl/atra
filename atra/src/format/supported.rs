@@ -13,15 +13,14 @@
 // limitations under the License.
 
 use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
-use crate::fetching::ResponseData;
 use crate::format::file_format_detection::DetectedFileFormat;
 use crate::format::mime::MimeType;
-use crate::format::{FileContent, FileFormatData, mime_ext};
+use crate::format::{mime_ext, FileContentReader, FileFormatData};
 use file_format::{FileFormat, Kind};
 use mime::Mime;
 use serde::{Deserialize, Serialize};
 use std::cmp::max;
-use std::io::{Read, Seek};
+use std::io::{Read};
 use std::str::FromStr;
 use strum::Display;
 // https://gonze.com/playlists/playlist-format-survey.html#M3U
@@ -51,6 +50,8 @@ pub enum InterpretedProcessibleFileFormat {
     ODF,
     IMAGE,
 
+    ZIP,
+
     Decodeable,
 
     /// Usually a binary format. But can be anything that can not be decoded by normal means. (Like a ZIP-File)
@@ -68,6 +69,7 @@ impl InterpretedProcessibleFileFormat {
 
     pub fn fallback_mime_type_for_warc(&self) -> &Mime {
         match self {
+            InterpretedProcessibleFileFormat::ZIP => &mime_ext::APPLICATION_ZIP,
             InterpretedProcessibleFileFormat::HTML => &mime::TEXT_HTML,
             InterpretedProcessibleFileFormat::PDF => &mime::APPLICATION_PDF,
             InterpretedProcessibleFileFormat::JavaScript => &mime::APPLICATION_JAVASCRIPT,
@@ -149,12 +151,11 @@ macro_rules! supports_fileending_method {
     ($(
         $typ: ident: $pattern:pat $(if $guard:expr)? $(,)?
     )+) => {
-        fn extension_2_supported_file_format<D, R>(data: &FileFormatData<D, R>) -> Option<InterpretedProcessibleFileFormat>
+        fn extension_2_supported_file_format<D>(data: &FileFormatData<D>) -> Option<InterpretedProcessibleFileFormat>
         where
-            D: FileContent<R>,
-            R: Seek + Read
+            D: FileContentReader,
         {
-            if let Some(file_endings) = data.url.and_then(|value| value.get_file_endings()) {
+            if let Some(file_endings) = data.get_possible_file_endings() {
                 let last = *file_endings.last()?;
                 match last {
                     $(
@@ -182,10 +183,12 @@ impl InterpretedProcessibleFileFormat {
         ODF: "odt"|"ods"|"odp"|"odg"|"odc"|"odf"|"odi"|"odm"|"ott"|"ots"|"otp"|"otg"|"otf"|"oth"|"oti"|"otc"
         StructuredPlainText: "csv"
         ProgrammingLanguage: "css"
+        ZIP: "zip"|"jar"|"gz"
     }
 
     supports_method! {
         HTML: ("text", "html", _)
+        ZIP: (_, "zip", _)
         PDF: (_, "pdf", _)
         RTF: (_, "rdf", _)
         JavaScript: (_, "javascript", _)
@@ -197,16 +200,15 @@ impl InterpretedProcessibleFileFormat {
     }
 
     /// Tries to guess the supported file type.
-    pub fn guess<C, D, R>(
-        data: &FileFormatData<D, R>,
+    pub fn guess<C, D>(
+        data: &mut FileFormatData<D>,
         mime: Option<&MimeType>,
         file_format: Option<&DetectedFileFormat>,
         context: &C,
     ) -> InterpretedProcessibleFileFormat
     where
         C: SupportsFileSystemAccess + SupportsConfigs,
-        D: FileContent<R>,
-        R: Seek + Read
+        D: FileContentReader,
     {
         let mut is_text = false;
 
@@ -265,6 +267,18 @@ impl InterpretedProcessibleFileFormat {
                 | FileFormat::OpendocumentTextMasterTemplate
                 | FileFormat::OpendocumentTextTemplate => {
                     return InterpretedProcessibleFileFormat::ODF
+                }
+
+                FileFormat::Zip
+                | FileFormat::Gzip
+                | FileFormat::Xz
+                | FileFormat::Bzip2
+                | FileFormat::SevenZip
+                | FileFormat::JavaArchive
+                | FileFormat::UniversalSceneDescriptionZip
+                | FileFormat::AdobeIntegratedRuntime
+                | FileFormat::ElectronicPublication => {
+                    return InterpretedProcessibleFileFormat::ZIP
                 }
 
                 FileFormat::MayaAscii
@@ -331,15 +345,13 @@ impl InterpretedProcessibleFileFormat {
             }
         }
 
-        fn guess_if_html<const HAYSTACK_SIZE: usize, D, R>(
-            context: &impl SupportsFileSystemAccess,
-            page: &FileFormatData<D, R>,
+        fn guess_if_html<const HAYSTACK_SIZE: usize, D>(
+            page: &mut FileFormatData<D>,
         ) -> bool
         where
-            D: FileContent<R>,
-            R: Seek + Read
+            D: FileContentReader,
         {
-            if let Ok(Some(mut reader)) = page.content.cursor(context) {
+            if let Ok(Some(mut reader)) = page.content.cursor() {
                 let mut haystack = [0u8; HAYSTACK_SIZE];
                 match reader.read(&mut haystack) {
                     Ok(_) => html_heuristic(&haystack),
@@ -353,33 +365,27 @@ impl InterpretedProcessibleFileFormat {
         // Grabbing straws
 
         if is_text {
-            if guess_if_html::<512, _, _>(context, data) {
+            if guess_if_html::<512, _>(data) {
                 Self::HTML
             } else {
                 Self::Decodeable
             }
-        } else if let Ok(Some(reader)) = data.content.cursor(context) {
+        } else if let Ok(Some(reader)) = data.content.cursor() {
             let mut result = Vec::new();
-            if context.configs().system.max_file_size_in_memory < 512 {
-                if guess_if_html::<512, _, _>(context, data) {
-                    Self::HTML
-                } else {
-                    Self::Unknown
-                }
-            } else {
-                match reader
-                    .take(max(context.configs().system.max_file_size_in_memory, 512))
-                    .read_to_end(&mut result)
-                {
-                    Ok(_) => {
-                        if html_heuristic(&result) {
-                            Self::HTML
-                        } else {
-                            Self::Unknown
-                        }
+            match reader
+                .take(max(context.configs().system.max_file_size_in_memory, 512))
+                .read_to_end(&mut result)
+            {
+                Ok(_) => {
+                    if result.starts_with(&[0x50, 0x4b, 0x03, 0x04]) {
+                        Self::ZIP
+                    } else if html_heuristic(&result) {
+                        Self::HTML
+                    } else {
+                        Self::Unknown
                     }
-                    Err(_) => Self::Unknown,
                 }
+                Err(_) => Self::Unknown,
             }
         } else {
             Self::Unknown

@@ -29,7 +29,7 @@ pub enum LinkExtractionError {
         errors: Vec<LinkExtractionSubError>,
     },
     #[error(transparent)]
-    ZipError(#[from] ZipError)
+    ZipError(#[from] ZipError),
 }
 
 #[derive(Debug, Error)]

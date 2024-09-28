@@ -135,7 +135,7 @@ pub fn write_warc<W: SpecialWarcWriter>(
     let header_signature_octet_count = header.len();
 
     let data = match &content.content {
-        RawVecData::ExternalFile { file } => {
+        RawVecData::ExternalFile { path: file } => {
             log::trace!("Warc-Write: External");
             let (skip_pointer_path, position) = worker_warc_writer.get_skip_pointer()?;
             log_consume!(builder.external_bin_file_string(file.file_name().unwrap()));

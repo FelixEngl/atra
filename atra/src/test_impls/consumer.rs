@@ -182,6 +182,9 @@ impl ErrorConsumer<TestGlobalError> for TestErrorConsumer {
                     false
                 }
                 CrawlWriteError::SlimError(e) => handle_db_error(e),
+                CrawlWriteError::TempFilesCanNotBeStoredError => {
+                    true
+                }
             },
             TestGlobalError::QueueError(e) => handle_url_queue_error(e),
             TestGlobalError::ClientError(e) => {

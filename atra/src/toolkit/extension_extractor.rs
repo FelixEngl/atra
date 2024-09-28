@@ -1,4 +1,4 @@
-// Copyright 2024 Felix Engl
+// Copyright 2024. Felix Engl
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,16 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod deflate;
-mod errors;
-pub mod extractor;
-pub mod extractor_method;
-mod html;
-mod js;
-pub mod links;
-pub mod marker;
-mod raw;
+use itertools::Itertools;
 
-pub use links::ExtractedLink;
-
-pub use errors::*;
+/// Extracts everything from the [`file_name`] that is written after the first dot.
+pub fn extract_file_extensions_from_file_name(file_name: &str) -> Option<Vec<&str>> {
+    let sep = file_name.find('.')?;
+    if sep == file_name.len() - 1 {
+        return None;
+    }
+    let result = (&file_name[sep + 1..])
+        .split_terminator('.')
+        .filter(|value| !value.is_empty())
+        .collect_vec();
+    (!result.is_empty()).then_some(result)
+}

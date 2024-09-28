@@ -13,46 +13,57 @@
 // limitations under the License.
 
 use std::error::Error;
-use std::fs::File;
-use std::io::{Bytes, Chain, Cursor, IoSliceMut, Read, Seek, SeekFrom, Take};
+use std::io::{Read, Seek};
 use std::sync::OnceLock;
-use zip::read::{ZipFileSeek};
+
 use zip::result::ZipError;
 use zip::ZipArchive;
-use crate::contexts::traits::SupportsFileSystemAccess;
 
-
+use crate::toolkit::CursorWithLifeline;
 
 /// A trait exposing the minimum of a file content.
-pub trait FileContent<R> where R: Read + Seek {
+/// Even if this trait allows mutable access it has to be guaranteed,
+/// that the underlying data is never changed.
+pub trait FileContentReader {
     type InMemory: AsRef<[u8]> + Sized;
 
     type Error: Error;
 
+    fn len(&mut self) -> Result<u64, Self::Error>;
+
+    /// Returns true if it can cal cursor without return ing a None
+    fn can_read(&self) -> bool;
+
+    #[allow(clippy::needless_lifetimes)]
     /// Get a cursor like object to read the data
-    fn cursor(&self, context: &impl SupportsFileSystemAccess) -> Result<Option<R>, Self::Error>;
+    fn cursor<'a>(
+        &'a mut self,
+    ) -> Result<Option<CursorWithLifeline<'a, impl Seek + Read>>, Self::Error>;
 
     /// Returns the in memory representation is possible.
-    fn as_in_memory(&self) -> Option<&Self::InMemory>;
+    fn as_in_memory(&mut self) -> Option<&Self::InMemory>;
 }
 
-
-
-pub struct ZipFileContent<R>
+pub struct ZipFileContent<'a, R>
 where
     R: Seek + Read,
 {
-    archive: ZipArchive<R>,
+    archive: &'a mut ZipArchive<R>,
     file_idx: usize,
     max_in_memory: u64,
     cached_content: OnceLock<Option<Vec<u8>>>,
 }
 
-impl<R> ZipFileContent<R>
+impl<'a, R> ZipFileContent<'a, R>
 where
     R: Seek + Read,
 {
-    pub fn new(archive: ZipArchive<R>, file_idx: usize, max_in_memory: usize, cached_content: Option<Vec<u8>>) -> Self {
+    pub fn new(
+        archive: &'a mut ZipArchive<R>,
+        file_idx: usize,
+        max_in_memory: usize,
+        cached_content: Option<Vec<u8>>,
+    ) -> Self {
         let cached_content = if let Some(cached_content) = cached_content {
             OnceLock::from(Some(cached_content))
         } else {
@@ -63,84 +74,86 @@ where
             archive,
             file_idx,
             max_in_memory: max_in_memory as u64,
-            cached_content
+            cached_content,
         }
+    }
+
+    pub fn file_name(&mut self) -> Result<Option<String>, ZipError> {
+        let archive = self.archive.by_index(self.file_idx)?;
+        if archive.is_file() {
+            let file_name = archive
+                .enclosed_name()
+                .map(|path| {
+                    path.file_name()
+                        .map(|name| name.to_os_string().into_string().ok())
+                        .flatten()
+                })
+                .flatten()
+                .unwrap_or_else(|| {
+                    if let Some((_, last_name)) = archive.name().rsplit_once('/') {
+                        last_name.to_string()
+                    } else {
+                        archive.name().to_string()
+                    }
+                });
+            Ok(Some(file_name))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn file_name_and_len(&mut self) -> Result<Option<(String, u64)>, ZipError> {
+        let a = self.file_name()?;
+        match a {
+            None => Ok(None),
+            Some(value) => Ok(Some((value, self.len()?))),
+        }
+    }
+
+    pub fn zip_reader(&mut self) -> &mut ZipArchive<R> {
+        self.archive
     }
 }
 
-impl<R> FileContent<ZipFileContentCursor<'static, R>> for ZipFileContent<R>
+impl<'a, R> FileContentReader for ZipFileContent<'a, R>
 where
-    R: Seek + Read + Clone,
+    R: Seek + Read,
 {
     type InMemory = Vec<u8>;
     type Error = ZipError;
 
-    fn cursor(&self, _: &impl SupportsFileSystemAccess) -> Result<Option<ZipFileContentCursor<'static, R>>, Self::Error> {
-        let mut archive = self.archive.clone();
-        let seeker = archive.by_index_seek(self.file_idx)?;
-        let seeker: ZipFileSeek<'static, R> = unsafe { std::mem::transmute(seeker) };
-        Ok(Some(ZipFileContentCursor{
-            archive,
-            seeker
-        }))
+    fn len(&mut self) -> Result<u64, Self::Error> {
+        Ok(self.archive.by_index(self.file_idx)?.size())
     }
 
-    fn as_in_memory(&self) -> Option<&Self::InMemory> {
-        let mut archive = self.archive.clone();
-        let mut found = archive.by_index(self.file_idx).ok()?;
+    #[inline(always)]
+    fn can_read(&self) -> bool {
+        true
+    }
+
+    fn cursor(
+        &mut self,
+    ) -> Result<Option<CursorWithLifeline<impl Seek + Read>>, Self::Error> {
+        let seeker = self.archive.by_index_seek(self.file_idx)?;
+        let cursor = CursorWithLifeline::new(seeker);
+        Ok(Some(cursor))
+    }
+
+    fn as_in_memory(&mut self) -> Option<&Self::InMemory> {
+        let mut found = self.archive.by_index(self.file_idx).ok()?;
         if found.size() <= self.max_in_memory {
-            self.cached_content.get_or_init(|| {
-                if found.size() == 0 {
-                    None
-                } else {
-                    let mut value = Vec::with_capacity(found.size() as  usize);
-                    found
-                        .read_to_end(&mut value)
-                        .ok()
-                        .and(Some(value))
-                }
-            }).as_ref()
+            self.cached_content
+                .get_or_init(|| {
+                    if found.size() == 0 {
+                        None
+                    } else {
+                        let mut value = Vec::with_capacity(found.size() as usize);
+                        found.read_to_end(&mut value).ok().and(Some(value))
+                    }
+                })
+                .as_ref()
         } else {
             None
-        }
-    }
-}
-
-pub enum FileContentCursor<'a, R> {
-    Borrowed(u64, Cursor<&'a [u8]>),
-    File(u64, File),
-    ZipFile(u64, ZipFileSeek<'a, R>)
-}
-
-impl<'a, R> Seek for FileContentCursor<'a, R> where R:Seek {
-    delegate::delegate! {
-        to match self {
-            Self::Borrowed(_, a) => a,
-            Self::File(_, a) => a,
-            Self::ZipFile(_, a) => a,
-        } {
-            fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64>;
-            fn rewind(&mut self) -> std::io::Result<()>;
-            fn stream_position(&mut self) -> std::io::Result<u64>;
-            fn seek_relative(&mut self, offset: i64) -> std::io::Result<()>;
-        }
-    }
-}
-
-impl<'a, T> Read for ZipFileContentCursor<'a, T> where T: Read {
-    delegate::delegate! {
-        to match self {
-            Self::Borrowed(_, a) => a,
-            Self::File(_, a) => a,
-            Self::ZipFile(_, a) => a,
-        } {
-            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize>;
-            fn read_vectored(&mut self, bufs: &mut [IoSliceMut<'_>]) -> std::io::Result<usize>;
-            fn read_to_end(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize>;
-            fn read_to_string(&mut self, buf: &mut String) -> std::io::Result<usize>;
-            fn read_exact(&mut self, buf: &mut [u8]) -> std::io::Result<()>;
-            fn bytes(self) -> Bytes<Self> where Self: Sized;
-            fn take(self, limit: u64) -> Take<Self> where Self: Sized;
         }
     }
 }

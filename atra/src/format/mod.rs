@@ -12,24 +12,45 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::error::Error;
-use std::fmt::{Display, Formatter};
-use std::io::{Read, Seek};
-
-use reqwest::header::HeaderMap;
-use serde::{Deserialize, Serialize};
-
 pub use file_content::*;
 
 use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
 
+mod file_content;
 pub mod file_format_detection;
+mod information;
 pub mod mime;
 pub mod mime_ext;
 pub(crate) mod mime_serialize;
 pub mod supported;
-mod file_content;
-mod information;
 
+use crate::fetching::ResponseData;
 pub use information::*;
 
+#[inline(always)]
+pub fn determine_format_for_response<C>(
+    context: &C,
+    response: &mut ResponseData,
+) -> AtraFileInformation
+where
+    C: SupportsConfigs + SupportsFileSystemAccess,
+{
+    determine_format(
+        context,
+        FileFormatData::new(
+            response.headers.as_ref(),
+            &mut response.content,
+            Some(&response.url),
+            None,
+        ),
+    )
+}
+
+#[inline(always)]
+pub fn determine_format<C, D>(context: &C, mut data: FileFormatData<D>) -> AtraFileInformation
+where
+    C: SupportsConfigs + SupportsFileSystemAccess,
+    D: FileContentReader,
+{
+    AtraFileInformation::determine(context, &mut data)
+}

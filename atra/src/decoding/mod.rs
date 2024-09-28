@@ -19,6 +19,7 @@ use crate::format::supported::InterpretedProcessibleFileFormat;
 use crate::format::AtraFileInformation;
 use crate::io::fs::AtraFS;
 use crate::static_selectors;
+use crate::url::UrlWithDepth;
 use camino::Utf8PathBuf;
 use chardetng::EncodingDetector;
 use encoding_rs::{DecoderResult, Encoding, UTF_8};
@@ -42,6 +43,24 @@ pub enum DecodingError {
     OutOfMemory,
 }
 
+pub async fn decode_page<'a, C>(
+    context: &C,
+    response_data: &'a ResponseData,
+    identified_type: &AtraFileInformation,
+) -> Result<Decoded<Cow<'a, str>, Utf8PathBuf>, DecodingError>
+where
+    C: SupportsConfigs + SupportsFileSystemAccess,
+{
+    decode(
+        context,
+        &response_data.content,
+        response_data.url.as_str().as_ref(),
+        Some(&response_data.url),
+        identified_type,
+    )
+    .await
+}
+
 /// Decode complete input to `Cow<'a, str>` _with BOM sniffing_ and with
 /// malformed sequences replaced with the REPLACEMENT CHARACTER when the
 /// entire input is available as a single buffer (i.e. the end of the
@@ -63,19 +82,21 @@ pub enum DecodingError {
 /// when decoding segmented input.
 pub async fn decode<'a, C>(
     context: &C,
-    page: &'a ResponseData,
+    content: &'a RawVecData,
+    name: &str,
+    url: Option<&UrlWithDepth>,
     identified_type: &AtraFileInformation,
 ) -> Result<Decoded<Cow<'a, str>, Utf8PathBuf>, DecodingError>
 where
     C: SupportsConfigs + SupportsFileSystemAccess,
 {
-    match page.content() {
+    match content {
         RawVecData::None => return Ok(Decoded::None),
         RawVecData::ExternalFile { .. } => {
             if let Some(max_size) = context.configs().crawl.decode_big_files_up_to {
-                let size = page.content().size()?;
+                let size = content.size()?;
                 if max_size < size {
-                    log::info!("Skip decoding for {} because the file has {size} bytes but the maximum is {max_size}", page.url);
+                    log::info!("Skip decoding for \"{}\" because the file has {size} bytes but the maximum is {max_size}", name);
                     return Ok(Decoded::None);
                 }
             }
@@ -93,7 +114,7 @@ where
             ]
         }
 
-        if let Some(content) = page.content.as_in_memory() {
+        if let Some(content) = content.as_in_memory() {
             let lossy_parsed =
                 Html::parse_document(String::from_utf8_lossy(content.as_slice()).as_ref());
             let found_in_html: Option<Vec<&'static Encoding>> = lossy_parsed
@@ -112,7 +133,7 @@ where
     }
 
     for enc in decodings.iter() {
-        let succ = do_decode(page, *enc)?;
+        let succ = do_decode(content, name, *enc)?;
         match &succ {
             Decoded::InMemory {
                 encoding,
@@ -120,7 +141,7 @@ where
                 ..
             } => {
                 if *had_errors {
-                    log::debug!("Failed to decode {} with {}.", page.url, encoding.name());
+                    log::debug!("Failed to decode \"{}\" with {}.", name, encoding.name());
                     continue;
                 }
             }
@@ -130,7 +151,7 @@ where
                 had_errors,
             } => {
                 if *had_errors {
-                    log::debug!("Failed to decode {} with {}.", page.url, encoding.name());
+                    log::debug!("Failed to decode \"{}\" with {}.", name, encoding.name());
                     context.fs().cleanup_data_file(result.as_str())?;
                     continue;
                 }
@@ -144,7 +165,7 @@ where
 
     yield_now().await;
 
-    decode_by_bom(context, page)
+    decode_by_bom(context, content, name, url)
 }
 
 fn get_decoders_by_mime<'a>(
@@ -170,22 +191,25 @@ fn get_decoders_by_mime<'a>(
 /// Decodes by BOM only.
 fn decode_by_bom<'a, C>(
     context: &C,
-    page: &'a ResponseData,
+    content: &'a RawVecData,
+    name: &str,
+    url: Option<&UrlWithDepth>,
 ) -> Result<Decoded<Cow<'a, str>, Utf8PathBuf>, DecodingError>
 where
     C: SupportsFileSystemAccess,
 {
-    let bom_buf = page.content().peek_bom(context)?;
+    let bom_buf = content.peek_bom(context)?;
 
     if let Some((encoder, _)) = Encoding::for_bom(&bom_buf) {
-        do_decode(page, encoder)
+        do_decode(content, name, encoder)
     } else {
         let mut enc = EncodingDetector::new();
 
-        let result = match page.content() {
+        let result = match content {
             RawVecData::InMemory { data } => enc.feed(data.as_ref(), true),
-            RawVecData::ExternalFile { file } => {
-                let mut reader = BufReader::new(File::options().read(true).open(file)?);
+            RawVecData::None => unreachable!(),
+            other => {
+                let mut reader = BufReader::new(other.cursor()?.unwrap());
                 let mut has_non_ascii = false;
                 loop {
                     let buf = reader.fill_buf()?;
@@ -200,24 +224,29 @@ where
                 }
                 has_non_ascii
             }
-            RawVecData::None => unreachable!(),
         };
 
         if result {
-            let domain = page.get_url_parsed().domain();
-            let domain = domain
-                .as_ref()
+            let domain = match url {
+                None => {
+                    None
+                }
+                Some(url) => {
+                    url.domain()
+                }
+            };
+            let (selected_encoding, is_probably_right) = if let Some(domain) = domain.as_ref()
                 .map(|value| psl::domain(value.as_bytes()))
-                .flatten();
-            let (selected_encoding, is_probably_right) = if let Some(domain) = domain {
+                .flatten()
+            {
                 enc.guess_assess(Some(domain.suffix().as_bytes()), false)
             } else {
                 enc.guess_assess(None, false)
             };
             if is_probably_right {
-                let result = do_decode(page, selected_encoding)?;
+                let result = do_decode(content, name, selected_encoding)?;
                 if result.had_errors() {
-                    let try_utf8 = do_decode(page, UTF_8)?;
+                    let try_utf8 = do_decode(content, name, UTF_8)?;
                     if try_utf8.had_errors() {
                         Ok(result)
                     } else {
@@ -227,32 +256,34 @@ where
                     Ok(result)
                 }
             } else {
-                do_decode(page, UTF_8)
+                do_decode(content, name, UTF_8)
             }
         } else {
-            do_decode(page, UTF_8)
+            do_decode(content, name, UTF_8)
         }
     }
 }
 
 /// Decodes the content of [page] with [encoding]
 fn do_decode<'a>(
-    page: &'a ResponseData,
+    content: &'a RawVecData,
+    name: &str,
     encoding: &'static Encoding,
 ) -> Result<Decoded<Cow<'a, str>, Utf8PathBuf>, DecodingError> {
-    match &page.content {
+    match content {
         RawData::InMemory { data } => {
             let decoded = encoding.decode(data.as_slice());
             if decoded.2 {
                 log::info!(
-                    "The page for {} had an error while decoding with {}. ",
-                    page.url,
+                    "The page for \"{}\" had an error while decoding with {}. ",
+                    name,
                     encoding.name()
                 );
             }
-            Ok(decoded.into())
+            return Ok(decoded.into())
         }
-        RawData::ExternalFile { file } => {
+        RawData::None => unreachable!(),
+        RawData::ExternalFile { path: file } => {
             let mut decoder = encoding.new_decoder_with_bom_removal();
             let mut out_path = file.clone();
             {
@@ -296,7 +327,7 @@ fn do_decode<'a>(
 
                 if read == 0 {
                     // Something bad happened.
-                    panic!("Was not able to convert a single byte of {}, something went horribly wrong! Deactivate the big-file feature or contact the developer!", page.url);
+                    panic!("Was not able to convert a single byte of {}, something went horribly wrong! Deactivate the big-file feature or contact the developer!", name);
                 }
 
                 match result {
@@ -316,15 +347,15 @@ fn do_decode<'a>(
             }
             Ok(Decoded::new_off_memory(out_path, encoding, had_error))
         }
-        RawData::None => unreachable!(),
+
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::decoding::decode;
+    use crate::decoding::{decode_page};
     use crate::fetching::{FetchedRequestData, ResponseData};
-    use crate::format::{AtraFileInformation, FileFormatData};
+    use crate::format::determine_format_for_response;
     use crate::test_impls::*;
     use encoding_rs::Encoding;
     use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
@@ -337,10 +368,10 @@ mod test {
             #[tokio::test]
             async fn $name(){
                 let original_enc = $encoding;
-                let (website, content) = $sample(original_enc);
+                let (mut website, content) = $sample(original_enc);
                 let context = TestContext::default();
-                let format = AtraFileInformation::determine(&context, FileFormatData::from_response(&website));
-                let decoded = decode(&context, &website, &format).await.unwrap();
+                let format = determine_format_for_response(&context, &mut website);
+                let decoded = decode_page(&context, &website, &format).await.unwrap();
                 assert_eq!(content, decoded.as_in_memory().unwrap().as_ref(), "The selected encoding {} does not equal the selected decoding {}", original_enc.name(), decoded.encoding().unwrap().name());
             }
         };
@@ -350,10 +381,10 @@ mod test {
             #[tokio::test]
             async fn $name(){
                 let original_enc = $encoding;
-                let (website, content) = $sample(original_enc);
+                let (mut website, content) = $sample(original_enc);
                 let context = TestContext::default();
-                let format = AtraFileInformation::determine(&context, FileFormatData::from_response(&website));
-                let decoded = decode(&context, &website, &format).await.unwrap();
+                let format = determine_format_for_response(&context, &mut website);
+                let decoded = decode_page(&context, &website, &format).await.unwrap();
                 assert_eq!(original_enc, decoded.encoding().unwrap(), "The selected encoding {} does not equal the selected decoding {}", original_enc.name(), decoded.encoding().unwrap().name());
                 assert_eq!(content, decoded.as_in_memory().unwrap().as_ref());
             }

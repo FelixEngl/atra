@@ -13,16 +13,14 @@
 // limitations under the License.
 
 use crate::contexts::traits::SupportsFileSystemAccess;
-use crate::fetching::ResponseData;
 use crate::format::mime::MimeType;
+use crate::format::{FileContentReader, FileFormatData};
 use file_format::FileFormat;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
-use std::io::{Read, Seek};
-use crate::format::{FileContent, FileFormatData};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum DetectedFileFormat {
@@ -41,17 +39,15 @@ impl DetectedFileFormat {
 }
 
 /// Infers the file format for some kind of data.
-pub(crate) fn infer_file_formats<D, R>(
-    data: &FileFormatData<D, R>,
+pub(crate) fn infer_file_formats<D>(
+    data: &mut FileFormatData<D>,
     mime: Option<&MimeType>,
-    context: &impl SupportsFileSystemAccess,
 ) -> Option<DetectedFileFormat>
 where
-    D: FileContent<R>,
-    R: Seek + Read
+    D: FileContentReader,
 {
     let mut formats = HashMap::new();
-    if let Ok(Some(value)) = data.content.cursor(context) {
+    if let Ok(Some(value)) = data.content.cursor() {
         match FileFormat::from_reader(value) {
             Ok(value) => {
                 formats.insert(value, 1);

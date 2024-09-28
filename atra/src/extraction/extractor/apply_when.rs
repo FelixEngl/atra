@@ -1,4 +1,4 @@
-// Copyright 2024 Felix Engl
+// Copyright 2024. Felix Engl
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,16 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod deflate;
-mod errors;
-pub mod extractor;
-pub mod extractor_method;
-mod html;
-mod js;
-pub mod links;
-pub mod marker;
-mod raw;
+use serde::{Deserialize, Serialize};
+use strum::{Display, EnumString};
 
-pub use links::ExtractedLink;
-
-pub use errors::*;
+/// When to apply the extractor?
+#[derive(
+    Debug,
+    Copy,
+    Clone,
+    Default,
+    Serialize,
+    Deserialize,
+    EnumString,
+    Display,
+    Ord,
+    PartialOrd,
+    Eq,
+    PartialEq,
+)]
+pub enum ApplyWhen {
+    Always,
+    #[default]
+    IfSuitable,
+    Fallback,
+}

@@ -106,6 +106,8 @@ pub struct CrawlConfig {
 
     /// A custom configuration of extractors
     pub link_extractors: Extractor,
+    /// The maximum depth for atra when extracting from an archive. (Default 20)
+    pub max_extraction_depth: Option<usize>,
 
     /// If this value is set Atra tries to decode and process files that are only downloaded as
     /// blob but do not overstep this provided size. (in Bytes) (default: None/Off)
@@ -147,6 +149,7 @@ impl Default for CrawlConfig {
             cookies: None,
             max_file_size: None,
             max_queue_age: 20,
+            max_extraction_depth: Some(10),
             link_extractors: Extractor::default(),
             decode_big_files_up_to: None,
             stopword_registry: None,

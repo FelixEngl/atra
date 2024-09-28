@@ -12,19 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt::{Display, Formatter};
-use std::io::{Read, Seek};
-use reqwest::header::HeaderMap;
-use serde::{Deserialize, Serialize};
-use warc::media_type::MediaType;
 use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
-use crate::data::{DataHolderCursor, RawVecData};
-use crate::fetching::ResponseData;
-use crate::format::file_format_detection::{DetectedFileFormat, infer_file_formats};
-use crate::format::FileContent;
+use crate::format::file_format_detection::{infer_file_formats, DetectedFileFormat};
 use crate::format::mime::{determine_mime_information, MimeType};
 use crate::format::supported::InterpretedProcessibleFileFormat;
+use crate::format::FileContentReader;
+use crate::toolkit::extension_extractor::extract_file_extensions_from_file_name;
 use crate::url::UrlWithDepth;
+use reqwest::header::HeaderMap;
+use serde::{Deserialize, Serialize};
+use std::fmt::{Display, Formatter};
+use warc::media_type::MediaType;
 
 /// Holds the file information.
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
@@ -32,13 +30,6 @@ pub struct AtraFileInformation {
     pub format: InterpretedProcessibleFileFormat,
     pub mime: Option<MimeType>,
     pub detected: Option<DetectedFileFormat>,
-}
-
-impl<'a> From<&'a ResponseData> for FileFormatData<'a, RawVecData, DataHolderCursor<'a>> {
-    #[inline(always)]
-    fn from(value: &'a ResponseData) -> Self {
-        Self::from_response(value)
-    }
 }
 
 impl AtraFileInformation {
@@ -55,21 +46,19 @@ impl AtraFileInformation {
         }
     }
 
-    pub fn determine<C, D, R>(
-        context: &C,
-        data: FileFormatData<D, R>,
-    ) -> Self
+    /// Determines the file format for some data.
+    /// Does not change the
+    pub(crate) fn determine<C, D>(context: &C, data: &mut FileFormatData<D>) -> Self
     where
         C: SupportsConfigs + SupportsFileSystemAccess,
-        D: FileContent<R>,
-        R: Read + Seek
+        D: FileContentReader,
     {
-        let mime = determine_mime_information(&data);
+        let mime = determine_mime_information(data);
 
-        let detected = infer_file_formats(&data, mime.as_ref(), context);
+        let detected = infer_file_formats(data, mime.as_ref());
 
         let format = InterpretedProcessibleFileFormat::guess(
-            &data,
+            data,
             mime.as_ref(),
             detected.as_ref(),
             context,
@@ -86,9 +75,9 @@ impl AtraFileInformation {
     pub fn is_decodeable(&self) -> bool {
         self.format.supports_decoding()
             || self
-            .mime
-            .as_ref()
-            .is_some_and(|value| value.get_param_values(mime::CHARSET).is_some())
+                .mime
+                .as_ref()
+                .is_some_and(|value| value.get_param_values(mime::CHARSET).is_some())
     }
 
     pub fn get_best_media_type_for_warc(&self) -> MediaType {
@@ -126,29 +115,52 @@ impl Display for AtraFileInformation {
     }
 }
 
-
 /// The data used to identify a file format.
-#[derive(Debug, Copy, Clone)]
-pub struct FileFormatData<'a, T, R> where T: FileContent<R>, R: Seek + Read {
+/// This struct is NOT threadsafe, and can not be cloned as
+/// the content reader is probably mutable.
+#[derive(Debug)]
+pub struct FileFormatData<'a, T> {
     pub(crate) headers: Option<&'a HeaderMap>,
-    pub(crate) content: &'a T,
+    pub(crate) content: &'a mut T,
     pub(crate) url: Option<&'a UrlWithDepth>,
-    pub(crate) file_extension: Option<&'a str>
+    pub(crate) file_name: Option<&'a str>,
 }
 
-impl<'a, T, R> FileFormatData<'a, T, R> where T: FileContent<R>, R: Seek + Read {
-    pub fn new(headers: Option<&'a HeaderMap>, content: &'a T, url: Option<&'a UrlWithDepth>) -> Self {
-        Self { headers, content, url, file_extension: None }
+impl<'a, T> FileFormatData<'a, T> {
+    /// Returns the possible file endings, prefers a file name over the
+    /// url.
+    pub fn get_possible_file_endings(&self) -> Option<Vec<&str>> {
+        if let Some(file_name) = self.file_name {
+            extract_file_extensions_from_file_name(file_name)
+        } else if let Some(url) = self.url {
+            url.get_file_endings()
+        } else {
+            None
+        }
     }
 }
 
-impl<'a> FileFormatData<'a, RawVecData, DataHolderCursor<'a>> {
-    pub fn from_response(result: &'a ResponseData) -> Self {
+impl<'a, T> FileFormatData<'a, T>
+where
+    T: FileContentReader,
+{
+    pub fn new(
+        headers: Option<&'a HeaderMap>,
+        content: &'a mut T,
+        url: Option<&'a UrlWithDepth>,
+        file_name: Option<&'a str>,
+    ) -> Self {
         Self {
-            headers: result.headers.as_ref(),
-            content: result.content(),
-            url: Some(&result.url),
-            file_extension: None
+            headers,
+            content,
+            url,
+            file_name,
+        }
+    }
+
+    delegate::delegate! {
+        to self.content {
+            pub fn can_read(&self) -> bool;
         }
     }
 }

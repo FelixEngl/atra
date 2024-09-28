@@ -291,7 +291,7 @@ where
                         .await?,
                 )
             }
-            RawVecData::ExternalFile { file } => {
+            RawVecData::ExternalFile { path: file } => {
                 log::debug!("Store external");
                 if self.configs().crawl.store_big_file_hints_in_warc {
                     self.worker_warc_writer

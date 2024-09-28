@@ -40,10 +40,7 @@ pub enum WebGraphEntry {
         seed: AtraUri,
     },
     /// A normal link
-    Link {
-        from: AtraUri,
-        to: AtraUri,
-    },
+    Link { from: AtraUri, to: AtraUri },
 }
 
 impl WebGraphEntry {
@@ -300,7 +297,7 @@ impl WebGraphManager for QueuingWebGraphManager {
 #[cfg(test)]
 mod test {
     use crate::runtime::{
-        GracefulShutdownWithGuard, OptionalAtraHandle, RuntimeContext, ShutdownReceiver,
+        GracefulShutdownWithGuard, OptionalAtraHandle, RuntimeContext,
     };
     use crate::url::AtraUri;
     use crate::web_graph::{QueuingWebGraphManager, WebGraphEntry, WebGraphManager};

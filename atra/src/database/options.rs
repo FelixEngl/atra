@@ -12,9 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::database::{
-    CRAWL_DB_CF, DOMAIN_MANAGER_DB_CF, LINK_STATE_DB_CF, ROBOTS_TXT_DB_CF,
-};
+use crate::database::{CRAWL_DB_CF, DOMAIN_MANAGER_DB_CF, LINK_STATE_DB_CF, ROBOTS_TXT_DB_CF};
 use crate::link_state::RawLinkState;
 use rocksdb::statistics::StatsLevel;
 use rocksdb::{BlockBasedOptions, DBCompressionType, Options, SliceTransform};
@@ -63,7 +61,6 @@ pub fn robots_txt_cf_options() -> Options {
     options.set_blob_compression_type(DBCompressionType::Zstd);
     options
 }
-
 
 pub fn domain_manager_cf_options() -> Options {
     let mut options: Options = Default::default();

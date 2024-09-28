@@ -14,7 +14,7 @@
 
 use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
 use crate::data::{Decoded, RawVecData};
-use crate::decoding::{decode, DecodingError};
+use crate::decoding::{decode_page, DecodingError};
 use crate::fetching::ResponseData;
 use crate::format::AtraFileInformation;
 use camino::Utf8PathBuf;
@@ -34,9 +34,9 @@ where
     };
 
     if identified_type.format.supports_decoding() {
-        Ok(decode(context, &page, &identified_type)
+        Ok(decode_page(context, &page, &identified_type)
             .await?
-            .map_in_memory(|value| value.to_string()))
+            .map_in_memory(|value| value.into_owned()))
     } else {
         log::debug!("Decoding for {} not supported!", page.url.url);
         Ok(Decoded::None)

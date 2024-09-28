@@ -12,21 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::fetching::ResponseData;
 use crate::format::mime_serialize::for_vec;
+use crate::format::{FileContentReader, FileFormatData};
 use crate::static_selectors;
+use crate::url::{AtraUri};
 use chardetng::EncodingDetector;
 use core::str;
 use encoding_rs::Encoding;
 use itertools::Itertools;
+pub use mime::*;
 use mime::{Mime, MimeIter, Name, Params};
 use scraper::Html;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
-use std::io::{Read, Seek};
-use crate::url::{AtraUri, UrlWithDepth};
-pub use mime::*;
-use crate::format::{FileContent, FileFormatData};
 
 #[derive(Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash, Serialize, Deserialize)]
 pub struct MimeType {
@@ -258,10 +256,9 @@ impl<'a, 'b> Iterator for MimeParamsIter<'a, 'b> {
     }
 }
 
-pub fn determine_mime_information<D, R>(data: &FileFormatData<D, R>) -> Option<MimeType>
+pub fn determine_mime_information<D>(data: &mut FileFormatData<D>) -> Option<MimeType>
 where
-    D: FileContent<R>,
-    R: Seek + Read
+    D: FileContentReader,
 {
     static_selectors! {
         [
@@ -332,14 +329,12 @@ where
                 } else {
                     log::debug!(
                         "Unable to parse the html because of its size: {:?}!",
-                        data.content
+                        data.content.len()
                     );
                 }
             }
             (!mimes_from_header.is_empty()).then(|| mimes_from_header.into())
         }
-        (mimes_from_header, _) => {
-            mimes_from_header.map(|value| value.into())
-        }
+        (mimes_from_header, _) => mimes_from_header.map(|value| value.into()),
     }
 }

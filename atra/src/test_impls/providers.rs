@@ -58,7 +58,6 @@ impl ClientProvider for DefaultAtraProvider {
     }
 }
 
-
 /// A fake client provider.
 pub struct FakeClientProvider {
     inner: FakeClient,
@@ -92,4 +91,3 @@ impl ClientProvider for FakeClientProvider {
         Ok(self.inner.clone())
     }
 }
-
