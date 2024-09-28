@@ -112,10 +112,15 @@ fn find_url_start<R: Iterator<Item = Result<DecodedChar>>>(
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashSet;
+    use std::io::Error;
+    use std::ops::Add;
     use super::extract_possible_urls;
     use crate::toolkit::utf8::RobustUtf8Reader;
     use bytes::Buf;
+    use encoding_rs::*;
     use itertools::Itertools;
+    use serde::de::Unexpected::Str;
 
     #[test]
     fn can_find_url_1() {
@@ -172,5 +177,126 @@ mod test {
             "Failed found {}",
             found.0
         );
+    }
+
+    static ENCODINGS: &'static [&'static Encoding] = &[
+        UTF_8,
+        BIG5,
+        EUC_JP,
+        EUC_KR,
+        GB18030,
+        GBK,
+        IBM866,
+        SHIFT_JIS,
+        ISO_8859_2,
+        ISO_8859_3,
+        ISO_8859_4,
+        ISO_8859_5,
+        ISO_8859_6,
+        ISO_8859_7,
+        ISO_8859_8,
+        ISO_8859_8_I,
+        ISO_8859_10,
+        ISO_8859_13,
+        ISO_8859_14,
+        ISO_8859_15,
+        ISO_8859_16,
+        ISO_2022_JP,
+        WINDOWS_874,
+        WINDOWS_1250,
+        WINDOWS_1251,
+        WINDOWS_1252,
+        WINDOWS_1253,
+        WINDOWS_1256,
+        WINDOWS_1254,
+        WINDOWS_1255,
+        WINDOWS_1257,
+        WINDOWS_1258,
+        KOI8_R,
+        KOI8_U,
+        X_MAC_CYRILLIC
+    ];
+
+    #[test]
+    fn test_encoding_method(){
+        let x = ['A'..='Z', 'a'..='z', '0'..='9'].into_iter().flatten().collect::<String>().add("^,.-;:_+*/\\[](){}?~#'\"");
+        for enc in ENCODINGS {
+            let (a, b, c) = enc.encode(&x);
+            assert_eq!(b, *enc);
+            let mut y = String::new();
+            for value in RobustUtf8Reader::new(a.reader()).map_ok(|value| value.ch) {
+                match value {
+                    Ok(value) => {
+                        y.push(value);
+                    }
+                    Err(err) => {
+                        y.push('°')
+                    }
+                }
+            }
+            println!("{} = \"{}\" == \"{}\"", x == y, x, y, );
+        }
+        println!("-----");
+        let x = String::from_utf8((0..128u8).collect_vec()).unwrap();
+        for enc in ENCODINGS {
+            let (a, b, c) = enc.encode(&x);
+            assert_eq!(b, *enc);
+            let mut y = String::new();
+            for value in RobustUtf8Reader::new(a.reader()).map_ok(|value| value.ch) {
+                match value {
+                    Ok(value) => {
+                        y.push(value);
+                    }
+                    Err(err) => {
+                        y.push('°')
+                    }
+                }
+            }
+            println!("{}: {} = {:?} == {:?}", enc.name(), x == y, x, y);
+            // println!("{}: {} = {:?} == {:?}", enc.name(), x[(b' ' as usize)..(b'~' as usize)] == y[(b' ' as usize)..(b'~' as usize)], x[(b' ' as usize)..(b'~' as usize)].to_string(), y[(b' ' as usize)..(b'~' as usize)].to_string(), );
+        }
+
+        println!("{}..{} :: {}", (b' ' as usize), (b'~' as usize), ENCODINGS.len());
+        println!("{}", (b'\r' as usize));
+        println!("{}", (b'\n' as usize));
+    }
+
+    #[test]
+    fn test_java_binary_code_extraction(){
+        const TEST_DATA: &[u8] = include_bytes!("../../testdata/samples/Main.class");
+
+        let x = extract_possible_urls(RobustUtf8Reader::new(TEST_DATA.reader())).expect("This should be working");
+        for value in x {
+            println!("{:?}", value)
+        }
+    }
+
+    #[test]
+    fn test_different_encodings() {
+        const TEST_DATA: &str = include_str!("../../testdata/samples/Amazon.html");
+
+        for encoding in ENCODINGS.iter().cloned() {
+            let (content, used_enc, _) = encoding.encode(TEST_DATA);
+            assert_eq!(
+                encoding,
+                used_enc,
+                "The used encoding {} differs from the expected one {}",
+                used_enc.name(),
+                encoding.name()
+            );
+            let extracted = extract_possible_urls(RobustUtf8Reader::new(content.as_ref()));
+            let mut collected = HashSet::new();
+            match extracted {
+                Ok(value) => {
+                    let len = value.len();
+                    collected.extend(value.into_iter().map(|value| value.0));
+                    println!("OK:  {}: {} | {}", encoding.name(), len, collected.len());
+                }
+                Err(err) => {
+                    println!("ERR: {}: {}", encoding.name(), err);
+                }
+            }
+        }
+
     }
 }
