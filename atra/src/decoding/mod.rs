@@ -152,7 +152,7 @@ where
             } => {
                 if *had_errors {
                     log::debug!("Failed to decode \"{}\" with {}.", name, encoding.name());
-                    context.fs().cleanup_data_file(result.as_str())?;
+                    context.fs().cleanup_data_file(result)?;
                     continue;
                 }
             }
@@ -165,7 +165,7 @@ where
 
     yield_now().await;
 
-    decode_by_bom(context, content, name, url)
+    decode_by_bom(content, name, url)
 }
 
 fn get_decoders_by_mime<'a>(
@@ -189,16 +189,12 @@ fn get_decoders_by_mime<'a>(
 }
 
 /// Decodes by BOM only.
-fn decode_by_bom<'a, C>(
-    context: &C,
+fn decode_by_bom<'a>(
     content: &'a RawVecData,
     name: &str,
     url: Option<&UrlWithDepth>,
-) -> Result<Decoded<Cow<'a, str>, Utf8PathBuf>, DecodingError>
-where
-    C: SupportsFileSystemAccess,
-{
-    let bom_buf = content.peek_bom(context)?;
+) -> Result<Decoded<Cow<'a, str>, Utf8PathBuf>, DecodingError> {
+    let bom_buf = content.peek_bom()?;
 
     if let Some((encoder, _)) = Encoding::for_bom(&bom_buf) {
         do_decode(content, name, encoder)
@@ -283,9 +279,9 @@ fn do_decode<'a>(
             return Ok(decoded.into())
         }
         RawData::None => unreachable!(),
-        RawData::ExternalFile { path: file } => {
+        RawData::ExternalFile { path } => {
             let mut decoder = encoding.new_decoder_with_bom_removal();
-            let mut out_path = file.clone();
+            let mut out_path = path.clone();
             {
                 let mut name = out_path
                     .file_name()
@@ -296,7 +292,7 @@ fn do_decode<'a>(
                 out_path.set_file_name(name);
             }
             let mut output = File::options().write(true).open(&out_path)?;
-            let mut reader = BufReader::new(File::options().read(true).open(&file)?);
+            let mut reader = BufReader::new(File::options().read(true).open(&path)?);
 
             // Bare metal platforms usually have very small amounts of RAM
             // (in the order of hundreds of KB)

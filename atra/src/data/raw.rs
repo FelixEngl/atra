@@ -12,9 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::contexts::traits::SupportsFileSystemAccess;
 use crate::format::FileContentReader;
-use crate::io::fs::AtraFS;
 use crate::toolkit::CursorWithLifeline;
 use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
@@ -45,8 +43,8 @@ impl<T> RawData<T> {
 
     /// Create a data holder when the
     #[inline]
-    pub fn from_external(file: Utf8PathBuf) -> Self {
-        Self::ExternalFile { path: file }
+    pub fn from_external(path: Utf8PathBuf) -> Self {
+        Self::ExternalFile { path }
     }
 
     pub fn as_in_memory(&self) -> Option<&T> {
@@ -97,8 +95,8 @@ impl<T: AsRef<[u8]>> RawData<T> {
         match self {
             RawData::None => Ok(0),
             RawData::InMemory { data } => Ok(data.as_ref().len() as u64),
-            RawData::ExternalFile { path: file } => {
-                let file = File::options().read(true).open(file)?;
+            RawData::ExternalFile { path } => {
+                let file = File::options().read(true).open(path)?;
                 Ok(file.metadata()?.len())
             },
         }
@@ -113,17 +111,17 @@ impl<T: AsRef<[u8]>> RawData<T> {
                 len: data.as_ref().len() as u64,
                 cursor: Cursor::new(data.as_ref()),
             })),
-            RawData::ExternalFile { path: file } => {
+            RawData::ExternalFile { path } => {
                 let file = File::options()
                     .read(true)
-                    .open(file)?;
+                    .open(path)?;
                 let len = file.metadata()?.len();
                 Ok(Some(DataHolderCursor::FileSystem { len, cursor: file }))
             },
         }
     }
 
-    pub fn peek_bom(&self, context: &impl SupportsFileSystemAccess) -> io::Result<[u8; 3]> {
+    pub fn peek_bom(&self) -> io::Result<[u8; 3]> {
         let mut peek = [0u8; 3];
         match self {
             RawData::None => Ok(peek),
@@ -133,10 +131,10 @@ impl<T: AsRef<[u8]>> RawData<T> {
                 (&mut peek[..target_copy]).copy_from_slice(&data[..target_copy]);
                 Ok(peek)
             }
-            RawData::ExternalFile { path: name } => {
+            RawData::ExternalFile { path } => {
                 let mut file = File::options()
                     .read(true)
-                    .open(context.fs().get_unique_path_for_data_file(name))?;
+                    .open(path)?;
                 file.read(&mut peek)?;
                 Ok(peek)
             }

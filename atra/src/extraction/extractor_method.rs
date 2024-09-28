@@ -465,10 +465,10 @@ async fn extract_links_raw(
                 )
                 .await
             }
-            RawVecData::ExternalFile { path: file } => {
+            RawVecData::ExternalFile { path } => {
                 execute(
                     extractor,
-                    RobustUtf8Reader::new(BufReader::new(File::options().read(true).open(file)?)),
+                    RobustUtf8Reader::new(BufReader::new(File::options().read(true).open(path)?)),
                     data,
                     output,
                 )

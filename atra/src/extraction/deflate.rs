@@ -149,7 +149,7 @@ where
             }
         };
 
-        log::debug!("Decoded {file_name} for {}", root_url.url);
+        log::debug!("Read {file_name} for {}", root_url.url);
 
         let result = match decode(context, &data, &file_name, None, &file_info)
             .await
@@ -227,7 +227,7 @@ mod test {
 
         let config = log4rs::Config::builder()
             .appender(Appender::builder().build("out", Box::new(console_logger)))
-            .logger(Logger::builder().build("atra", LevelFilter::Trace))
+            .logger(Logger::builder().build("atra", LevelFilter::Debug))
             .build(Root::builder().appender("out").build(LevelFilter::Warn))
             .unwrap();
 

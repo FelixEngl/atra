@@ -291,14 +291,15 @@ where
                         .await?,
                 )
             }
-            RawVecData::ExternalFile { path: file } => {
+            RawVecData::ExternalFile { path } => {
                 log::debug!("Store external");
                 if self.configs().crawl.store_big_file_hints_in_warc {
                     self.worker_warc_writer
                         .execute_on_writer(|value| write_warc(value, result))
                         .await?;
                 }
-                StoredDataHint::External(file.clone())
+                assert!(path.exists());
+                StoredDataHint::External(path.clone())
             }
         };
         log::debug!("Store slim: {}", result.meta.url);

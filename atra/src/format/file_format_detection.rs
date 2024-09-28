@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::contexts::traits::SupportsFileSystemAccess;
 use crate::format::mime::MimeType;
 use crate::format::{FileContentReader, FileFormatData};
 use file_format::FileFormat;

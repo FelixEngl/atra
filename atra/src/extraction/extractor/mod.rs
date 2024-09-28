@@ -87,7 +87,7 @@ impl Extractor {
                     log::debug!("Can not apply {extractor} because it was already used!")
                 }
             } else {
-                log::debug!(
+                log::trace!(
                     "{extractor} is not compatible with {} :: {:?} {}!",
                     data.url.url,
                     data.file_name,
