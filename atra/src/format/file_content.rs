@@ -113,47 +113,9 @@ where
     pub fn zip_reader(&mut self) -> &mut ZipArchive<R> {
         self.archive
     }
-}
 
-impl<'a, R> FileContentReader for ZipFileContent<'a, R>
-where
-    R: Seek + Read,
-{
-    type InMemory = Vec<u8>;
-    type Error = ZipError;
-
-    fn len(&mut self) -> Result<u64, Self::Error> {
+    fn len(&mut self) -> Result<u64, ZipError> {
         Ok(self.archive.by_index(self.file_idx)?.size())
     }
 
-    #[inline(always)]
-    fn can_read(&self) -> bool {
-        true
-    }
-
-    fn cursor(
-        &mut self,
-    ) -> Result<Option<CursorWithLifeline<impl Seek + Read>>, Self::Error> {
-        let seeker = self.archive.by_index_seek(self.file_idx)?;
-        let cursor = CursorWithLifeline::new(seeker);
-        Ok(Some(cursor))
-    }
-
-    fn as_in_memory(&mut self) -> Option<&Self::InMemory> {
-        let mut found = self.archive.by_index(self.file_idx).ok()?;
-        if found.size() <= self.max_in_memory {
-            self.cached_content
-                .get_or_init(|| {
-                    if found.size() == 0 {
-                        None
-                    } else {
-                        let mut value = Vec::with_capacity(found.size() as usize);
-                        found.read_to_end(&mut value).ok().and(Some(value))
-                    }
-                })
-                .as_ref()
-        } else {
-            None
-        }
-    }
 }

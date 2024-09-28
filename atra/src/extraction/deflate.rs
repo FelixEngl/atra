@@ -18,7 +18,7 @@ use crate::data::{Decoded, RawVecData};
 use crate::decoding::{decode};
 use crate::extraction::extractor::{ExtractorData, ExtractorResult};
 use crate::extraction::{LinkExtractionError};
-use crate::format::{determine_format, FileContentReader, FileFormatData, ZipFileContent};
+use crate::format::{determine_format, FileFormatData, ZipFileContent};
 use crate::io::serial::{SerialProvider, SerialProviderKind};
 use crate::io::templating::{file_name_template, FileNameTemplate};
 use crate::io::unique_path_provider::{UniquePathProvider, UniquePathProviderWithTemplate};
@@ -77,10 +77,76 @@ where
                     log::debug!("Only found empty file!");
                     continue;
                 }
+                let cfg_sys = &context.configs().system;
+                let mut data =
+                    if cfg_sys.max_file_size_in_memory < len && len <= cfg_sys.max_temp_file_size_on_disc {
+                        let temp_file_name = match name_provider.provide_path_no_args() {
+                            Ok(value) => {
+                                value
+                            }
+                            Err(err) => {
+                                log::error!("Failed to use template for temp files: {err}");
+                                continue;
+                            }
+                        };
+                        match content.zip_reader().by_index(idx) {
+                            Ok(mut inp) => {
+                                match File::options().write(true).create_new(true).open(&temp_file_name) {
+                                    Ok(outp) => {
+                                        let mut outp = BufWriter::new(outp);
+                                        match std::io::copy(
+                                            &mut inp,
+                                            &mut outp
+                                        ) {
+                                            Ok(_) => {}
+                                            Err(err) => {
+                                                errors.push((file_name, err.into()));
+                                                continue
+                                            }
+                                        }
+                                    }
+                                    Err(err) => {
+                                        errors.push((file_name, err.into()));
+                                        continue
+                                    }
+                                }
+
+                            }
+                            Err(err) => {
+                                errors.push((file_name, err.into()));
+                                continue
+                            }
+                        }
+                        RawVecData::from_external(temp_file_name)
+                    } else {
+                        match content.zip_reader().by_index(idx) {
+                            Ok(mut value) => {
+                                if len <= cfg_sys.max_file_size_in_memory {
+                                    let mut data = Vec::with_capacity(len as usize);
+                                    match value.read_to_end(&mut data) {
+                                        Ok(_) => {}
+                                        Err(err) => {
+                                            errors.push((file_name, err.into()));
+                                            continue;
+                                        }
+                                    }
+                                    RawVecData::from_in_memory(data)
+                                } else {
+                                    log::warn!("A file was too big for extracting data.");
+                                    continue;
+                                }
+                            }
+                            Err(err) => {
+                                errors.push((file_name, err.into()));
+                                continue;
+                            }
+                        }
+                    };
+
 
                 let determined = determine_format(
                     context,
-                    FileFormatData::new(None, &mut content, None, Some(&file_name)),
+                    FileFormatData::new(None, &mut data, None, Some(&file_name)),
                 );
 
                 if !context
@@ -93,72 +159,6 @@ where
                     continue;
                 }
 
-                let cfg_sys = &context.configs().system;
-                let data = if len <= cfg_sys.max_temp_file_size_on_disc {
-                    let temp_file_name = match name_provider.provide_path_no_args() {
-                        Ok(value) => {
-                            value
-                        }
-                        Err(err) => {
-                            log::error!("Failed to use template for temp files: {err}");
-                            continue;
-                        }
-                    };
-                    match content.zip_reader().by_index(0) {
-                        Ok(mut inp) => {
-                            match File::options().write(true).create_new(true).open(&temp_file_name) {
-                                Ok(outp) => {
-                                    let mut outp = BufWriter::new(outp);
-                                    match std::io::copy(
-                                        &mut inp,
-                                        &mut outp
-                                    ) {
-                                        Ok(_) => {}
-                                        Err(err) => {
-                                            errors.push((file_name, err.into()));
-                                            continue
-                                        }
-                                    }
-                                }
-                                Err(err) => {
-                                    errors.push((file_name, err.into()));
-                                    continue
-                                }
-                            }
-
-                        }
-                        Err(err) => {
-                            errors.push((file_name, err.into()));
-                            continue
-                        }
-                    }
-                    RawVecData::from_external(temp_file_name)
-                } else {
-                    match content.cursor() {
-                        Ok(Some(mut value)) => {
-                            if len <= cfg_sys.max_file_size_in_memory {
-                                let mut data = Vec::with_capacity(len as usize);
-                                match value.read_to_end(&mut data) {
-                                    Ok(_) => {}
-                                    Err(err) => {
-                                        errors.push((file_name, err.into()));
-                                        continue;
-                                    }
-                                }
-                                RawVecData::from_in_memory(data)
-                            } else {
-                                log::warn!("A file was too big for extracting data.");
-                                continue;
-                            }
-                        }
-                        Ok(None) => continue,
-                        Err(err) => {
-                            errors.push((file_name, err.into()));
-                            continue;
-                        }
-                    }
-                };
-
                 (file_name, data, determined)
             }
             Ok(None) => {
@@ -170,8 +170,6 @@ where
                 continue;
             }
         };
-
-        log::debug!("Read {file_name} for {}", root_url.url);
 
         let result = match decode(context, &data, &file_name, None, &file_info)
             .await
@@ -219,6 +217,8 @@ where
                     ).await
             }
         };
+
+        println!("{file_name} {result:?}");
 
         extracted.push((file_name, result))
     }
@@ -290,8 +290,7 @@ mod test {
 
             println!("----------------");
 
-            for (value, res) in result {
-                println!("Target: {value}");
+            for (_value, res) in result {
                 for r in res.links {
                     println!("{r}")
                 }
