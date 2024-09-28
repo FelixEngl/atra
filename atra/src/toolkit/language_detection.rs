@@ -29,7 +29,6 @@ use xml::EventReader;
 
 use crate::contexts::traits::SupportsConfigs;
 use crate::data::Decoded;
-use crate::fetching::ResponseData;
 use crate::format::supported::InterpretedProcessibleFileFormat;
 use crate::format::AtraFileInformation;
 use crate::toolkit::isolang_ext::ToIsoLang;
@@ -97,7 +96,6 @@ impl From<Info> for LanguageInformation {
 
 pub fn detect_language<'a>(
     context: &impl SupportsConfigs,
-    _page: &'a ResponseData,
     file_type: &AtraFileInformation,
     decoded: &Decoded<String, Utf8PathBuf>,
 ) -> Result<Option<LanguageInformation>, std::io::Error> {

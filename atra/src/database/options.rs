@@ -12,21 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::database::{
-    CRAWL_DB_CF, DOMAIN_MANAGER_DB_CF, LINK_STATE_DB_CF, ROBOTS_TXT_DB_CF, SEED_ID_DB_CF,
-};
+use crate::database::{CRAWL_DB_CF, DOMAIN_MANAGER_DB_CF, LINK_STATE_DB_CF, ROBOTS_TXT_DB_CF};
 use crate::link_state::RawLinkState;
 use rocksdb::statistics::StatsLevel;
 use rocksdb::{BlockBasedOptions, DBCompressionType, Options, SliceTransform};
 
 /// Creates the open option
-pub(crate) fn create_open_options() -> (Options, [(&'static str, Options); 5]) {
+pub(crate) fn create_open_options() -> (Options, [(&'static str, Options); 4]) {
     let db_options = db_options();
     let cf_options = [
         (LINK_STATE_DB_CF, link_state_cf_options()),
         (CRAWL_DB_CF, crawled_page_cf_options()),
         (ROBOTS_TXT_DB_CF, robots_txt_cf_options()),
-        (SEED_ID_DB_CF, seed_id_cf_options()),
         (DOMAIN_MANAGER_DB_CF, domain_manager_cf_options()),
     ];
     (db_options, cf_options)
@@ -62,13 +59,6 @@ pub fn robots_txt_cf_options() -> Options {
     options.create_missing_column_families(true);
     options.set_enable_blob_files(true);
     options.set_blob_compression_type(DBCompressionType::Zstd);
-    options
-}
-
-pub fn seed_id_cf_options() -> Options {
-    let mut options: Options = Default::default();
-    options.create_if_missing(true);
-    options.create_missing_column_families(true);
     options
 }
 

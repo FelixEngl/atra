@@ -12,104 +12,45 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub use file_content::*;
+
+use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
+
+mod file_content;
 pub mod file_format_detection;
+mod information;
 pub mod mime;
 pub mod mime_ext;
 pub(crate) mod mime_serialize;
 pub mod supported;
 
-use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
 use crate::fetching::ResponseData;
-use crate::format::file_format_detection::{infer_file_formats, DetectedFileFormat};
-use crate::format::mime::{determine_mime_information, MimeType};
-use crate::format::supported::InterpretedProcessibleFileFormat;
-use serde::{Deserialize, Serialize};
-use std::fmt::{Display, Formatter};
-use warc::media_type::MediaType;
+pub use information::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-pub struct AtraFileInformation {
-    pub format: InterpretedProcessibleFileFormat,
-    pub mime: Option<MimeType>,
-    pub detected: Option<DetectedFileFormat>,
+#[inline(always)]
+pub fn determine_format_for_response<C>(
+    context: &C,
+    response: &mut ResponseData,
+) -> AtraFileInformation
+where
+    C: SupportsConfigs + SupportsFileSystemAccess,
+{
+    determine_format(
+        context,
+        FileFormatData::new(
+            response.headers.as_ref(),
+            &mut response.content,
+            Some(&response.url),
+            None,
+        ),
+    )
 }
 
-impl AtraFileInformation {
-    #[cfg(test)]
-    pub fn new(
-        format: InterpretedProcessibleFileFormat,
-        mime: Option<MimeType>,
-        detected: Option<DetectedFileFormat>,
-    ) -> Self {
-        Self {
-            format,
-            mime,
-            detected,
-        }
-    }
-
-    pub fn determine<C: SupportsConfigs + SupportsFileSystemAccess>(
-        context: &C,
-        page: &ResponseData,
-    ) -> Self {
-        let mime = determine_mime_information(page);
-
-        let detected = infer_file_formats(page, mime.as_ref(), context);
-
-        let format = InterpretedProcessibleFileFormat::guess(
-            page,
-            mime.as_ref(),
-            detected.as_ref(),
-            context,
-        );
-
-        Self {
-            format,
-            detected,
-            mime,
-        }
-    }
-
-    #[cfg(test)]
-    pub fn is_decodeable(&self) -> bool {
-        self.format.supports_decoding()
-            || self
-                .mime
-                .as_ref()
-                .is_some_and(|value| value.get_param_values(mime::CHARSET).is_some())
-    }
-
-    pub fn get_best_media_type_for_warc(&self) -> MediaType {
-        if let Some(ref mimes) = self.mime {
-            if let Some(mime) = mimes.iter().next() {
-                return MediaType::from_mime(mime);
-            }
-        }
-
-        if let Some(ref detected) = self.detected {
-            if let Ok(mime) = detected.most_probable_file_format().media_type().parse() {
-                return MediaType::from_mime(&mime);
-            }
-        }
-
-        MediaType::from_mime(self.format.fallback_mime_type_for_warc())
-    }
-}
-
-impl Display for AtraFileInformation {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "FileFormat({}, {}, {})",
-            self.format,
-            self.mime
-                .as_ref()
-                .map(ToString::to_string)
-                .unwrap_or_default(),
-            self.detected
-                .as_ref()
-                .map(|value| value.most_probable_file_format().to_string())
-                .unwrap_or_default()
-        )
-    }
+#[inline(always)]
+pub fn determine_format<C, D>(context: &C, mut data: FileFormatData<D>) -> AtraFileInformation
+where
+    C: SupportsConfigs + SupportsFileSystemAccess,
+    D: FileContentReader,
+{
+    AtraFileInformation::determine(context, &mut data)
 }

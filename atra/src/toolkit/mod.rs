@@ -16,6 +16,8 @@ mod case_insensitive_str;
 pub mod digest;
 pub mod domains;
 pub mod dropping;
+pub mod extension_extractor;
+mod generic_cursor;
 pub mod header_map_extensions;
 pub mod isolang_ext;
 mod language_detection;
@@ -26,6 +28,8 @@ pub mod utf8;
 pub use language_detection::*;
 
 pub use case_insensitive_str::*;
+
+pub use generic_cursor::CursorWithLifeline;
 
 /// Compare two optionals by a function.
 #[cfg(test)]

@@ -45,6 +45,7 @@ macro_rules! mime_declarations {
 }
 
 mime_declarations! {
+    APPLICATION_ZIP: "application" / "zip",
     APPLICATION_XML: "application" / "xml",
     APPLICATION_RTF: "application" / "rtf",
     APPLICATION_OOXML_STAR: "application" / "vnd.openxmlformats-officedocument.wordprocessingml.*",

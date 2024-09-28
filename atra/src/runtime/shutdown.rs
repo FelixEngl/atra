@@ -301,7 +301,7 @@ mod phantom {
 mod test {
     use crate::runtime::{
         AtraHandleOption, AtraRuntime, GracefulShutdown, GracefulShutdownWithGuard,
-        OptionalAtraHandle, RuntimeContext, ShutdownReceiver, ShutdownSender,
+        OptionalAtraHandle, RuntimeContext, ShutdownReceiver,
     };
     use rand::Rng;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -372,7 +372,7 @@ mod test {
             let shutdown_and_handle =
                 RuntimeContext::new(self.shutdown.clone(), self.handle.clone());
 
-            let worker = OnDropProtected::new(&shutdown_and_handle);
+            let _worker = OnDropProtected::new(&shutdown_and_handle);
             drop(shutdown_and_handle);
 
             let mut threads = JoinSet::new();

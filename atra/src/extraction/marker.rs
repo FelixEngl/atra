@@ -17,7 +17,7 @@ use crate::extraction::html::LinkOrigin;
 use serde::{Deserialize, Serialize};
 
 /// Holds information about the used extraction information
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ExtractorMethodHint {
     pub used_method: ExtractorMethod,
     #[serde(default)]
@@ -39,9 +39,13 @@ impl ExtractorMethodHint {
 }
 
 /// Some kind of metadata for the used extraction method.
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub enum ExtractorMethodMeta {
     Html(LinkOrigin),
+    Zip {
+        path: String,
+        underlying: Box<ExtractorMethodHint>,
+    },
 }
 
 pub trait ExtractorMethodMetaFactory {

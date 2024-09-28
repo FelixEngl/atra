@@ -20,7 +20,6 @@ use crate::link_state::{LinkStateDBError, LinkStateError};
 use crate::queue::QueueError;
 use thiserror::Error;
 
-
 /// The global error definition
 #[derive(Debug, Error)]
 pub enum GlobalError {
@@ -183,6 +182,9 @@ impl ErrorConsumer<GlobalError> for GlobalErrorConsumer {
                     false
                 }
                 CrawlWriteError::SlimError(e) => handle_db_error(e),
+                CrawlWriteError::TempFilesCanNotBeStoredError => {
+                    true
+                }
             },
             GlobalError::QueueError(e) => handle_url_queue_error(e),
             GlobalError::ClientError(e) => {

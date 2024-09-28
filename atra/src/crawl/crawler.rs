@@ -38,8 +38,8 @@ use crate::crawl::crawler::sitemaps::retrieve_and_parse;
 use crate::crawl::ErrorConsumer;
 use crate::data::{process, RawData, RawVecData};
 use crate::fetching::ResponseData;
+use crate::format::determine_format_for_response;
 use crate::format::supported::InterpretedProcessibleFileFormat;
-use crate::format::AtraFileInformation;
 use crate::io::fs::AtraFS;
 use crate::link_state::{
     IsSeedYesNo, LinkStateKind, LinkStateLike, LinkStateManager, RecrawlYesNo,
@@ -437,25 +437,21 @@ where
                     log::trace!("Fetched: {}", target);
                     let mut response_data = ResponseData::from_response(page, target.clone());
 
-                    let file_information = AtraFileInformation::determine(context, &response_data);
+                    let file_information =
+                        determine_format_for_response(context, &mut response_data);
 
                     let (language, analyzed, links) =
                         match process(context, &response_data, &file_information).await {
                             Ok(decoded) => {
-                                let lang = detect_language(
-                                    context,
-                                    &response_data,
-                                    &file_information,
-                                    &decoded,
-                                )
-                                .ok()
-                                .flatten();
+                                let lang = detect_language(context, &file_information, &decoded)
+                                    .ok()
+                                    .flatten();
 
                                 let result = context
                                     .configs()
                                     .crawl
                                     .link_extractors
-                                    .extract(
+                                    .extract_from_response(
                                         context,
                                         &response_data,
                                         &file_information,
@@ -943,7 +939,7 @@ mod test {
 
         println!("{}", context.url_queue().len().await);
 
-        let (a, b) = context.get_all_crawled_websites();
+        let (a, _) = context.get_all_crawled_websites();
 
         for (k, v) in a {
             println!("{}\n", &k);

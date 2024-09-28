@@ -21,7 +21,10 @@ use ubyte::ByteUnit;
 pub const DEFAULT_CACHE_SIZE_ROBOTS: NonZeroUsize = unsafe { NonZeroUsize::new_unchecked(32) };
 
 /// The default size of a fetched side that can be stored in memory (in byte)
-pub const DEFAULT_MAX_SIZE_IN_MEMORY_DOWNLOAD: u64 = ByteUnit::Megabyte(100).as_u64();
+pub const DEFAULT_MAX_SIZE_IN_MEMORY: u64 = ByteUnit::Megabyte(100).as_u64();
+/// The default size of a fetched side that can be stored off memory (in byte)
+/// The value is basically the maximum of u64. Which is basically 16384 Pebibyte.
+pub const DEFAULT_MAX_TEMP_FILE_SIZE_ON_DISC: u64 = u64::MAX;
 
 /// Config of the system, basically caches etc.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -35,10 +38,15 @@ pub struct SystemConfig {
     #[serde(default = "_default_cache_size_web_graph")]
     pub web_graph_cache_size: NonZeroUsize,
 
-    /// Max size of the download in memory. (default: 100MB)
+    /// Max size of some data in memory. Can be used multiple times. (at least 1 up to n-threads * 3) (default: 100MB)
     /// If set to 0 nothing will be stored in memory.
     #[serde(default = "_default_max_in_memory")]
     pub max_file_size_in_memory: u64,
+
+    /// Max size of a temp file on the disc. (default: 16384 Pebibyte)
+    /// If set to 0 nothing will be stored on the disc.
+    #[serde(default = "_default_max_temp_file_size_on_disc")]
+    pub max_temp_file_size_on_disc: u64,
 
     /// The log level of the crawler
     #[serde(default = "_default_log_level")]
@@ -59,7 +67,10 @@ const fn _default_cache_size_web_graph() -> NonZeroUsize {
     DEFAULT_CACHE_SIZE_WEB_GRAPH
 }
 const fn _default_max_in_memory() -> u64 {
-    DEFAULT_MAX_SIZE_IN_MEMORY_DOWNLOAD
+    DEFAULT_MAX_SIZE_IN_MEMORY
+}
+const fn _default_max_temp_file_size_on_disc() -> u64 {
+    DEFAULT_MAX_TEMP_FILE_SIZE_ON_DISC
 }
 
 impl Default for SystemConfig {
@@ -68,6 +79,7 @@ impl Default for SystemConfig {
             robots_cache_size: _default_cache_size_robots(),
             max_file_size_in_memory: _default_max_in_memory(),
             web_graph_cache_size: _default_cache_size_web_graph(),
+            max_temp_file_size_on_disc: _default_max_temp_file_size_on_disc(),
             log_level: _default_log_level(),
             log_to_file: false,
         }

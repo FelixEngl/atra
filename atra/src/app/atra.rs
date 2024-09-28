@@ -428,8 +428,6 @@ mod test {
     use crate::contexts::traits::{SupportsLinkState, SupportsUrlQueue};
     use crate::crawl::{SlimCrawlResult, StoredDataHint};
     use crate::link_state::{LinkStateKind, LinkStateLike, RawLinkState};
-    use crate::queue::UrlQueue;
-    use crate::runtime::{OptionalAtraHandle, ShutdownReceiver, ShutdownSender};
     use crate::seed::SeedDefinition;
     use crate::url::AtraUri;
     use crate::warc_ext::WarcSkipInstruction;
@@ -444,7 +442,6 @@ mod test {
     use std::path::{Path, PathBuf};
     use time::ext::NumericalDuration;
     use time::Duration;
-    use tokio::select;
     use tokio::task::JoinSet;
     use tokio::time::sleep;
 

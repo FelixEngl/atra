@@ -13,9 +13,9 @@
 // limitations under the License.
 
 use super::origin::{AtraOriginProvider, AtraUrlOrigin};
+use crate::toolkit::extension_extractor::extract_file_extensions_from_file_name;
 use crate::toolkit::CaseInsensitiveString;
 use crate::url::cleaner::AtraUrlCleaner;
-use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
@@ -86,15 +86,7 @@ impl AtraUri {
         match self {
             AtraUri::Url(value) => {
                 let last = value.path_segments()?.last()?;
-                let sep = last.find('.')?;
-                if sep == last.len() - 1 {
-                    return None;
-                }
-                let result = (&last[sep + 1..])
-                    .split_terminator('.')
-                    .filter(|value| !value.is_empty())
-                    .collect_vec();
-                (!result.is_empty()).then_some(result)
+                extract_file_extensions_from_file_name(last)
             }
         }
     }

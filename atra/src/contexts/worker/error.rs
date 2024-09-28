@@ -26,4 +26,6 @@ pub enum CrawlWriteError<E> {
     WarcWriterError(#[from] WriterError),
     #[error(transparent)]
     SlimError(E),
+    #[error("Tried to store a tempfile. this is not possible!")]
+    TempFilesCanNotBeStoredError
 }

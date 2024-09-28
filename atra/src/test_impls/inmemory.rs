@@ -26,7 +26,7 @@ use crate::data::RawVecData;
 use crate::database::DatabaseError;
 use crate::extraction::ExtractedLink;
 use crate::gdbr::identifier::GdbrIdentifierRegistry;
-use crate::io::fs::FileSystemAccess;
+use crate::io::fs::{AtraFS, WorkerFileSystemAccess};
 use crate::link_state::{
     IsSeedYesNo, LinkStateDBError, LinkStateKind, LinkStateLike, LinkStateManager, RawLinkState,
     RecrawlYesNo,
@@ -40,7 +40,7 @@ use crate::test_impls::providers::{ClientProvider, DefaultAtraProvider};
 use crate::url::guard::InMemoryUrlGuardian;
 use crate::url::{AtraOriginProvider, AtraUri};
 use crate::url::{AtraUrlOrigin, UrlWithDepth};
-use crate::web_graph::{WebGraphError, WebGraphEntry, WebGraphManager};
+use crate::web_graph::{WebGraphEntry, WebGraphError, WebGraphManager};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use liblinear::solver::L2R_L2LOSS_SVR;
@@ -53,12 +53,16 @@ use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
+use camino::{Utf8Path, Utf8PathBuf};
+use camino_tempfile::Utf8TempDir;
 use text_processing::stopword_registry::StopWordRegistry;
 use text_processing::tf_idf::{Idf, Tf};
 use texting_robots::{get_robots_url, Robot};
 use time::{Duration, OffsetDateTime};
 use tokio::sync::watch::Receiver;
 use tokio::sync::Mutex;
+use crate::io::errors::ErrorWithPath;
+use crate::io::serial::SerialProvider;
 
 #[derive(Debug)]
 pub struct TestContext<Provider = DefaultAtraProvider> {
@@ -76,6 +80,7 @@ pub struct TestContext<Provider = DefaultAtraProvider> {
     pub link_net_manager: TestLinkNetManager,
     pub stop_word_registry: StopWordRegistry,
     pub gdbr_registry: Option<GdbrIdentifierRegistry<Tf, Idf, L2R_L2LOSS_SVR>>,
+    pub fs: Arc<TestFS>,
     pub provider: Provider,
     pub domain_manager: InMemoryDomainManager,
 }
@@ -97,6 +102,7 @@ where
             stop_word_registry: StopWordRegistry::default(),
             configs,
             host_manager: Default::default(),
+            fs: Arc::new(TestFS::new()),
             started_at: OffsetDateTime::now_utc(),
             link_net_manager: TestLinkNetManager::default(),
             gdbr_registry: None,
@@ -368,10 +374,40 @@ impl<Provider> SupportsFileSystemAccess for TestContext<Provider>
 where
     Provider: Send + Sync + 'static,
 {
-    type FileSystem = FileSystemAccess;
+    type FileSystem = TestFS;
 
-    fn fs(&self) -> &FileSystemAccess {
-        panic!("Not supported by in memory actions!")
+    fn fs(&self) -> &TestFS {
+        &self.fs
+    }
+}
+
+#[derive(Debug)]
+pub struct TestFS {
+    temp_dir: Utf8TempDir,
+    id_prov: SerialProvider
+}
+
+impl TestFS {
+    pub fn new() -> Self {
+        Self { temp_dir: Utf8TempDir::new().unwrap(), id_prov: SerialProvider::default() }
+    }
+}
+
+impl AtraFS for TestFS {
+    fn create_unique_path_for_dat_file(&self, _url: &str) -> Utf8PathBuf {
+        self.temp_dir.path().join(format!("dat_{}.tmp", self.id_prov.provide_serial().unwrap().to_string())).to_path_buf()
+    }
+
+    fn get_unique_path_for_data_file(&self, _path: impl AsRef<Utf8Path>) -> Utf8PathBuf {
+        todo!()
+    }
+
+    fn cleanup_data_file(&self, path: impl AsRef<Utf8Path>) -> std::io::Result<()> {
+        std::fs::remove_file(path.as_ref())
+    }
+
+    fn create_worker_file_provider(&self, _worker_id: usize, _recrawl_iteration: usize) -> Result<WorkerFileSystemAccess, ErrorWithPath> {
+        todo!()
     }
 }
 
@@ -449,7 +485,10 @@ where
         let hint = match &result.content {
             RawVecData::None => StoredDataHint::None,
             RawVecData::InMemory { data } => StoredDataHint::InMemory(data.clone()),
-            RawVecData::ExternalFile { file } => StoredDataHint::External(file.clone()),
+            RawVecData::ExternalFile { path } => {
+                assert!(path.exists());
+                StoredDataHint::External(path.clone())
+            },
         };
         let slim = SlimCrawlResult::new(result, hint);
         self.store_slim_crawled_website(slim).await?;

@@ -274,7 +274,7 @@ mod test {
     #[test]
     fn test_different_encodings() {
         const TEST_DATA: &str = include_str!("../../testdata/samples/Amazon.html");
-
+      
         for encoding in ENCODINGS.iter().cloned() {
             let (content, used_enc, _) = encoding.encode(TEST_DATA);
             assert_eq!(
@@ -297,6 +297,15 @@ mod test {
                 }
             }
         }
+    }
 
+    #[test]
+    fn test_class_file(){
+        const DATA: &[u8] = include_bytes!("../../testdata/samples/Main.class");
+
+        let found = extract_possible_urls(RobustUtf8Reader::new(DATA.reader())).unwrap();
+        for (x, y) in found {
+            println!("{x} - {y:?}")
+        }
     }
 }

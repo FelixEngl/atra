@@ -1,6 +1,6 @@
 [package]
 name = "atra"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 
 # https://en.wikipedia.org/wiki/Erigone_atra
@@ -78,6 +78,7 @@ compact_str = { workspace = true, features = ["serde", "bytes"] }
 indexmap = "2"
 moka = { version = "0.12", features = ["future"] }
 bytes = { workspace = true }
+#enum-map = {workspace = true, features = ["serde"]}
 
 # Delegating
 delegate.workspace = true
@@ -85,7 +86,7 @@ delegate.workspace = true
 # Enum extensions
 strum = { workspace = true, features = ["derive"] }
 num_enum.workspace = true
-enum-iterator.workspace = true
+#enum-iterator.workspace = true
 
 # Bits and bytes
 ubyte.workspace = true

@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::contexts::traits::SupportsFileSystemAccess;
-use crate::fetching::ResponseData;
 use crate::format::mime::MimeType;
+use crate::format::{FileContentReader, FileFormatData};
 use file_format::FileFormat;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -39,13 +38,15 @@ impl DetectedFileFormat {
 }
 
 /// Infers the file format for some kind of data.
-pub(crate) fn infer_file_formats(
-    page: &ResponseData,
+pub(crate) fn infer_file_formats<D>(
+    data: &mut FileFormatData<D>,
     mime: Option<&MimeType>,
-    context: &impl SupportsFileSystemAccess,
-) -> Option<DetectedFileFormat> {
+) -> Option<DetectedFileFormat>
+where
+    D: FileContentReader,
+{
     let mut formats = HashMap::new();
-    if let Ok(Some(value)) = page.content.cursor(context) {
+    if let Ok(Some(value)) = data.content.cursor() {
         match FileFormat::from_reader(value) {
             Ok(value) => {
                 formats.insert(value, 1);
@@ -73,7 +74,7 @@ pub(crate) fn infer_file_formats(
         }
     }
 
-    if let Some(file_extension) = page.url.url().file_extension() {
+    if let Some(file_extension) = data.url.and_then(|value| value.url().file_extension()) {
         if let Some(infered) = FileFormat::from_extension(file_extension) {
             for inf in infered {
                 match formats.entry(*inf) {

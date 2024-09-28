@@ -37,10 +37,10 @@ pub trait AtraFS {
     fn create_unique_path_for_dat_file(&self, url: &str) -> Utf8PathBuf;
 
     /// Builds the path to the data-file with a given name
-    fn get_unique_path_for_data_file(&self, name: impl AsRef<Utf8Path>) -> Utf8PathBuf;
+    fn get_unique_path_for_data_file(&self, path: impl AsRef<Utf8Path>) -> Utf8PathBuf;
 
     /// Deletes a datafile
-    fn cleanup_data_file(&self, name: impl AsRef<Utf8Path> + Debug) -> io::Result<()>;
+    fn cleanup_data_file(&self, path: impl AsRef<Utf8Path>) -> io::Result<()>;
 
     fn create_worker_file_provider(
         &self,
@@ -100,14 +100,14 @@ impl AtraFS for FileSystemAccess {
     }
 
     /// Builds the path to the data-file with a given name
-    fn get_unique_path_for_data_file(&self, name: impl AsRef<Utf8Path>) -> Utf8PathBuf {
-        self.big_file.root().join(name)
+    fn get_unique_path_for_data_file(&self, path: impl AsRef<Utf8Path>) -> Utf8PathBuf {
+        self.big_file.root().join(path)
     }
 
     /// Deletes a datafile
-    fn cleanup_data_file(&self, name: impl AsRef<Utf8Path> + Debug) -> io::Result<()> {
-        log::debug!("Delete the file {name:?}");
-        let path = self.big_file.root().join(name);
+    fn cleanup_data_file(&self, path: impl AsRef<Utf8Path>) -> io::Result<()> {
+        log::debug!("Delete the file {}", path.as_ref().to_string());
+        let path = self.big_file.root().join(path);
         std::fs::remove_file(path)
     }
 

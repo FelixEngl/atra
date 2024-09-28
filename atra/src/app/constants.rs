@@ -116,6 +116,7 @@ pub fn create_example_config() -> crate::config::configs::Config {
             redirect_policy: RedirectPolicy::Loose,
             accept_invalid_certs: true,
             link_extractors: Extractor::default(),
+            max_extraction_depth: Some(20),
             decode_big_files_up_to: Some(1.gigabytes().as_u64()),
             stopword_registry: Some(StopwordRegistryConfig {
                 registries: vec![

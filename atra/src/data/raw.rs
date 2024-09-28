@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::contexts::traits::SupportsFileSystemAccess;
-use crate::io::fs::AtraFS;
+use crate::format::FileContentReader;
+use crate::toolkit::CursorWithLifeline;
 use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 use std::cmp::min;
 use std::fs::File;
 use std::io;
-use std::io::{Cursor, IoSliceMut, Read, SeekFrom};
+use std::io::{Cursor, IoSliceMut, Read, Seek, SeekFrom};
 
 pub type RawVecData = RawData<Vec<u8>>;
 
@@ -31,7 +31,7 @@ pub enum RawData<T> {
     /// We got some data
     InMemory { data: T },
     /// If we are too big we store it in a separate file on the file system
-    ExternalFile { file: Utf8PathBuf },
+    ExternalFile { path: Utf8PathBuf },
 }
 
 impl<T> RawData<T> {
@@ -43,8 +43,8 @@ impl<T> RawData<T> {
 
     /// Create a data holder when the
     #[inline]
-    pub fn from_external(file: Utf8PathBuf) -> Self {
-        Self::ExternalFile { file }
+    pub fn from_external(path: Utf8PathBuf) -> Self {
+        Self::ExternalFile { path }
     }
 
     pub fn as_in_memory(&self) -> Option<&T> {
@@ -63,39 +63,65 @@ impl RawData<Vec<u8>> {
     }
 }
 
+impl<T: AsRef<[u8]>> FileContentReader for RawData<T> {
+    type InMemory = T;
+    type Error = io::Error;
+
+    #[inline(always)]
+    fn len(&mut self) -> Result<u64, Self::Error> {
+        self.size()
+    }
+
+    #[inline(always)]
+    fn can_read(&self) -> bool {
+        !matches!(self, RawData::None)
+    }
+
+    #[inline(always)]
+    fn cursor(
+        &mut self,
+    ) -> Result<Option<CursorWithLifeline<impl Seek + Read>>, Self::Error> {
+        Ok(RawData::cursor(self)?.map(CursorWithLifeline::new))
+    }
+
+    #[inline(always)]
+    fn as_in_memory(&mut self) -> Option<&T> {
+        RawData::as_in_memory(self)
+    }
+}
+
 impl<T: AsRef<[u8]>> RawData<T> {
     pub fn size(&self) -> io::Result<u64> {
         match self {
             RawData::None => Ok(0),
             RawData::InMemory { data } => Ok(data.as_ref().len() as u64),
-            RawData::ExternalFile { file } => {
-                let file = File::options().read(true).open(file)?;
+            RawData::ExternalFile { path } => {
+                let file = File::options().read(true).open(path)?;
                 Ok(file.metadata()?.len())
-            }
+            },
         }
     }
 
     pub fn cursor(
         &self,
-        context: &impl SupportsFileSystemAccess,
-    ) -> io::Result<Option<DataHolderCursor<&T>>> {
+    ) -> io::Result<Option<DataHolderCursor>> {
         match self {
             RawData::None => Ok(None),
             RawData::InMemory { data } => Ok(Some(DataHolderCursor::InMemory {
-                len: data.as_ref().len(),
-                cursor: Cursor::new(data),
+                len: data.as_ref().len() as u64,
+                cursor: Cursor::new(data.as_ref()),
             })),
-            RawData::ExternalFile { file: name } => {
+            RawData::ExternalFile { path } => {
                 let file = File::options()
                     .read(true)
-                    .open(context.fs().get_unique_path_for_data_file(name))?;
+                    .open(path)?;
                 let len = file.metadata()?.len();
                 Ok(Some(DataHolderCursor::FileSystem { len, cursor: file }))
-            }
+            },
         }
     }
 
-    pub fn peek_bom(&self, context: &impl SupportsFileSystemAccess) -> io::Result<[u8; 3]> {
+    pub fn peek_bom(&self) -> io::Result<[u8; 3]> {
         let mut peek = [0u8; 3];
         match self {
             RawData::None => Ok(peek),
@@ -105,10 +131,10 @@ impl<T: AsRef<[u8]>> RawData<T> {
                 (&mut peek[..target_copy]).copy_from_slice(&data[..target_copy]);
                 Ok(peek)
             }
-            RawData::ExternalFile { file: name } => {
+            RawData::ExternalFile { path } => {
                 let mut file = File::options()
                     .read(true)
-                    .open(context.fs().get_unique_path_for_data_file(name))?;
+                    .open(path)?;
                 file.read(&mut peek)?;
                 Ok(peek)
             }
@@ -117,21 +143,21 @@ impl<T: AsRef<[u8]>> RawData<T> {
 }
 
 /// A cursor for navigating over some kind of data
-pub enum DataHolderCursor<T: AsRef<[u8]>> {
-    InMemory { len: usize, cursor: Cursor<T> },
+pub enum DataHolderCursor<'a> {
+    InMemory { len: u64, cursor: Cursor<&'a [u8]> },
     FileSystem { len: u64, cursor: File },
 }
 
-impl<T: AsRef<[u8]>> DataHolderCursor<T> {
+impl<'a> DataHolderCursor<'a> {
     pub fn len(&self) -> u64 {
         match self {
-            DataHolderCursor::InMemory { len, .. } => *len as u64,
+            DataHolderCursor::InMemory { len, .. } => *len,
             DataHolderCursor::FileSystem { len, .. } => *len,
         }
     }
 }
 
-impl<T: AsRef<[u8]>> io::Seek for DataHolderCursor<T> {
+impl<'a> io::Seek for DataHolderCursor<'a> {
     delegate::delegate! {
         to match self {
             Self::InMemory{cursor, ..} => cursor,
@@ -144,7 +170,7 @@ impl<T: AsRef<[u8]>> io::Seek for DataHolderCursor<T> {
     }
 }
 
-impl<T: AsRef<[u8]>> Read for DataHolderCursor<T> {
+impl<'a> Read for DataHolderCursor<'a> {
     delegate::delegate! {
         to match self {
             Self::InMemory{cursor, ..} => cursor,
