@@ -237,4 +237,14 @@ mod test {
             }
         }
     }
+
+    #[test]
+    fn test_class_file(){
+        const DATA: &[u8] = include_bytes!("../../testdata/samples/Main.class");
+
+        let found = extract_possible_urls(RobustUtf8Reader::new(DATA.reader())).unwrap();
+        for (x, y) in found {
+            println!("{x} - {y:?}")
+        }
+    }
 }

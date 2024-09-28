@@ -394,19 +394,19 @@ impl TestFS {
 }
 
 impl AtraFS for TestFS {
-    fn create_unique_path_for_dat_file(&self, url: &str) -> Utf8PathBuf {
+    fn create_unique_path_for_dat_file(&self, _url: &str) -> Utf8PathBuf {
         self.temp_dir.path().join(format!("dat_{}.tmp", self.id_prov.provide_serial().unwrap().to_string())).to_path_buf()
     }
 
-    fn get_unique_path_for_data_file(&self, name: impl AsRef<Utf8Path>) -> Utf8PathBuf {
+    fn get_unique_path_for_data_file(&self, _path: impl AsRef<Utf8Path>) -> Utf8PathBuf {
         todo!()
     }
 
-    fn cleanup_data_file(&self, name: impl AsRef<Utf8Path>) -> std::io::Result<()> {
-        std::fs::remove_file(name.as_ref())
+    fn cleanup_data_file(&self, path: impl AsRef<Utf8Path>) -> std::io::Result<()> {
+        std::fs::remove_file(path.as_ref())
     }
 
-    fn create_worker_file_provider(&self, worker_id: usize, recrawl_iteration: usize) -> Result<WorkerFileSystemAccess, ErrorWithPath> {
+    fn create_worker_file_provider(&self, _worker_id: usize, _recrawl_iteration: usize) -> Result<WorkerFileSystemAccess, ErrorWithPath> {
         todo!()
     }
 }

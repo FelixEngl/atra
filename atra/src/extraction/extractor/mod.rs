@@ -63,7 +63,7 @@ impl Extractor {
             if FALLBACK_MODE ^ extractor.is_fallback() {
                 continue;
             }
-            if extractor.can_apply(data.file_info) {
+            if FALLBACK_MODE || extractor.can_apply(data.file_info) {
                 if result.apply_extractor(extractor.extractor_method) {
                     match extractor
                         .extractor_method

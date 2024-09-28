@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::fs::File;
 use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess, SupportsGdbrRegistry};
 use crate::data::{Decoded, RawVecData};
 use crate::decoding::{decode};
@@ -24,7 +25,7 @@ use crate::io::unique_path_provider::{UniquePathProvider, UniquePathProviderWith
 use crate::toolkit::{detect_language};
 use crate::url::UrlWithDepth;
 use camino_tempfile::Utf8TempDir;
-use std::io::{Read, Seek};
+use std::io::{BufWriter, Read, Seek};
 use std::sync::{LazyLock};
 use tokio::task::yield_now;
 
@@ -103,11 +104,32 @@ where
                             continue;
                         }
                     };
-                    match content.zip_reader().extract(&temp_file_name) {
-                        Ok(_) => {}
+                    match content.zip_reader().by_index(0) {
+                        Ok(mut inp) => {
+                            match File::options().write(true).create_new(true).open(&temp_file_name) {
+                                Ok(outp) => {
+                                    let mut outp = BufWriter::new(outp);
+                                    match std::io::copy(
+                                        &mut inp,
+                                        &mut outp
+                                    ) {
+                                        Ok(_) => {}
+                                        Err(err) => {
+                                            errors.push((file_name, err.into()));
+                                            continue
+                                        }
+                                    }
+                                }
+                                Err(err) => {
+                                    errors.push((file_name, err.into()));
+                                    continue
+                                }
+                            }
+
+                        }
                         Err(err) => {
                             errors.push((file_name, err.into()));
-                            continue;
+                            continue
                         }
                     }
                     RawVecData::from_external(temp_file_name)
@@ -227,50 +249,57 @@ mod test {
 
         let config = log4rs::Config::builder()
             .appender(Appender::builder().build("out", Box::new(console_logger)))
-            .logger(Logger::builder().build("atra", LevelFilter::Debug))
+            .logger(Logger::builder().build("atra", LevelFilter::Info))
             .build(Root::builder().appender("out").build(LevelFilter::Warn))
             .unwrap();
 
         let _ = log4rs::init_config(config).unwrap();
 
         const JAR_FILE_1: &[u8] = include_bytes!("../../testdata/samples/expressionless-0.1.0.jar");
+        const JAR_FILE_2: &[u8] = include_bytes!("../../testdata/samples/Test2.zip");
 
         let cont = TestContext::new(
             Config::default(),
             DefaultAtraProvider::default()
         );
 
-        let mut dat = RawVecData::from_in_memory(
-            Vec::from(JAR_FILE_1)
-        );
+        for file in [JAR_FILE_1, JAR_FILE_2] {
+            let mut dat = RawVecData::from_in_memory(
+                Vec::from(file)
+            );
 
-        let format = determine_format(
-            &cont,
-            FileFormatData::new(
-                None,
-                &mut dat,
-                Some(&UrlWithDepth::from_url("https://www.google.de/expressionless.jar").unwrap()),
-                None
-            )
-        );
+            let format = determine_format(
+                &cont,
+                FileFormatData::new(
+                    None,
+                    &mut dat,
+                    Some(&UrlWithDepth::from_url("https://www.google.de/expressionless.jar").unwrap()),
+                    None
+                )
+            );
 
-        assert_eq!(format.format, InterpretedProcessibleFileFormat::ZIP);
+            assert_eq!(format.format, InterpretedProcessibleFileFormat::ZIP);
 
 
-        let (result, err) = extract_from_zip(
-            &"https://www.google.de/expressionless.jar".parse().unwrap(),
-            dat.cursor().expect("There was an error when getting data").expect("There is nothing to read."),
-            0,
-            &cont
-        ).await.unwrap();
+            let (result, err) = extract_from_zip(
+                &"https://www.google.de/expressionless.jar".parse().unwrap(),
+                dat.cursor().expect("There was an error when getting data").expect("There is nothing to read."),
+                0,
+                &cont
+            ).await.unwrap();
 
-        for value in result {
-            println!("{value:?}")
+            println!("----------------");
+
+            for (value, res) in result {
+                println!("Target: {value}");
+                for r in res.links {
+                    println!("{r}")
+                }
+            }
+            println!("\nErrors:");
+            for (k, v) in err {
+                println!("{k}: {v:?}")
+            }
         }
-        println!("Errors:");
-        for value in err {
-            println!("{value:?}")
-        }
-
     }
 }

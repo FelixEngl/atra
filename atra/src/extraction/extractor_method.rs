@@ -416,7 +416,6 @@ async fn extract_links_raw(
                     if output.register_link(link) {
                         ct += 1;
                     }
-                    continue;
                 }
                 Err(error) => {
                     log::debug!(
