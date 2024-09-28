@@ -117,6 +117,7 @@ impl ExtractedLink {
         base: &UrlWithDepth,
         url: &str,
         extraction_method: ExtractorMethodHint,
+        use_base: bool
     ) -> Result<Self, ParseError> {
         if url.starts_with("data:") {
             let url = UrlWithDepth::new_like_with_base(base, url)?;
@@ -126,7 +127,11 @@ impl ExtractedLink {
                 extraction_method,
             })
         } else {
-            let next = UrlWithDepth::with_base(base, url)?;
+            let next = if use_base {
+                UrlWithDepth::with_base(base, url)?
+            } else {
+                UrlWithDepth::new_like_with_base(base, url)?
+            };
             if base.depth().distance_to_seed != next.depth().distance_to_seed {
                 Ok(Self::Outgoing {
                     url: next,

@@ -86,20 +86,20 @@ impl ExtractorMethod {
             return Err(LinkExtractionError::NotCompatible);
         }
         match self {
+            ExtractorMethod::BinaryHeuristic => Box::pin(extract_links_raw(self, page, nesting == 0, output)).await,
             ExtractorMethod::Zip => Box::pin(extract_links_zip(self, context, page, nesting, output)).await,
-            ExtractorMethod::HtmlV1 => Box::pin(extract_links_html(self, context, page, output)).await,
-            ExtractorMethod::JSV1 => Box::pin(extract_links_javascript(self, page, output)).await,
-            ExtractorMethod::PlainText => Box::pin(extract_links_plain_text(self, page, output)).await,
-            ExtractorMethod::BinaryHeuristic => Box::pin(extract_links_raw(self, page, output)).await,
-            ExtractorMethod::Rtf => Box::pin(extract_links_rtf(self, page, output)).await,
-            ExtractorMethod::Ooxml => Box::pin(extract_links_ooxml(self, page, output)).await,
-            ExtractorMethod::Odf => Box::pin(extract_links_odf(self, page, output)).await,
-            ExtractorMethod::Exif => Box::pin(extract_links_exif(self, page, output)).await,
-            ExtractorMethod::Xml => Box::pin(extract_links_xml(self, page, output)).await,
-            ExtractorMethod::Svg => Box::pin(extract_links_svg(self, page, output)).await,
-            ExtractorMethod::Xlink => Box::pin(extract_links_xlink(self, page, output)).await,
+            ExtractorMethod::HtmlV1 => Box::pin(extract_links_html(self, context, page, nesting == 0, output)).await,
+            ExtractorMethod::JSV1 => Box::pin(extract_links_javascript(self, page, nesting == 0, output)).await,
+            ExtractorMethod::PlainText => Box::pin(extract_links_plain_text(self, page, nesting == 0, output)).await,
+            ExtractorMethod::Rtf => Box::pin(extract_links_rtf(self, page, nesting == 0, output)).await,
+            ExtractorMethod::Ooxml => Box::pin(extract_links_ooxml(self, page, nesting == 0, output)).await,
+            ExtractorMethod::Odf => Box::pin(extract_links_odf(self, page, nesting == 0, output)).await,
+            ExtractorMethod::Exif => Box::pin(extract_links_exif(self, page, nesting == 0, output)).await,
+            ExtractorMethod::Xml => Box::pin(extract_links_xml(self, page, nesting == 0, output)).await,
+            ExtractorMethod::Svg => Box::pin(extract_links_svg(self, page, nesting == 0, output)).await,
+            ExtractorMethod::Xlink => Box::pin(extract_links_xlink(self, page, nesting == 0, output)).await,
             #[cfg(not(windows))]
-            ExtractorMethod::PdfV1 => Box::pin(extract_links_pdf(self, page, output)).await,
+            ExtractorMethod::PdfV1 => Box::pin(extract_links_pdf(self, page, nesting == 0, output)).await,
         }
     }
 }
@@ -273,6 +273,7 @@ async fn extract_links_html<C>(
     extractor: &impl ExtractorMethodMetaFactory,
     context: &C,
     data: &ExtractorData<'_>,
+    use_base: bool,
     output: &mut ExtractorResult,
 ) -> Result<usize, LinkExtractionError>
 where
@@ -308,6 +309,7 @@ where
                             base_ref,
                             &link,
                             extractor.new_with_meta(ExtractorMethodMeta::Html(origin)),
+                            use_base
                         ) {
                             Ok(link) => {
                                 if link.is_not(base_ref) {
@@ -337,13 +339,14 @@ where
 async fn extract_links_javascript(
     extractor: &impl ExtractorMethodMetaFactory,
     data: &ExtractorData<'_>,
+    use_base: bool,
     output: &mut ExtractorResult,
 ) -> Result<usize, LinkExtractionError> {
     match &data.decoded {
         Decoded::InMemory { data: result, .. } => {
             let mut ct = 0usize;
             for entry in crate::extraction::js::extract_links(result.as_str()) {
-                match ExtractedLink::pack(&data.url, entry.as_str(), extractor.new_without_meta()) {
+                match ExtractedLink::pack(&data.url, entry.as_str(), extractor.new_without_meta(), use_base) {
                     Ok(link) => {
                         if output.register_link(link) {
                             ct += 1;
@@ -368,6 +371,7 @@ async fn extract_links_javascript(
 async fn extract_links_plain_text(
     extractor: &impl ExtractorMethodMetaFactory,
     data: &ExtractorData<'_>,
+    use_base: bool,
     output: &mut ExtractorResult,
 ) -> Result<usize, LinkExtractionError> {
     match &data.decoded {
@@ -376,7 +380,7 @@ async fn extract_links_plain_text(
             finder.kinds(&[linkify::LinkKind::Url]);
             let mut ct = 0usize;
             for entry in finder.links(result.as_str()) {
-                match ExtractedLink::pack(&data.url, entry.as_str(), extractor.new_without_meta()) {
+                match ExtractedLink::pack(&data.url, entry.as_str(), extractor.new_without_meta(), use_base) {
                     Ok(link) => {
                         if output.register_link(link) {
                             ct += 1;
@@ -401,17 +405,19 @@ async fn extract_links_plain_text(
 async fn extract_links_raw(
     extractor: &impl ExtractorMethodMetaFactory,
     data: &ExtractorData<'_>,
+    use_base: bool,
     output: &mut ExtractorResult,
 ) -> Result<usize, LinkExtractionError> {
     async fn execute<'a, R: Read>(
         extractor: &impl ExtractorMethodMetaFactory,
         reader: RobustUtf8Reader<'a, R>,
         page: &ExtractorData<'_>,
+        use_base: bool,
         output: &mut ExtractorResult,
     ) -> Result<usize, LinkExtractionError> {
         let mut ct = 0usize;
         for entry in extract_possible_urls(reader)? {
-            match ExtractedLink::pack(&page.url, &entry.0, extractor.new_without_meta()) {
+            match ExtractedLink::pack(&page.url, &entry.0, extractor.new_without_meta(), use_base) {
                 Ok(link) => {
                     if output.register_link(link) {
                         ct += 1;
@@ -437,6 +443,7 @@ async fn extract_links_raw(
                 extractor,
                 RobustUtf8Reader::new(Cursor::new(in_memory)),
                 data,
+                use_base,
                 output,
             )
             .await
@@ -446,6 +453,7 @@ async fn extract_links_raw(
                 extractor,
                 RobustUtf8Reader::new(BufReader::new(File::options().read(true).open(reference)?)),
                 data,
+                use_base,
                 output,
             )
             .await
@@ -460,6 +468,7 @@ async fn extract_links_raw(
                     extractor,
                     RobustUtf8Reader::new(in_memory_data.reader()),
                     data,
+                    use_base,
                     output,
                 )
                 .await
@@ -469,6 +478,7 @@ async fn extract_links_raw(
                     extractor,
                     RobustUtf8Reader::new(BufReader::new(File::options().read(true).open(path)?)),
                     data,
+                    use_base,
                     output,
                 )
                 .await
@@ -479,14 +489,14 @@ async fn extract_links_raw(
 
 macro_rules! create_extraction_fn {
     ($vis: vis $name: ident(raw, $n: literal, $($tt:tt)+)) => {
-        $vis async fn $name(extractor: &impl ExtractorMethodMetaFactory, data: &ExtractorData<'_>, output: &mut ExtractorResult) -> Result<usize, LinkExtractionError> {
+        $vis async fn $name(extractor: &impl ExtractorMethodMetaFactory, data: &ExtractorData<'_>, use_base: bool, output: &mut ExtractorResult) -> Result<usize, LinkExtractionError> {
             match &data.raw_data {
                 RawVecData::InMemory { data: in_memory_data } => {
                     match $($tt)+::scrape(&in_memory_data) {
                         Ok(result) => {
                             let mut ct = 0;
                             for value in result {
-                                match ExtractedLink::pack(&data.url, &value.url, extractor.new_without_meta()) {
+                                match ExtractedLink::pack(&data.url, &value.url, extractor.new_without_meta(), use_base) {
                                     Ok(link) => {
                                         if output.register_link(link) {
                                             ct += 1;
@@ -516,14 +526,14 @@ macro_rules! create_extraction_fn {
     };
 
     ($vis: vis $name: ident(decoded, $n: literal, $($tt:tt)+)) => {
-        $vis async fn $name(extractor: &impl ExtractorMethodMetaFactory, data: &ExtractorData<'_>, output: &mut ExtractorResult) -> Result<usize, LinkExtractionError> {
+        $vis async fn $name(extractor: &impl ExtractorMethodMetaFactory, data: &ExtractorData<'_>, use_base: bool, output: &mut ExtractorResult) -> Result<usize, LinkExtractionError> {
             match &data.decoded {
                 Decoded::InMemory { data: in_memory_data, .. } => {
                     match $($tt)+::scrape(in_memory_data.as_bytes()) {
                         Ok(result) => {
                             let mut ct = 0;
                             for value in result {
-                                match ExtractedLink::pack(&data.url, &value.url, extractor.new_without_meta()) {
+                                match ExtractedLink::pack(&data.url, &value.url, extractor.new_without_meta(), use_base) {
                                     Ok(link) => {
                                         if output.register_link(link) {
                                             ct += 1;
