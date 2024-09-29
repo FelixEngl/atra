@@ -12,48 +12,52 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// use std::fmt::{Display};
+mod db_view;
+
+use std::fmt::{Display, Formatter};
 use console::Term;
-// use dialoguer::{Select, theme};
+use dialoguer::{Select, theme};
+use itertools::{Either, Itertools};
 use crate::contexts::local::LocalContext;
 use crate::contexts::traits::{SupportsLinkState, SupportsUrlQueue};
-use crate::crawl::{SlimCrawlResult, StoredDataHint};
+use crate::crawl::{CrawlResult, SlimCrawlResult, StoredDataHint};
 use crate::link_state::{LinkStateLike, LinkStateManager};
 use crate::url::AtraUri;
 use crate::warc_ext::WarcSkipInstruction;
-use rocksdb::IteratorMode;
-// use strum::{Display, VariantArray};
-// #[derive(Debug, Display, VariantArray)]
-// enum Targets {
-//     #[strum(to_string = "See the stats")]
-//     Stats,
-//     #[strum(to_string = "See some entries")]
-//     Entries,
-//     #[strum(to_string = "Quit")]
-//     Quit
-// }
-//
-//
-// #[derive(Debug)]
-// struct SelectableEntry(
-//     AtraUri,
-//     SlimCrawlResult
-// );
-//
-// impl Display for SelectableEntry {
-//     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-//         Display::fmt(&self.0, f)
-//     }
-// }
-//
-// #[derive(Debug, Display, VariantArray)]
-// enum Enty {
-//     #[strum(to_string = "{0.0}")]
-//     Select(SelectableEntry),
-//     Next,
-//     Previous,
-//     Quit
-// }
+use rocksdb::{DBIteratorWithThreadMode, DBWithThreadMode, Direction, Error, IteratorMode, MultiThreaded};
+use strum::{Display, VariantArray};
+
+#[derive(Debug, Display, VariantArray)]
+enum Targets {
+    #[strum(to_string = "See the stats")]
+    Stats,
+    #[strum(to_string = "See some entries")]
+    Entries,
+    #[strum(to_string = "Quit")]
+    Quit
+}
+
+
+#[derive(Debug)]
+struct SelectableEntry(
+    AtraUri,
+    SlimCrawlResult
+);
+
+impl Display for SelectableEntry {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.0, f)
+    }
+}
+
+#[derive(Debug, Display, VariantArray)]
+enum Enty {
+    #[strum(to_string = "{0.0}")]
+    Select(SelectableEntry),
+    Next,
+    Previous,
+    Quit
+}
 
 pub fn view(
     local: LocalContext,
@@ -78,57 +82,94 @@ pub fn view(
     println!("Currently only legacy view is supported.");
     view_legacy(local, internals, extracted_links, headers);
 
-    // loop {
-    //     let selection = Select::with_theme(
-    //         &theme::ColorfulTheme::default()
-    //     ).with_prompt("What do you to do?")
-    //         .default(0)
-    //         .items(Targets::VARIANTS)
-    //         .interact_on_opt(&term)
-    //         .unwrap();
-    //
-    //     match selection {
-    //         None => {
-    //             break
-    //         }
-    //         Some(value) => {
-    //             term.clear_screen().unwrap();
-    //             match Targets::VARIANTS[value] {
-    //                 Targets::Stats => {
-    //                     term.write_line("##### ATRA STATS #####");
-    //                     term.write_line(&format!("Links in Queue:        {}", local.url_queue().len_blocking())).unwrap();
-    //                     term.write_line(&format!("Links in CrawlDB:      {}", local.crawl_db().len())).unwrap();
-    //                     term.write_line(&format!("Links in StateManager: {}", local.get_link_state_manager().len())).unwrap();
-    //                 }
-    //                 Targets::Entries => {
-    //                     let mut iter = local.crawl_db().iter(IteratorMode::Start).filter_map(
-    //                         |value| value.ok()
-    //                     ).map(|(k, v)| {
-    //                         let k: AtraUri = String::from_utf8_lossy(k.as_ref()).parse().unwrap();
-    //                         let v: SlimCrawlResult = bincode::deserialize(v.as_ref()).unwrap();
-    //                         (k, v)
-    //                     });
-    //
-    //
-    //
-    //                     // loop {
-    //                     //
-    //                     //     let current =
-    //                     //     Select::with_theme(&theme::ColorfulTheme::default())
-    //                     //         .default(0)
-    //                     //         .
-    //                     // }
-    //
-    //
-    //                 }
-    //                 Targets::Quit => {
-    //                     break
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
+    fn print_stats(term: &Term, local: &LocalContext) {
+        term.write_line("##### ATRA STATS #####");
+        term.write_line(&format!("Links in Queue:        {}", local.url_queue().len_blocking())).unwrap();
+        term.write_line(&format!("Links in CrawlDB:      {}", local.crawl_db().len())).unwrap();
+        term.write_line(&format!("Links in StateManager: {}", local.get_link_state_manager().len())).unwrap();
+    }
+
+    #[inline(always)]
+    fn retrieve_selection(local: &LocalContext, mode: IteratorMode, n: usize) -> Vec<Result<(AtraUri, SlimCrawlResult), Error>> {
+        local.crawl_db()
+            .iter(mode)
+            .take(n)
+            .map_ok(|(k, v)| {
+                let k: AtraUri = String::from_utf8_lossy(k.as_ref()).parse().unwrap();
+                let v: SlimCrawlResult = bincode::deserialize(v.as_ref()).unwrap();
+                (k, v)
+            })
+            .collect_vec()
+    }
+
+    fn create_select_key(value: &Result<(AtraUri, SlimCrawlResult), Error>) -> String {
+        match value {
+            Ok((url, _)) => {
+                url.to_string()
+            }
+            Err(err) => {
+                err.to_string().split(':').next().unwrap_or("").to_string()
+            }
+        }
+    }
+
+    fn show_entry(term: &Term, value: Result<(AtraUri, SlimCrawlResult), Error>) {
+        match value {
+            Ok(_) => {}
+            Err(_) => {}
+        }
+    }
+
+
+
+
+
+
+    loop {
+        let selection = Select::with_theme(
+            &theme::ColorfulTheme::default()
+        ).with_prompt("What do you to do?")
+            .default(0)
+            .items(Targets::VARIANTS)
+            .interact_on_opt(&term)
+            .unwrap();
+
+        match selection {
+            None => {
+                break
+            }
+            Some(value) => {
+                term.clear_screen().unwrap();
+                match Targets::VARIANTS[value] {
+                    Targets::Stats => print_stats(&term, &local),
+                    Targets::Entries => {
+                        let mut iter: DBIteratorWithThreadMode<DBWithThreadMode<MultiThreaded>> = local.crawl_db()
+                            .iter(IteratorMode::Start);
+                        iter
+
+
+                        // loop {
+                        //
+                        //     let current =
+                        //     Select::with_theme(&theme::ColorfulTheme::default())
+                        //         .default(0)
+                        //         .
+                        // }
+
+
+                    }
+                    Targets::Quit => {
+                        break
+                    }
+                }
+            }
+        }
+    }
 }
+
+
+
+
 
 fn view_legacy(local: LocalContext, internals: bool, extracted_links: bool, headers: bool) {
     println!("##### ATRA STATS #####");

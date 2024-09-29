@@ -491,8 +491,8 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::warc::reader::{WarcCursor, WarcCursorReadError};
-    use crate::warc::writer::test::build_test_warc;
+    use crate::reader::{WarcCursor, WarcCursorReadError};
+    use crate::writer::test::build_test_warc;
     use std::io::Cursor;
 
     #[test]

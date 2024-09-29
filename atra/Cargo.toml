@@ -172,8 +172,8 @@ svm.workspace = true
 
 # Console
 console = {workspace = true}
-#dialoguer = {workspace = true}
-#indicatif = {workspace = true}
+dialoguer = {workspace = true}
+indicatif = {workspace = true}
 
 [target.'cfg(windows)'.dependencies]
 link_scraper = { version = "0.1", features = ["plaintext", "xml", "xlink", "svg", "ooxml", "odf", "rtf", "image"] }

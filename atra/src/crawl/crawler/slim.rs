@@ -13,8 +13,8 @@
 // limitations under the License.
 
 use crate::crawl::crawler::result::{CrawlResult, CrawlResultMeta};
-use crate::data::RawData;
-use crate::warc_ext::WarcSkipInstruction;
+use crate::data::{RawData, RawVecData};
+use crate::warc_ext::{ReaderError, WarcSkipInstruction};
 use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 
@@ -72,6 +72,26 @@ impl SlimCrawlResult {
         CrawlResult {
             meta: self.meta,
             content,
+        }
+    }
+
+    pub fn to_crawl_result(self) -> Result<CrawlResult, ReaderError> {
+        let data = match self.stored_data_hint {
+            StoredDataHint::External(value) => {
+                RawVecData::from_external(value.to_path_buf())
+            }
+            StoredDataHint::Warc(pointers) => {
+                if let Some(value) = pointers.read()? {
+                    RawVecData::from_external(value.to_path_buf())
+                } else {
+                    RawVecData::None
+                }
+            }
+            StoredDataHint::InMemory(value) => {
+                RawVecData::from_vec(value)
+            }
+            StoredDataHint::Associated => {}
+            StoredDataHint::None => {}
         }
     }
 }
