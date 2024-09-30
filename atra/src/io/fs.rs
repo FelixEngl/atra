@@ -306,7 +306,9 @@ impl Drop for WorkerFileSystemAccess {
 
 #[cfg(test)]
 mod test {
-    use crate::io::fs::FILE_NAME_REGEX;
+    use camino::Utf8PathBuf;
+    use crate::io::fs::{AtraFS, FILE_NAME_REGEX, FileSystemAccess};
+    use crate::stores::warc::WarcFilePathProvider;
 
     #[test]
     fn can_properly_parse() {
@@ -318,5 +320,25 @@ mod test {
         assert_eq!(42, recrawl_read, "Failed recrawl read: {recrawl_read}");
         let serial_read: u64 = (&cap[2]).parse().expect("Expected a serial info");
         assert_eq!(123, serial_read, "Failed serial read: {recrawl_read}");
+    }
+
+    #[test]
+    fn can_properly_init(){
+        let fs = FileSystemAccess::new(
+            "service".to_string(),
+            "collection".to_string(),
+            0,
+            Utf8PathBuf::from("./test3"),
+            Utf8PathBuf::from("./test3/bigfile"),
+        ).unwrap();
+
+        let worker_fs = fs.create_worker_file_provider(12, 0).unwrap();
+
+        let x = fs.create_unique_path_for_dat_file("cat_dog");
+        let y = worker_fs.create_new_warc_file_path().unwrap();
+        println!("UFP: {x}");
+        println!("WP1: {y}");
+        let y = worker_fs.create_new_warc_file_path().unwrap();
+        println!("WP2: {y}");
     }
 }

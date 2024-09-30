@@ -14,9 +14,9 @@
 
 use std::cmp::min;
 use std::io::{Error, Read, Seek, SeekFrom};
-
 use ubyte::ByteUnit;
-
+use warc::header::WarcHeader;
+use warc::reader::{WarcCursor, WarcCursorReadError};
 use crate::warc_ext::skip_pointer::WarcSkipPointer;
 
 /// Reads the body from [reader] for a provided [pointer]
@@ -27,7 +27,7 @@ pub fn read_body<R: Seek + Read>(
 ) -> Result<Option<Vec<u8>>, Error> {
     let header_octet_count = header_octet_count as u64;
     reader.seek(SeekFrom::Start(
-        pointer.file_offset() + pointer.warc_header_offset() as u64 + header_octet_count,
+        pointer.file_offset() + pointer.warc_header_octet_count() as u64 + header_octet_count,
     ))?;
     let mut to_read = (pointer.body_octet_count() - header_octet_count) as usize;
     if to_read == 0 {
@@ -43,4 +43,18 @@ pub fn read_body<R: Seek + Read>(
         to_read = to_read.saturating_sub(BUF_SIZE);
     }
     return Ok(Some(data));
+}
+
+/// Reads the meta from [reader] for the [pointer].
+pub fn read_meta<R: Seek + Read>(
+    reader: &mut R,
+    pointer: &WarcSkipPointer,
+) -> Result<Option<WarcHeader>, WarcCursorReadError> {
+    reader.seek(SeekFrom::Start(
+        pointer.file_offset()
+    ))?;
+
+    WarcCursor::new(reader)
+        .read_or_get_header()
+        .map(|value| value.cloned())
 }

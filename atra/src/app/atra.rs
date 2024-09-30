@@ -574,14 +574,14 @@ mod test {
                 StoredDataHint::Warc(value) => match value {
                     WarcSkipInstruction::Single {
                         pointer,
-                        is_base64,
+                        kind,
                         header_signature_octet_count,
                     } => {
                         println!(
                             "    Single Warc: {} - {} ({}, {}, {:?})",
                             pointer.path().exists(),
                             pointer.path(),
-                            is_base64,
+                            kind,
                             header_signature_octet_count,
                             pointer.pointer()
                         );
@@ -609,9 +609,6 @@ mod test {
                 },
                 StoredDataHint::InMemory(value) => {
                     println!("    InMemory: {}", value.len());
-                }
-                StoredDataHint::Associated => {
-                    println!("    Associated!")
                 }
                 StoredDataHint::None => {
                     println!("    None!")

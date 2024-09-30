@@ -16,13 +16,11 @@ use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 use rocksdb::{DBIteratorWithThreadMode, DBWithThreadMode, Direction, Error, IteratorMode, MultiThreaded};
 use crate::contexts::local::LocalContext;
-use crate::contexts::traits::SupportsSlimCrawlResults;
-use crate::crawl::{CrawlResult, SlimCrawlResult, StoredDataHint};
-use crate::data::RawVecData;
+use crate::crawl::{CrawlResult, SlimCrawlResult};
 use crate::url::AtraUri;
 use crate::warc_ext::ReaderError;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[repr(transparent)]
 pub(crate) struct SlimEntry(pub(crate) Arc<(AtraUri, SlimCrawlResult)>);
 
@@ -47,16 +45,16 @@ pub(crate) struct ControlledIterator<'a> {
     iter: DBIteratorWithThreadMode<'a, DBWithThreadMode<MultiThreaded>>,
     selection_size: usize,
     selection: Vec<SlimEntry>,
-    selected: Option<(usize, CrawlResult)>,
+    selected: Option<(usize, AtraUri, SlimCrawlResult)>,
     direction: Direction,
     end_reached: bool
 }
 
 
 impl<'a> ControlledIterator<'a> {
-    pub fn new(context:&LocalContext, selection_size: usize) -> Self {
+    pub fn new(context:&'a LocalContext, selection_size: usize) -> Result<Self, Vec<Error>> {
         let iter = context.crawl_db().iter(IteratorMode::Start);
-        Self {
+        let mut new = Self {
             context,
             iter,
             selection_size,
@@ -64,7 +62,9 @@ impl<'a> ControlledIterator<'a> {
             selected: None,
             direction: Direction::Forward,
             end_reached: false
-        }
+        };
+        new.next()?;
+        Ok(new)
     }
 
     pub fn set_selection_size(&mut self, selection_size: usize) {
@@ -163,13 +163,21 @@ impl<'a> ControlledIterator<'a> {
         }
     }
 
-    pub fn select(&mut self, idx: usize) -> Result<Option<&(usize, SlimEntry, CrawlResult)>, ReaderError> {
-        let selected = self.selection.get(idx)?;
-        let (uri, result) = selected.0.as_ref().clone();
-
+    pub fn select(&mut self, idx: usize) -> Result<Option<&(usize, AtraUri, SlimCrawlResult)>, ReaderError> {
+        match self.selection.get(idx) {
+            None => {
+                return Ok(None)
+            }
+            Some(selected) => {
+                let (uri, result) = selected.0.as_ref().clone();
+                let result = (idx, uri, result);
+                self.selected.replace(result);
+                Ok(self.selected.as_ref())
+            }
+        }
     }
 
-    pub fn current_selected(&self) -> Option<&(usize, SlimEntry, CrawlResult)> {
+    pub fn current_selected(&self) -> Option<&(usize, AtraUri, SlimCrawlResult)> {
         self.selected.as_ref()
     }
 

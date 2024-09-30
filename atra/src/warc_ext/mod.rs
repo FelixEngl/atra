@@ -20,7 +20,7 @@ mod special_writer;
 mod write;
 
 pub use errors::*;
-pub use instructions::WarcSkipInstruction;
+pub use instructions::*;
 pub use read::read_body;
 #[cfg(test)]
 pub use skip_pointer::*;

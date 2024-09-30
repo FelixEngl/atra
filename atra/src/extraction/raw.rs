@@ -113,14 +113,12 @@ fn find_url_start<R: Iterator<Item = Result<DecodedChar>>>(
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;
-    use std::io::Error;
     use std::ops::Add;
     use super::extract_possible_urls;
     use crate::toolkit::utf8::RobustUtf8Reader;
     use bytes::Buf;
     use encoding_rs::*;
     use itertools::Itertools;
-    use serde::de::Unexpected::Str;
 
     #[test]
     fn can_find_url_1() {

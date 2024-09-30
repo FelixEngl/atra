@@ -2049,10 +2049,11 @@ dependencies = [
 
 [[package]]
 name = "link_scraper"
-version = "0.1.3"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4e0039d12ab057a702d629ed1dca3c0026d64656d0553e09f05262012aca089"
+checksum = "ecb6c65ec22e9f1b02e6113b4ce08c04f882c8c523726ac79663d5fb90e45f89"
 dependencies = [
+ "cfg-if",
  "infer",
  "itertools 0.13.0",
  "kamadak-exif",

@@ -17,7 +17,7 @@ use crate::data::RawVecData;
 use crate::format::supported::InterpretedProcessibleFileFormat;
 use crate::toolkit::digest::labeled_xxh128_digest;
 use crate::warc_ext::errors::WriterError;
-use crate::warc_ext::instructions::WarcSkipInstruction;
+use crate::warc_ext::instructions::{WarcSkipInstructionKind, WarcSkipInstruction};
 use crate::warc_ext::skip_pointer::WarcSkipPointerWithPath;
 use crate::warc_ext::special_writer::SpecialWarcWriter;
 use data_encoding::BASE64;
@@ -139,7 +139,7 @@ pub fn write_warc<W: SpecialWarcWriter>(
             log::trace!("Warc-Write: External");
             let (skip_pointer_path, position) = worker_warc_writer.get_skip_pointer()?;
             assert!(path.exists());
-            log_consume!(builder.external_bin_file_string(path.file_name().unwrap()));
+            log_consume!(builder.external_bin_file_string(&path.to_string()));
             log_consume!(builder.content_length(header_signature_octet_count as u64));
             log_consume!(builder.atra_header_length(header_signature_octet_count as u64));
             log_consume!(builder.truncated_reason(TruncatedReason::Length));
@@ -153,7 +153,7 @@ pub fn write_warc<W: SpecialWarcWriter>(
                     header_signature_octet_count as u64,
                 ),
                 header_signature_octet_count as u32,
-                false,
+                WarcSkipInstructionKind::ExternalFileHint,
             ));
         }
         RawVecData::None => {
@@ -171,7 +171,7 @@ pub fn write_warc<W: SpecialWarcWriter>(
                     header_signature_octet_count as u64,
                 ),
                 header_signature_octet_count as u32,
-                false,
+                WarcSkipInstructionKind::NoData,
             ));
         }
 
@@ -191,7 +191,7 @@ pub fn write_warc<W: SpecialWarcWriter>(
                         header_signature_octet_count as u64,
                     ),
                     header_signature_octet_count as u32,
-                    false,
+                    WarcSkipInstructionKind::NoData,
                 ));
             } else {
                 //todo: Base64
@@ -299,7 +299,7 @@ pub fn write_warc<W: SpecialWarcWriter>(
                 body.len() as u64,
             ),
             header_signature_octet_count as u32,
-            is_base64,
+            if is_base64 { WarcSkipInstructionKind::Base64 } else { WarcSkipInstructionKind::Normal },
         ));
     }
 }

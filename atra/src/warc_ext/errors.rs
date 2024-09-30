@@ -15,6 +15,8 @@
 use crate::io::errors::ErrorWithPath;
 use data_encoding::DecodeError;
 use thiserror::Error;
+use warc::field::{WarcFieldName, WarcFieldValue};
+use warc::reader::WarcCursorReadError;
 use warc::writer::WarcWriterError;
 
 #[derive(Debug, Error)]
@@ -23,6 +25,12 @@ pub enum ReaderError {
     IO(#[from] ErrorWithPath),
     #[error(transparent)]
     Encoding(#[from] DecodeError),
+    #[error(transparent)]
+    Warc(#[from] WarcCursorReadError),
+    #[error(transparent)]
+    Utf8(#[from] std::string::FromUtf8Error),
+    #[error("The field value is {1:?} but this is not a valid value for {0} in the header!!!")]
+    IllegalFieldValue(WarcFieldName, WarcFieldValue),
 }
 
 #[derive(Debug, Error)]
