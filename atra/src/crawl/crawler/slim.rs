@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::borrow::Cow;
 use crate::crawl::crawler::result::{CrawlResult, CrawlResultMeta};
 use crate::data::{RawData, RawVecData};
 use crate::warc_ext::{ReaderError, WarcSkipInstruction};
@@ -76,6 +75,7 @@ impl SlimCrawlResult {
         }
     }
 
+    /// Gets the content, may result in a invalid read result iff the file is already in use.
     pub unsafe fn get_content(&self) -> Result<Either<RawVecData, &[u8]>, ReaderError> {
         Ok(match &self.stored_data_hint {
             StoredDataHint::External(value) => Either::Left(RawData::from_external(value.to_path_buf())),

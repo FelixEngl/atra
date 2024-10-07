@@ -16,18 +16,22 @@ mod db_view;
 
 use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
+use std::fs::File;
+use std::io::{BufWriter, Write};
+use camino::Utf8PathBuf;
 use console::{style, Term};
 use dialoguer::{Select, theme};
 use indicatif::TermLike;
 use itertools::{Either, Itertools};
 use crate::contexts::local::LocalContext;
 use crate::contexts::traits::{SupportsLinkState, SupportsUrlQueue};
-use crate::crawl::{CrawlResult, SlimCrawlResult, StoredDataHint};
+use crate::crawl::{SlimCrawlResult, StoredDataHint};
 use crate::link_state::{LinkStateLike, LinkStateManager};
 use crate::url::AtraUri;
 use crate::warc_ext::WarcSkipInstruction;
 use rocksdb::{Error, IteratorMode};
 use strum::{Display, VariantArray};
+use time::OffsetDateTime;
 use crate::app::view::db_view::{ControlledIterator, SlimEntry};
 use crate::data::RawVecData;
 
@@ -120,18 +124,6 @@ pub fn view(
         }
     }
 
-    fn show_entry(term: &Term, value: Result<(AtraUri, SlimCrawlResult), Error>) {
-        match value {
-            Ok(_) => {}
-            Err(_) => {}
-        }
-    }
-
-
-
-
-
-
     loop {
         let selection = Select::with_theme(
             &theme::ColorfulTheme::default()
@@ -154,7 +146,6 @@ pub fn view(
                     Targets::Entries => {
                         match ControlledIterator::new(&local, 10) {
                             Ok(mut iter) => {
-
                                 fn provide_dialouge(iter: &ControlledIterator, dialouge: &mut Vec<SelectDialougeEntry>) {
                                     dialouge.extend(
                                         iter.current().iter().enumerate().map(
@@ -318,10 +309,37 @@ fn entry_dialouge(term: &Term, uri: &AtraUri, v: &SlimCrawlResult, context: &Loc
             EntryDialougeMode::Export => {
                 let retrieved = unsafe{v.get_content().expect("Failed to retrieve the data!")};
                 let file_name = v.meta.url.url.file_name();
-                if let Some(file_name) = file_name {
-                    todo!("")
+                let file_name = if let Some(file_name) = file_name {
+                    file_name
                 } else {
-
+                    Cow::Owned(format!("./exported_file_{}", OffsetDateTime::now_utc().unix_timestamp().to_string()))
+                };
+                let mut path = Utf8PathBuf::from(file_name.as_ref());
+                let mut ct = 1;
+                while path.exists() {
+                    match path.file_name() {
+                        None => {
+                            path.set_file_name(
+                                format!("exported_file_{}", OffsetDateTime::now_utc().unix_timestamp().to_string())
+                            )
+                        }
+                        Some(_) => {
+                            match file_name.split_once(".") {
+                                None => {
+                                    path.set_file_name(
+                                        format!("{} ({})", file_name, ct)
+                                    );
+                                    ct+=1;
+                                }
+                                Some((a, b)) => {
+                                    path.set_file_name(
+                                        format!("{} ({}).{}", a, ct, b)
+                                    );
+                                    ct+=1;
+                                }
+                            }
+                        }
+                    }
                 }
                 match retrieved {
                     Either::Left(value) => {
@@ -330,15 +348,47 @@ fn entry_dialouge(term: &Term, uri: &AtraUri, v: &SlimCrawlResult, context: &Loc
                                 d.write_line("Nothing to export!").unwrap();
                             }
                             RawVecData::InMemory { data } => {
-
+                                match File::options().write(true).create_new(true).open(path) {
+                                    Ok(file) => {
+                                        match BufWriter::new(file).write_all(data.as_ref()) {
+                                            Ok(_) => {
+                                                d.write_line(format!("Exported to {}", path).as_str()).unwrap()
+                                            }
+                                            Err(err) => {d.write_line(format!("Error: {}", err).as_str()).unwrap();}
+                                        }
+                                        d.write_line(format!("Exported to {}", path).as_str()).unwrap()
+                                    }
+                                    Err(value) => {
+                                        d.write_line(format!("Error: {}", value).as_str()).unwrap();
+                                    }
+                                }
                             }
-                            RawVecData::ExternalFile { path } => {
-
+                            RawVecData::ExternalFile { path: s_path } => {
+                                match std::fs::copy(s_path, path) {
+                                    Ok(_) => {
+                                        d.write_line(format!("Exported to {}", path).as_str()).unwrap()
+                                    }
+                                    Err(value) => {
+                                        d.write_line(format!("Error: {}", value).as_str()).unwrap();
+                                    }
+                                }
                             }
                         }
                     }
                     Either::Right(value) => {
-
+                        match File::options().write(true).create_new(true).open(file_name.as_ref()) {
+                            Ok(file) => {
+                                match BufWriter::new(file).write_all(value) {
+                                    Ok(_) => {
+                                        d.write_line(format!("Exported to {}", path).as_str()).unwrap()
+                                    }
+                                    Err(err) => {d.write_line(format!("Error: {}", err).as_str()).unwrap();}
+                                }
+                            }
+                            Err(value) => {
+                                d.write_line(format!("Error: {}", value).as_str()).unwrap();
+                            }
+                        }
                     }
                 }
             }
