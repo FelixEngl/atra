@@ -17,7 +17,6 @@ mod db_view;
 use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
-use std::io;
 use std::io::{BufWriter, Write};
 use camino::Utf8PathBuf;
 use console::{style, Term};
@@ -29,7 +28,7 @@ use crate::crawl::{SlimCrawlResult, StoredDataHint};
 use crate::link_state::{LinkStateLike, LinkStateManager};
 use crate::url::AtraUri;
 use crate::warc_ext::WarcSkipInstruction;
-use rocksdb::{Error, IteratorMode};
+use rocksdb::{Direction, Error, IteratorMode};
 use strum::{Display, VariantArray};
 use time::OffsetDateTime;
 use crate::app::view::db_view::{ControlledIterator, SlimEntry};
@@ -90,9 +89,6 @@ pub fn view(
         return;
     }
 
-    // println!("Currently only legacy view is supported.");
-    // view_legacy(local, internals, extracted_links, headers);
-
     fn print_stats(term: &Term, local: &LocalContext) {
         term.write_line("##### ATRA STATS #####").unwrap();
         term.write_line(&format!("Links in Queue:        {}", local.url_queue().len_blocking())).unwrap();
@@ -101,7 +97,7 @@ pub fn view(
         term.write_line("Press Enter to continue...").unwrap();
         term.flush().unwrap();
         term.read_line().unwrap();
-        term.clear_last_lines(6).unwrap()
+        term.clear_screen().unwrap()
     }
 
     #[inline(always)]
@@ -149,7 +145,23 @@ pub fn view(
                     Targets::Entries => {
                         match ControlledIterator::new(&local, 10) {
                             Ok(mut iter) => {
-                                fn provide_dialouge(iter: &ControlledIterator, dialouge: &mut Vec<SelectDialougeEntry>) {
+                                fn provide_dialouge(iter: &ControlledIterator, dialouge: &mut Vec<SelectDialougeEntry>) -> (Option<usize>, Option<usize>) {
+                                    let result = if iter.end_reached() {
+                                        match iter.direction() {
+                                            Direction::Forward => {
+                                                dialouge.push(SelectDialougeEntry::Previous);
+                                                (Some(0), None)
+                                            }
+                                            Direction::Reverse => {
+                                                dialouge.push(SelectDialougeEntry::Next);
+                                                (None, Some(0))
+                                            }
+                                        }
+                                    } else {
+                                        dialouge.push(SelectDialougeEntry::Previous);
+                                        dialouge.push(SelectDialougeEntry::Next);
+                                        (Some(0), Some(1))
+                                    };
                                     dialouge.extend(
                                         iter.current().iter().enumerate().map(
                                             |(idx, value)| {
@@ -157,19 +169,18 @@ pub fn view(
                                             }
                                         )
                                     );
-                                    dialouge.push(SelectDialougeEntry::Previous);
-                                    dialouge.push(SelectDialougeEntry::Next);
                                     dialouge.push(SelectDialougeEntry::Quit);
+                                    result
                                 }
 
                                 let mut col = Vec::with_capacity(iter.selection_size() + 3);
                                 provide_dialouge(&iter, &mut col);
-
+                                let mut default = 1;
                                 loop {
                                     term.clear_screen().unwrap();
                                     let selected = Select::with_theme(&theme::ColorfulTheme::default())
                                         .with_prompt("Select a target:")
-                                        .default(0)
+                                        .default(default)
                                         .clear(true)
                                         .report(false)
                                         .items(col.as_slice())
@@ -181,7 +192,7 @@ pub fn view(
                                             term.write_line("Press Enter to continue...").unwrap();
                                             term.flush().unwrap();
                                             term.read_line().unwrap();
-                                            term.clear_line().unwrap()
+                                            term.clear_screen().unwrap()
                                         }
                                         Some(idx) => {
                                             match col.get(idx).unwrap() {
@@ -192,7 +203,7 @@ pub fn view(
                                                             term.write_line("Nothing to see... (press any key to continue)").unwrap();
                                                             term.write_line("Press Enter to continue...").unwrap();
                                                             term.flush().unwrap();
-                                                            term.read_line().unwrap();
+                                                            term.clear_screen().unwrap();
                                                         }
                                                         Some((_, uri, target)) => {
                                                             entry_dialouge(&term, uri, target, &local);
@@ -202,12 +213,22 @@ pub fn view(
                                                 SelectDialougeEntry::Next => {
                                                     col.clear();
                                                     iter.next().unwrap();
-                                                    provide_dialouge(&iter, &mut col);
+                                                    default = match provide_dialouge(&iter, &mut col) {
+                                                        (None, Some(value)) => value,
+                                                        (Some(value), None) => value,
+                                                        (Some(_), Some(value)) => value,
+                                                        _ => unreachable!()
+                                                    };
                                                 }
                                                 SelectDialougeEntry::Previous => {
                                                     col.clear();
                                                     iter.previous().unwrap();
-                                                    provide_dialouge(&iter, &mut col);
+                                                    default = match provide_dialouge(&iter, &mut col) {
+                                                        (None, Some(value)) => value,
+                                                        (Some(value), None) => value,
+                                                        (Some(value), Some(_)) => value,
+                                                        _ => unreachable!()
+                                                    };
                                                 }
                                                 SelectDialougeEntry::Quit => {
                                                     term.clear_screen().unwrap();
@@ -296,10 +317,10 @@ fn entry_dialouge(term: &Term, uri: &AtraUri, v: &SlimCrawlResult, context: &Loc
         write!(&mut view_data, "        Redirect: {redirect}").unwrap();
     }
     let view_data = view_data;
-    let mut d = DeletingTerm::new(term);
     loop {
-        d.write_line(&view_data).unwrap();
-        d.flush().unwrap();
+        term.clear_screen().unwrap();
+        term.write_line(&view_data).unwrap();
+        term.flush().unwrap();
         let selection = Select::with_theme(&theme::ColorfulTheme::default())
             .with_prompt("What to do?")
             .default(0)
@@ -326,72 +347,77 @@ fn entry_dialouge(term: &Term, uri: &AtraUri, v: &SlimCrawlResult, context: &Loc
                     Cow::Owned(format!("./exported_file_{}", OffsetDateTime::now_utc().unix_timestamp().to_string()))
                 };
 
-                let file_name = match &v.meta.file_information.format {
-                    InterpretedProcessibleFileFormat::HTML => {
-                        if !file_name.as_ref().ends_with(".html") {
-                            Cow::Owned(format!("{}.html", file_name))
-                        } else {
-                            file_name
+                let file_name = if file_name.contains('.') {
+                    file_name
+                } else {
+                    match &v.meta.file_information.format {
+                        InterpretedProcessibleFileFormat::HTML => {
+                            if !file_name.as_ref().ends_with(".html") {
+                                Cow::Owned(format!("{}.html", file_name))
+                            } else {
+                                file_name
+                            }
                         }
-                    }
-                    InterpretedProcessibleFileFormat::PDF => {
-                        if !file_name.as_ref().ends_with(".pdf") {
-                            Cow::Owned(format!("{}.pdf", file_name))
-                        } else {
-                            file_name
+                        InterpretedProcessibleFileFormat::PDF => {
+                            if !file_name.as_ref().ends_with(".pdf") {
+                                Cow::Owned(format!("{}.pdf", file_name))
+                            } else {
+                                file_name
+                            }
                         }
-                    }
-                    InterpretedProcessibleFileFormat::JavaScript => {
-                        if !file_name.as_ref().ends_with(".js") {
-                            Cow::Owned(format!("{}.js", file_name))
-                        } else {
-                            file_name
+                        InterpretedProcessibleFileFormat::JavaScript => {
+                            if !file_name.as_ref().ends_with(".js") {
+                                Cow::Owned(format!("{}.js", file_name))
+                            } else {
+                                file_name
+                            }
                         }
-                    }
-                    InterpretedProcessibleFileFormat::PlainText | InterpretedProcessibleFileFormat::StructuredPlainText => {
-                        if !file_name.as_ref().ends_with(".txt") {
-                            Cow::Owned(format!("{}.txt", file_name))
-                        } else {
-                            file_name
+                        InterpretedProcessibleFileFormat::PlainText | InterpretedProcessibleFileFormat::StructuredPlainText => {
+                            if !file_name.as_ref().ends_with(".txt") {
+                                Cow::Owned(format!("{}.txt", file_name))
+                            } else {
+                                file_name
+                            }
                         }
-                    }
-                    InterpretedProcessibleFileFormat::JSON => {
-                        if !file_name.as_ref().ends_with(".json") {
-                            Cow::Owned(format!("{}.json", file_name))
-                        } else {
-                            file_name
+                        InterpretedProcessibleFileFormat::JSON => {
+                            if !file_name.as_ref().ends_with(".json") {
+                                Cow::Owned(format!("{}.json", file_name))
+                            } else {
+                                file_name
+                            }
                         }
-                    }
-                    InterpretedProcessibleFileFormat::XML => {
-                        if !file_name.as_ref().ends_with(".xml") {
-                            Cow::Owned(format!("{}.xml", file_name))
-                        } else {
-                            file_name
+                        InterpretedProcessibleFileFormat::XML => {
+                            if !file_name.as_ref().ends_with(".xml") {
+                                Cow::Owned(format!("{}.xml", file_name))
+                            } else {
+                                file_name
+                            }
                         }
-                    }
-                    InterpretedProcessibleFileFormat::SVG => {
-                        if !file_name.as_ref().ends_with(".svg") {
-                            Cow::Owned(format!("{}.svg", file_name))
-                        } else {
-                            file_name
+                        InterpretedProcessibleFileFormat::SVG => {
+                            if !file_name.as_ref().ends_with(".svg") {
+                                Cow::Owned(format!("{}.svg", file_name))
+                            } else {
+                                file_name
+                            }
                         }
-                    }
-                    InterpretedProcessibleFileFormat::RTF => {
-                        if !file_name.as_ref().ends_with(".rtf") {
-                            Cow::Owned(format!("{}.rtf", file_name))
-                        } else {
-                            file_name
+                        InterpretedProcessibleFileFormat::RTF => {
+                            if !file_name.as_ref().ends_with(".rtf") {
+                                Cow::Owned(format!("{}.rtf", file_name))
+                            } else {
+                                file_name
+                            }
                         }
-                    }
-                    InterpretedProcessibleFileFormat::ZIP => {
-                        if !file_name.as_ref().ends_with(".zip") {
-                            Cow::Owned(format!("{}.zip", file_name))
-                        } else {
-                            file_name
+                        InterpretedProcessibleFileFormat::ZIP => {
+                            if !file_name.as_ref().ends_with(".zip") {
+                                Cow::Owned(format!("{}.zip", file_name))
+                            } else {
+                                file_name
+                            }
                         }
+                        _ => file_name
                     }
-                    _ => file_name
                 };
+
                 let mut path = Utf8PathBuf::from(".");
                 path.set_file_name(file_name.as_ref());
                 let mut ct = 1;
@@ -424,30 +450,30 @@ fn entry_dialouge(term: &Term, uri: &AtraUri, v: &SlimCrawlResult, context: &Loc
                     Either::Left(value) => {
                         match value {
                             RawVecData::None => {
-                                d.write_line("Nothing to export!").unwrap();
+                                term.write_line("Nothing to export!").unwrap();
                             }
                             RawVecData::InMemory { data } => {
                                 match File::options().write(true).create_new(true).open(&path) {
                                     Ok(file) => {
                                         match BufWriter::new(file).write_all(data.as_ref()) {
                                             Ok(_) => {
-                                                d.write_line(format!("Exported to {}", &path).as_str()).unwrap()
+                                                term.write_line(format!("Exported to {}", &path).as_str()).unwrap()
                                             }
-                                            Err(err) => {d.write_line(format!("Error: {}", err).as_str()).unwrap();}
+                                            Err(err) => { term.write_line(format!("Error: {}", err).as_str()).unwrap();}
                                         }
                                     }
                                     Err(value) => {
-                                        d.write_line(format!("Error: {}", value).as_str()).unwrap();
+                                        term.write_line(format!("Error: {}", value).as_str()).unwrap();
                                     }
                                 }
                             }
                             RawVecData::ExternalFile { path: s_path } => {
                                 match std::fs::copy(s_path, &path) {
                                     Ok(_) => {
-                                        d.write_line(format!("Exported to {}", &path).as_str()).unwrap()
+                                        term.write_line(format!("Exported to {}", &path).as_str()).unwrap()
                                     }
                                     Err(value) => {
-                                        d.write_line(format!("Error: {}", value).as_str()).unwrap();
+                                        term.write_line(format!("Error: {}", value).as_str()).unwrap();
                                     }
                                 }
                             }
@@ -458,13 +484,13 @@ fn entry_dialouge(term: &Term, uri: &AtraUri, v: &SlimCrawlResult, context: &Loc
                             Ok(file) => {
                                 match BufWriter::new(file).write_all(value) {
                                     Ok(_) => {
-                                        d.write_line(format!("Exported to {}", &path).as_str()).unwrap()
+                                        term.write_line(format!("Exported to {}", &path).as_str()).unwrap()
                                     }
-                                    Err(err) => {d.write_line(format!("Error: {}", err).as_str()).unwrap();}
+                                    Err(err) => { term.write_line(format!("Error: {}", err).as_str()).unwrap();}
                                 }
                             }
                             Err(value) => {
-                                d.write_line(format!("Error: {}", value).as_str()).unwrap();
+                                term.write_line(format!("Error: {}", value).as_str()).unwrap();
                             }
                         }
                     }
@@ -472,20 +498,20 @@ fn entry_dialouge(term: &Term, uri: &AtraUri, v: &SlimCrawlResult, context: &Loc
             }
             EntryDialougeMode::OutgoingLinks => {
                 if let Some(ref extracted_links) = v.meta.links {
-                    d.write_line("    Extracted Links:").unwrap();
+                    term.write_line("    Extracted Links:").unwrap();
                     for (i, value) in extracted_links.iter().enumerate() {
-                        d.write_line(format!("        {}: {}", i, value).as_str()).unwrap();
+                        term.write_line(format!("        {}: {}", i, value).as_str()).unwrap();
                     }
                 } else {
-                    d.write_line("    Extracted Links: -!-").unwrap()
+                    term.write_line("    Extracted Links: -!-").unwrap()
                 }
             }
             EntryDialougeMode::Headers => {
                 if let Some(ref headers) = v.meta.headers {
                     if !headers.is_empty() {
-                        d.write_line("    Headers:").unwrap();
+                        term.write_line("    Headers:").unwrap();
                         for (k, v) in headers.iter() {
-                            d.write_line(
+                            term.write_line(
                                 format!(
                                     "        \"{}\": \"{}\"",
                                     k,
@@ -494,17 +520,17 @@ fn entry_dialouge(term: &Term, uri: &AtraUri, v: &SlimCrawlResult, context: &Loc
                             ).unwrap();
                         }
                     } else {
-                        d.write_line("    Headers: -!-").unwrap();
+                        term.write_line("    Headers: -!-").unwrap();
                     }
                 } else {
-                    d.write_line("    Headers: -!-").unwrap();
+                    term.write_line("    Headers: -!-").unwrap();
                 }
             }
             EntryDialougeMode::Internals => {
-                d.write_line("    Internal Storage:").unwrap();
+                term.write_line("    Internal Storage:").unwrap();
                 match v.stored_data_hint {
                     StoredDataHint::External(ref value) => {
-                        d.write_line(format!("        External: {} - {}", value.exists(), value).as_str()).unwrap();
+                        term.write_line(format!("        External: {} - {}", value.exists(), value).as_str()).unwrap();
                     }
                     StoredDataHint::Warc(ref value) => match value {
                         WarcSkipInstruction::Single {
@@ -512,7 +538,7 @@ fn entry_dialouge(term: &Term, uri: &AtraUri, v: &SlimCrawlResult, context: &Loc
                             kind,
                             header_signature_octet_count,
                         } => {
-                            d.write_line(format!(
+                            term.write_line(format!(
                                 "        Single Warc: {} - {} ({}, {}, {:?})",
                                 pointer.path().exists(),
                                 pointer.path(),
@@ -526,12 +552,12 @@ fn entry_dialouge(term: &Term, uri: &AtraUri, v: &SlimCrawlResult, context: &Loc
                             header_signature_octet_count,
                             is_base64,
                         } => {
-                            d.write_line(format!(
+                            term.write_line(format!(
                                 "        Multiple Warc: ({}, {})",
                                 is_base64, header_signature_octet_count
                             ).as_str()).unwrap();
                             for pointer in pointers {
-                                d.write_line(format!(
+                                term.write_line(format!(
                                     "            {} - {} ({}, {}, {:?})",
                                     pointer.path().exists(),
                                     pointer.path(),
@@ -543,61 +569,20 @@ fn entry_dialouge(term: &Term, uri: &AtraUri, v: &SlimCrawlResult, context: &Loc
                         }
                     },
                     StoredDataHint::InMemory(ref value) => {
-                        d.write_line(format!("        InMemory: {}", value.len()).as_str()).unwrap();
+                        term.write_line(format!("        InMemory: {}", value.len()).as_str()).unwrap();
                     }
                     StoredDataHint::None => {
-                        d.write_line("        None!").unwrap()
+                        term.write_line("        None!").unwrap()
                     }
                 }
             }
         }
-        d.write_line("Press enter to continue...").unwrap();
-        d.flush().unwrap();
-        d.read_line().unwrap();
-        d.clear().unwrap()
+        term.write_line("\nPress enter to continue...").unwrap();
+        term.flush().unwrap();
+        term.read_line().unwrap();
     }
 }
 
-
-struct DeletingTerm<'a> {
-    term: &'a Term,
-    ct: usize
-}
-
-impl<'a> DeletingTerm<'a> {
-    pub fn new(term: &'a Term) -> Self {
-        Self { term, ct: 0 }
-    }
-
-    pub fn write_line(&mut self, line: &str) -> std::io::Result<()> {
-        self.ct += line.chars().filter(|value| '\n'.eq(value)).count() + 1;
-        self.term.write_line(line)
-    }
-
-    pub fn read_line(&self) -> io::Result<String> {
-        // self.ct += 1;
-        self.term.read_line()
-    }
-
-    pub fn flush(&self) -> io::Result<()> {
-        self.term.flush()
-    }
-
-    pub fn clear(&mut self) -> io::Result<()> {
-        if self.ct == 0 {
-            return Ok(())
-        }
-        self.term.clear_last_lines(self.ct)?;
-        self.ct = 0;
-        Ok(())
-    }
-}
-
-impl<'a> Drop for DeletingTerm<'a>  {
-    fn drop(&mut self) {
-        let _ = self.clear();
-    }
-}
 
 fn view_legacy(local: LocalContext, internals: bool, extracted_links: bool, headers: bool) {
     println!("##### ATRA STATS #####");

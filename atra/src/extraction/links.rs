@@ -44,13 +44,13 @@ impl Display for ExtractedLink {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             ExtractedLink::OnSeed { url, .. } => {
-                write!(f, "OnSite::{}", url)
+                write!(f, "OnSite: <{}> {}", url.url, url.depth)
             }
             ExtractedLink::Outgoing { url, .. } => {
-                write!(f, "Outgoing::{}", url)
+                write!(f, "Outgoing: <{}> {}", url.url, url.depth)
             }
             ExtractedLink::Data { base, url, .. } => {
-                write!(f, "Data::{} - {}", base, url)
+                write!(f, "Data: <{}> {} - <{}>", base.url, base.depth, url.url)
             }
         }
     }

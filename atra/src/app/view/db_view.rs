@@ -85,6 +85,9 @@ impl<'a> ControlledIterator<'a> {
                         None
                     }
                 } else {
+                    if self.end_reached {
+                        return Ok(0)
+                    }
                     None
                 }
             }
@@ -104,6 +107,8 @@ impl<'a> ControlledIterator<'a> {
                 }
             }
         };
+
+
 
         if let Some(mode) = mode {
             self.iter.set_mode(mode);
