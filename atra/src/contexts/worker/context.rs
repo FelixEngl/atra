@@ -317,20 +317,7 @@ where
             .await
             .map_err(CrawlWriteError::SlimError)?
         {
-            match &found.stored_data_hint {
-                StoredDataHint::External(_)
-                | StoredDataHint::None
-                | StoredDataHint::InMemory(_) => {
-                    return Ok(Some(found.inflate(None)));
-                }
-                StoredDataHint::Warc(pointers) => {
-                    let read = pointers
-                        .read_in_context(Some(&self.worker_warc_writer))
-                        .await?;
-                    return Ok(Some(found.inflate(read)));
-                }
-                StoredDataHint::Associated => unreachable!(),
-            }
+            Ok(Some(found.inflate(Some(&self.worker_warc_writer)).await?))
         } else {
             Ok(None)
         }

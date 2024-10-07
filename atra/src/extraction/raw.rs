@@ -113,14 +113,12 @@ fn find_url_start<R: Iterator<Item = Result<DecodedChar>>>(
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;
-    use std::io::Error;
     use std::ops::Add;
     use super::extract_possible_urls;
     use crate::toolkit::utf8::RobustUtf8Reader;
     use bytes::Buf;
     use encoding_rs::*;
     use itertools::Itertools;
-    use serde::de::Unexpected::Str;
 
     #[test]
     fn can_find_url_1() {
@@ -221,7 +219,7 @@ mod test {
     fn test_encoding_method(){
         let x = ['A'..='Z', 'a'..='z', '0'..='9'].into_iter().flatten().collect::<String>().add("^,.-;:_+*/\\[](){}?~#'\"");
         for enc in ENCODINGS {
-            let (a, b, c) = enc.encode(&x);
+            let (a, b, _) = enc.encode(&x);
             assert_eq!(b, *enc);
             let mut y = String::new();
             for value in RobustUtf8Reader::new(a.reader()).map_ok(|value| value.ch) {
@@ -229,7 +227,7 @@ mod test {
                     Ok(value) => {
                         y.push(value);
                     }
-                    Err(err) => {
+                    Err(_) => {
                         y.push('°')
                     }
                 }
@@ -239,7 +237,7 @@ mod test {
         println!("-----");
         let x = String::from_utf8((0..128u8).collect_vec()).unwrap();
         for enc in ENCODINGS {
-            let (a, b, c) = enc.encode(&x);
+            let (a, b, _) = enc.encode(&x);
             assert_eq!(b, *enc);
             let mut y = String::new();
             for value in RobustUtf8Reader::new(a.reader()).map_ok(|value| value.ch) {
@@ -247,7 +245,7 @@ mod test {
                     Ok(value) => {
                         y.push(value);
                     }
-                    Err(err) => {
+                    Err(_) => {
                         y.push('°')
                     }
                 }

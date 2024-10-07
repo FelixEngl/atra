@@ -1,6 +1,6 @@
 [package]
 name = "atra"
-version = "0.1.2"
+version = "0.1.2-pre1"
 edition = "2021"
 
 # https://en.wikipedia.org/wiki/Erigone_atra
@@ -172,14 +172,14 @@ svm.workspace = true
 
 # Console
 console = {workspace = true}
-#dialoguer = {workspace = true}
-#indicatif = {workspace = true}
+dialoguer = {workspace = true}
+indicatif = {workspace = true}
 
 [target.'cfg(windows)'.dependencies]
-link_scraper = { version = "0.1", features = ["plaintext", "xml", "xlink", "svg", "ooxml", "odf", "rtf", "image"] }
+link_scraper = { version = "0.2", features = ["plaintext", "xml", "xlink", "svg", "ooxml", "odf", "rtf", "image"] }
 
 [target.'cfg(not(windows))'.dependencies]
-link_scraper = { version = "0.1", features = ["pdf", "plaintext", "xml", "xlink", "svg", "ooxml", "odf", "rtf", "image"] }
+link_scraper = { version = "0.2", features = ["pdf", "plaintext", "xml", "xlink", "svg", "ooxml", "odf", "rtf", "image"] }
 
 # TOR
 # libtor-sys = "47.13.0"

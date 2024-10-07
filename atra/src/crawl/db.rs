@@ -91,4 +91,8 @@ impl CrawlDB {
     ) -> DBIteratorWithThreadMode<DBWithThreadMode<MultiThreaded>> {
         execute_iter(&self.db, self.cf_handle(), mode)
     }
+
+    pub fn db(&self) -> &DB {
+        &self.db
+    }
 }

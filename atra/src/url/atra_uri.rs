@@ -81,6 +81,12 @@ impl AtraUri {
         }
     }
 
+    pub fn file_name(&self) -> Option<Cow<str>> {
+        match self { AtraUri::Url(value) => {
+            Some(Cow::Borrowed(value.path_segments()?.last()?))
+        } }
+    }
+
     /// Returns all file endings of the url
     pub fn get_file_endings(&self) -> Option<Vec<&str>> {
         match self {

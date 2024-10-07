@@ -22,16 +22,16 @@ pub struct WarcSkipPointer {
     file_offset: u64,
     /// The number of octets in the whole body
     body_octet_count: u64,
-    /// The size of the warc header in bytes
-    warc_header_offset: u32,
+    /// The number of octets in the header
+    warc_header_octet_count: u32,
 }
 
 impl WarcSkipPointer {
-    pub fn new(file_offset: u64, warc_header_offset: u32, body_octet_count: u64) -> Self {
+    pub fn new(file_offset: u64, warc_header_octet_count: u32, body_octet_count: u64) -> Self {
         Self {
             file_offset,
             body_octet_count,
-            warc_header_offset,
+            warc_header_octet_count,
         }
     }
 
@@ -43,8 +43,8 @@ impl WarcSkipPointer {
         self.body_octet_count
     }
 
-    pub fn warc_header_offset(&self) -> u32 {
-        self.warc_header_offset
+    pub fn warc_header_octet_count(&self) -> u32 {
+        self.warc_header_octet_count
     }
 }
 
@@ -69,7 +69,7 @@ impl WarcSkipPointerWithPath {
     delegate::delegate! {
         to self.skip_pointer {
             pub fn file_offset(&self) -> u64;
-            pub fn warc_header_offset(&self) -> u32;
+            pub fn warc_header_octet_count(&self) -> u32;
             pub fn body_octet_count(&self) -> u64;
         }
     }

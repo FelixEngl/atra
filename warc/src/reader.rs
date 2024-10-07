@@ -381,10 +381,9 @@ where
             ));
         }
         unsafe {
-            match self.get_current_header()? {
+            match self.get_current_header()?.cloned() {
                 None => Ok(None),
                 Some(header) => {
-                    let header = header.clone();
                     self.set_current_bytes_in_body()?;
                     if self.current_bytes_in_body > ByteUnit::Megabyte(10).as_u64() {
                         return Ok(Some((header, Body::Complete(self.read_body_complete()?))));
@@ -394,6 +393,18 @@ where
                 }
             }
         }
+    }
+
+    pub fn read_or_get_header(&mut self) -> Result<Option<&WarcHeader>, WarcCursorReadError> {
+        if self.state != State::ExpectHeader {
+            return Err(WarcCursorReadError::BadStateError(
+                Header,
+                self.state,
+                "When reading an entry, the state has to be expecting a header first!",
+            ));
+        }
+
+        unsafe { self.get_current_header() }
     }
 }
 
@@ -491,8 +502,8 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::warc::reader::{WarcCursor, WarcCursorReadError};
-    use crate::warc::writer::test::build_test_warc;
+    use crate::reader::{WarcCursor, WarcCursorReadError};
+    use crate::writer::test::build_test_warc;
     use std::io::Cursor;
 
     #[test]

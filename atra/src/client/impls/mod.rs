@@ -159,7 +159,7 @@ impl AtraClient for ClientWithUserAgent {
                     temp: NamedTempFile,
                     context: &impl SupportsFileSystemAccess,
                     target_url_str: &str,
-                ) -> std::result::Result<RawData<T>, RawData<T>> {
+                ) -> Result<RawData<T>, RawData<T>> {
                     let path = context.fs().create_unique_path_for_dat_file(target_url_str);
                     match temp.persist(&path) {
                         Ok(_) => Ok(RawData::from_external(path)),

@@ -132,7 +132,7 @@ impl Default for CrawlConfig {
             crawl_forms: false,
             crawl_onclick_by_heuristic: false,
             store_only_html_in_warc: true,
-            store_big_file_hints_in_warc: false,
+            store_big_file_hints_in_warc: true,
             apply_gdbr_filter_if_possible: true,
             headers: None,
             delay: None,

@@ -114,7 +114,7 @@ impl Display for Depth {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "DepthDescriptor(dow:{}, d2s:{}, td2s: {})",
+            "DepthDescriptor(depth_on_website:{}, distance_to_seed:{}, total_distance_to_seed: {})",
             self.depth_on_website, self.distance_to_seed, self.total_distance_to_seed
         )
     }

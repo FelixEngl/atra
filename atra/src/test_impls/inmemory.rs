@@ -131,7 +131,7 @@ where
             .read()
             .unwrap()
             .iter()
-            .map(|value| (value.0.clone(), value.1.clone().inflate(None)))
+            .map(|value| (value.0.clone(), unsafe{value.1.clone().inflate_unchecked().unwrap()}))
             .collect();
         let found = self.link_state_manager.state.read().unwrap().clone();
         (data, found)
@@ -501,7 +501,7 @@ where
     ) -> Result<Option<CrawlResult>, DatabaseError> {
         self.retrieve_slim_crawled_website(url)
             .await
-            .map(|value| value.map(|value| value.inflate(None)))
+            .map(|value| value.map(|value| unsafe{value.inflate_unchecked().unwrap()}))
     }
 }
 

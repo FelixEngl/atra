@@ -487,12 +487,16 @@ async fn extract_links_raw(
     }
 }
 
-macro_rules! create_extraction_fn {
-    ($vis: vis $name: ident(raw, $n: literal, $($tt:tt)+)) => {
+macro_rules! define_method {
+    ($vis: vis $name: ident raw@(
+        name: $n: literal
+        in_memory: fn($in_var: ident) $in_block: block
+        off_memory: fn($off_var: ident) $off_block: block
+    )) => {
         $vis async fn $name(extractor: &impl ExtractorMethodMetaFactory, data: &ExtractorData<'_>, use_base: bool, output: &mut ExtractorResult) -> Result<usize, LinkExtractionError> {
             match &data.raw_data {
-                RawVecData::InMemory { data: in_memory_data } => {
-                    match $($tt)+::scrape(&in_memory_data) {
+                RawVecData::InMemory { data: $in_var } => {
+                    match $in_block {
                         Ok(result) => {
                             let mut ct = 0;
                             for value in result {
@@ -518,18 +522,45 @@ macro_rules! create_extraction_fn {
                         }
                     }
                 }
-                RawVecData::ExternalFile { .. } => { Err(LinkExtractionError::CanNotStoreInMemory) }
+                RawVecData::ExternalFile { path: $off_var } => {
+                    match $off_block {
+                        Ok(result) => {
+                            let mut ct = 0;
+                            for value in result {
+                                match ExtractedLink::pack(&data.url, &value.url, extractor.new_without_meta(), use_base) {
+                                    Ok(link) => {
+                                        if output.register_link(link) {
+                                            ct += 1;
+                                        }
+                                    }
+                                    Err(error) => {
+                                        log::debug!("Was not able to parse {:?} from {}. Error: {}", value, $n, error)
+                                    }
+                                }
+                            }
+                            Ok(ct)
+                        }
+                        Err(err) => {
+                            log::error!("Failed to scrape {}: {err:?}", $n);
+                            Err(LinkExtractionError::ExtractionErrors {
+                                errors: vec![err.into()],
+                                successes: 0
+                            })
+                        }
+                    }
+                }
                 RawVecData::None => { Ok(0) }
             }
         }
-
     };
-
-    ($vis: vis $name: ident(decoded, $n: literal, $($tt:tt)+)) => {
+    ($vis: vis $name: ident raw@(
+        name: $n: literal
+        in_memory: fn($in_var: ident) $in_block: block
+    )) => {
         $vis async fn $name(extractor: &impl ExtractorMethodMetaFactory, data: &ExtractorData<'_>, use_base: bool, output: &mut ExtractorResult) -> Result<usize, LinkExtractionError> {
-            match &data.decoded {
-                Decoded::InMemory { data: in_memory_data, .. } => {
-                    match $($tt)+::scrape(in_memory_data.as_bytes()) {
+            match &data.raw_data {
+                RawVecData::InMemory { data: $in_var } => {
+                    match $in_block {
                         Ok(result) => {
                             let mut ct = 0;
                             for value in result {
@@ -555,40 +586,203 @@ macro_rules! create_extraction_fn {
                         }
                     }
                 }
-                Decoded::OffMemory { .. } => { Err(LinkExtractionError::CanNotStoreInMemory) }
+                RawVecData::ExternalFile { .. } => Err(LinkExtractionError::CanNotStoreInMemory),
+                RawVecData::None => { Ok(0) }
+            }
+        }
+    };
+    ($vis: vis $name: ident decoded@(
+        name: $n: literal
+        in_memory: fn($in_var: ident) $in_block: block
+        off_memory: fn($off_var: ident) $off_block: block
+    )) => {
+        $vis async fn $name(extractor: &impl ExtractorMethodMetaFactory, data: &ExtractorData<'_>, use_base: bool, output: &mut ExtractorResult) -> Result<usize, LinkExtractionError> {
+            match &data.decoded {
+                Decoded::InMemory { data: $in_var, .. } => {
+                    match $in_block {
+                        Ok(result) => {
+                            let mut ct = 0;
+                            for value in result {
+                                match ExtractedLink::pack(&data.url, &value.url, extractor.new_without_meta(), use_base) {
+                                    Ok(link) => {
+                                        if output.register_link(link) {
+                                            ct += 1;
+                                        }
+                                    }
+                                    Err(error) => {
+                                        log::debug!("Was not able to parse {:?} from {}. Error: {}", value, $n, error)
+                                    }
+                                }
+                            }
+                            Ok(ct)
+                        }
+                        Err(err) => {
+                            log::error!("Failed to scrape {}: {err:?}", $n);
+                            Err(LinkExtractionError::ExtractionErrors {
+                                errors: vec![err.into()],
+                                successes: 0
+                            })
+                        }
+                    }
+                }
+                Decoded::OffMemory { reference: $off_var, .. } => {
+                    match $off_block {
+                        Ok(result) => {
+                            let mut ct = 0;
+                            for value in result {
+                                match ExtractedLink::pack(&data.url, &value.url, extractor.new_without_meta(), use_base) {
+                                    Ok(link) => {
+                                        if output.register_link(link) {
+                                            ct += 1;
+                                        }
+                                    }
+                                    Err(error) => {
+                                        log::debug!("Was not able to parse {:?} from {}. Error: {}", value, $n, error)
+                                    }
+                                }
+                            }
+                            Ok(ct)
+                        }
+                        Err(err) => {
+                            log::error!("Failed to scrape {}: {err:?}", $n);
+                            Err(LinkExtractionError::ExtractionErrors {
+                                errors: vec![err.into()],
+                                successes: 0
+                            })
+                        }
+                    }
+                }
                 Decoded::None => { Ok(0) }
             }
         }
-
+    };
+    ($vis: vis $name: ident decoded@(
+        name: $n: literal
+        in_memory: fn($in_var: ident) $in_block: block
+    )) => {
+        $vis async fn $name(extractor: &impl ExtractorMethodMetaFactory, data: &ExtractorData<'_>, use_base: bool, output: &mut ExtractorResult) -> Result<usize, LinkExtractionError> {
+            match &data.decoded {
+                Decoded::InMemory { data: $in_var, .. } => {
+                    match $in_block {
+                        Ok(result) => {
+                            let mut ct = 0;
+                            for value in result {
+                                match ExtractedLink::pack(&data.url, &value.url, extractor.new_without_meta(), use_base) {
+                                    Ok(link) => {
+                                        if output.register_link(link) {
+                                            ct += 1;
+                                        }
+                                    }
+                                    Err(error) => {
+                                        log::debug!("Was not able to parse {:?} from {}. Error: {}", value, $n, error)
+                                    }
+                                }
+                            }
+                            Ok(ct)
+                        }
+                        Err(err) => {
+                            log::error!("Failed to scrape {}: {err:?}", $n);
+                            Err(LinkExtractionError::ExtractionErrors {
+                                errors: vec![err.into()],
+                                successes: 0
+                            })
+                        }
+                    }
+                }
+                Decoded::OffMemory { .. } => Err(LinkExtractionError::CanNotStoreInMemory),
+                Decoded::None => { Ok(0) }
+            }
+        }
     };
 }
 
-create_extraction_fn!(extract_links_rtf(raw, "rtf", link_scraper::formats::rtf));
-create_extraction_fn!(extract_links_ooxml(
-    raw,
-    "ooxml",
-    link_scraper::formats::ooxml
-));
-create_extraction_fn!(extract_links_odf(raw, "odf", link_scraper::formats::odf));
-create_extraction_fn!(extract_links_exif(
-    raw,
-    "exif",
-    link_scraper::formats::image
-));
-create_extraction_fn!(extract_links_xml(
-    decoded,
-    "xml",
-    link_scraper::formats::xml
-));
-create_extraction_fn!(extract_links_svg(
-    decoded,
-    "svg",
-    link_scraper::formats::xml::svg
-));
-create_extraction_fn!(extract_links_xlink(
-    decoded,
-    "xlink",
-    link_scraper::formats::xml::xlink
-));
+define_method! {
+    extract_links_xml raw@(
+        name:"xml"
+        in_memory: fn(data) {
+            link_scraper::formats::xml::scrape_from_slice(data)
+        }
+        off_memory: fn(path) {
+            link_scraper::formats::xml::scrape_from_file(path)
+        }
+    )
+}
+
+define_method! {
+    extract_links_svg raw@(
+        name:"svg"
+        in_memory: fn(data) {
+            link_scraper::formats::xml::svg::scrape_from_slice(data)
+        }
+        off_memory: fn(path) {
+            link_scraper::formats::xml::svg::scrape_from_file(path)
+        }
+    )
+}
+
+define_method! {
+    extract_links_rtf decoded@(
+        name:"rtf"
+        in_memory: fn(data) {
+            link_scraper::formats::rtf::scrape_from_string(data)
+        }
+    )
+}
+
+define_method! {
+    extract_links_ooxml raw@(
+        name:"ooxml"
+        in_memory: fn(data) {
+            link_scraper::formats::ooxml::scrape_from_slice(data)
+        }
+        off_memory: fn(path) {
+            link_scraper::formats::ooxml::scrape_from_file(path)
+        }
+    )
+}
+
+define_method! {
+    extract_links_odf raw@(
+        name:"odf"
+        in_memory: fn(data) {
+            link_scraper::formats::odf::scrape_from_slice(data)
+        }
+        off_memory: fn(path) {
+            link_scraper::formats::odf::scrape_from_file(path)
+        }
+    )
+}
+
+define_method! {
+    extract_links_exif raw@(
+        name:"exif"
+        in_memory: fn(data) {
+            link_scraper::formats::image::scrape_from_slice(data)
+        }
+        off_memory: fn(path) {
+            link_scraper::formats::image::scrape_from_file(path)
+        }
+    )
+}
+
+define_method! {
+    extract_links_xlink raw@(
+        name:"xlink"
+        in_memory: fn(data) {
+            link_scraper::formats::xml::xlink::scrape_from_slice(data)
+        }
+        off_memory: fn(path) {
+            link_scraper::formats::xml::xlink::scrape_from_file(path)
+        }
+    )
+}
+
 #[cfg(not(windows))]
-create_extraction_fn!(extract_links_pdf(raw, "pdf", link_scraper::formats::pdf));
+define_method! {
+    extract_links_pdf raw@(
+        name:"pdf"
+        in_memory: fn(data) {
+            link_scraper::formats::pdf::scrape_from_slice(data)
+        }
+    )
+}

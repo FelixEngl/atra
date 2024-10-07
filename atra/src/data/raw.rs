@@ -23,6 +23,20 @@ use std::io::{Cursor, IoSliceMut, Read, Seek, SeekFrom};
 
 pub type RawVecData = RawData<Vec<u8>>;
 
+
+impl From<Option<Vec<u8>>> for RawVecData {
+    fn from(value: Option<Vec<u8>>) -> Self {
+        match value {
+            None => {
+                Self::None
+            }
+            Some(value) => {
+                Self::from_vec(value)
+            }
+        }
+    }
+}
+
 /// Represents the data downloaded, can be nothing, a vec or a file
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Default, Clone)]
 pub enum RawData<T> {
