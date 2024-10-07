@@ -21,7 +21,6 @@ use std::io::{BufWriter, Write};
 use camino::Utf8PathBuf;
 use console::{style, Term};
 use dialoguer::{Select, theme};
-use indicatif::TermLike;
 use itertools::{Either, Itertools};
 use crate::contexts::local::LocalContext;
 use crate::contexts::traits::{SupportsLinkState, SupportsUrlQueue};
@@ -186,8 +185,8 @@ pub fn view(
                                                             term.write_line("Nothing to see... (press any key to continue)").unwrap();
                                                             term.read_key().unwrap();
                                                         }
-                                                        Some((uri, idx, target)) => {
-
+                                                        Some((_, uri, target)) => {
+                                                            entry_dialouge(&term, uri, target, &local);
                                                         }
                                                     }
                                                 }
@@ -255,7 +254,7 @@ fn entry_dialouge(term: &Term, uri: &AtraUri, v: &SlimCrawlResult, context: &Loc
     } else {
         Cow::Borrowed("    Language: -!-")
     };
-    term.write_line(lang_info.as_str()).unwrap();
+    term.write_line(lang_info.as_ref()).unwrap();
     let file_info = &v.meta.file_information;
     term.write_line(format!("    Atra Filetype: {}", file_info.format).as_str()).unwrap();
     if let Some(ref mime) = file_info.mime {
@@ -348,15 +347,15 @@ fn entry_dialouge(term: &Term, uri: &AtraUri, v: &SlimCrawlResult, context: &Loc
                                 d.write_line("Nothing to export!").unwrap();
                             }
                             RawVecData::InMemory { data } => {
-                                match File::options().write(true).create_new(true).open(path) {
+                                match File::options().write(true).create_new(true).open(&path) {
                                     Ok(file) => {
                                         match BufWriter::new(file).write_all(data.as_ref()) {
                                             Ok(_) => {
-                                                d.write_line(format!("Exported to {}", path).as_str()).unwrap()
+                                                d.write_line(format!("Exported to {}", &path).as_str()).unwrap()
                                             }
                                             Err(err) => {d.write_line(format!("Error: {}", err).as_str()).unwrap();}
                                         }
-                                        d.write_line(format!("Exported to {}", path).as_str()).unwrap()
+                                        d.write_line(format!("Exported to {}", &path).as_str()).unwrap()
                                     }
                                     Err(value) => {
                                         d.write_line(format!("Error: {}", value).as_str()).unwrap();
@@ -364,9 +363,9 @@ fn entry_dialouge(term: &Term, uri: &AtraUri, v: &SlimCrawlResult, context: &Loc
                                 }
                             }
                             RawVecData::ExternalFile { path: s_path } => {
-                                match std::fs::copy(s_path, path) {
+                                match std::fs::copy(s_path, &path) {
                                     Ok(_) => {
-                                        d.write_line(format!("Exported to {}", path).as_str()).unwrap()
+                                        d.write_line(format!("Exported to {}", &path).as_str()).unwrap()
                                     }
                                     Err(value) => {
                                         d.write_line(format!("Error: {}", value).as_str()).unwrap();
@@ -376,11 +375,11 @@ fn entry_dialouge(term: &Term, uri: &AtraUri, v: &SlimCrawlResult, context: &Loc
                         }
                     }
                     Either::Right(value) => {
-                        match File::options().write(true).create_new(true).open(file_name.as_ref()) {
+                        match File::options().write(true).create_new(true).open(&path) {
                             Ok(file) => {
                                 match BufWriter::new(file).write_all(value) {
                                     Ok(_) => {
-                                        d.write_line(format!("Exported to {}", path).as_str()).unwrap()
+                                        d.write_line(format!("Exported to {}", &path).as_str()).unwrap()
                                     }
                                     Err(err) => {d.write_line(format!("Error: {}", err).as_str()).unwrap();}
                                 }

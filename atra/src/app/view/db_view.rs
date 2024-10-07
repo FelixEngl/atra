@@ -16,7 +16,7 @@ use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 use rocksdb::{DBIteratorWithThreadMode, DBWithThreadMode, Direction, Error, IteratorMode, MultiThreaded};
 use crate::contexts::local::LocalContext;
-use crate::crawl::{CrawlResult, SlimCrawlResult};
+use crate::crawl::{SlimCrawlResult};
 use crate::url::AtraUri;
 use crate::warc_ext::ReaderError;
 

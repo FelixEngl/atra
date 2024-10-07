@@ -219,7 +219,7 @@ mod test {
     fn test_encoding_method(){
         let x = ['A'..='Z', 'a'..='z', '0'..='9'].into_iter().flatten().collect::<String>().add("^,.-;:_+*/\\[](){}?~#'\"");
         for enc in ENCODINGS {
-            let (a, b, c) = enc.encode(&x);
+            let (a, b, _) = enc.encode(&x);
             assert_eq!(b, *enc);
             let mut y = String::new();
             for value in RobustUtf8Reader::new(a.reader()).map_ok(|value| value.ch) {
@@ -227,7 +227,7 @@ mod test {
                     Ok(value) => {
                         y.push(value);
                     }
-                    Err(err) => {
+                    Err(_) => {
                         y.push('°')
                     }
                 }
@@ -237,7 +237,7 @@ mod test {
         println!("-----");
         let x = String::from_utf8((0..128u8).collect_vec()).unwrap();
         for enc in ENCODINGS {
-            let (a, b, c) = enc.encode(&x);
+            let (a, b, _) = enc.encode(&x);
             assert_eq!(b, *enc);
             let mut y = String::new();
             for value in RobustUtf8Reader::new(a.reader()).map_ok(|value| value.ch) {
@@ -245,7 +245,7 @@ mod test {
                     Ok(value) => {
                         y.push(value);
                     }
-                    Err(err) => {
+                    Err(_) => {
                         y.push('°')
                     }
                 }
