@@ -175,6 +175,9 @@ console = {workspace = true}
 dialoguer = {workspace = true}
 indicatif = {workspace = true}
 
+# Rest
+actix-web = "4"
+
 [target.'cfg(windows)'.dependencies]
 link_scraper = { version = "0.2", features = ["plaintext", "xml", "xlink", "svg", "ooxml", "odf", "rtf", "image"] }
 

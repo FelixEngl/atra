@@ -18,7 +18,7 @@ use crate::database::DBActionType::{Read, Write};
 use crate::database::{execute_iter, get_len, DatabaseError, RawDatabaseError, RawIOError};
 use crate::db_health_check;
 use crate::declare_column_families;
-use crate::url::UrlWithDepth;
+use crate::url::{AtraUri, UrlWithDepth};
 use rocksdb::{DBIteratorWithThreadMode, DBWithThreadMode, IteratorMode, MultiThreaded, DB};
 use std::sync::Arc;
 
@@ -60,14 +60,14 @@ impl CrawlDB {
     }
 
     /// Gets the complete entry for the [url]
-    pub fn get(&self, url: &UrlWithDepth) -> Result<Option<SlimCrawlResult>, DatabaseError> {
+    pub fn get(&self, url: &AtraUri) -> Result<Option<SlimCrawlResult>, DatabaseError> {
         let handle = self.cf_handle();
         let key = url.as_bytes();
         if self.db.key_may_exist_cf(&handle, key) {
             if let Some(pinned) = self.db.get_pinned_cf(&handle, key).enrich_without_entry(
                 Self::CRAWL_DB_CF,
                 Read,
-                url,
+                key,
             )? {
                 Ok(Some(match bincode::deserialize(pinned.as_ref()) {
                     Ok(value) => value,

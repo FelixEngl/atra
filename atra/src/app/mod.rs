@@ -23,6 +23,7 @@ mod instruction;
 #[cfg(test)]
 mod terminal;
 mod view;
+mod rest;
 
 use crate::app::instruction::{prepare_instruction, Instruction, RunInstruction};
 use anyhow::Error;

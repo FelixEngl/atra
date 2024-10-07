@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::borrow::Cow;
 use crate::contexts::traits::{SupportsConfigs, SupportsFileSystemAccess};
 use crate::format::file_format_detection::{infer_file_formats, DetectedFileFormat};
 use crate::format::mime::{determine_mime_information, MimeType};
@@ -22,6 +23,7 @@ use crate::url::UrlWithDepth;
 use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
+use mime::Mime;
 use warc::media_type::MediaType;
 
 /// Holds the file information.
@@ -78,6 +80,22 @@ impl AtraFileInformation {
                 .mime
                 .as_ref()
                 .is_some_and(|value| value.get_param_values(mime::CHARSET).is_some())
+    }
+
+    pub fn get_best_mime_type(&self) -> Cow<Mime> {
+        if let Some(ref mimes) = self.mime {
+            if let Some(mime) = mimes.iter().next() {
+                return Cow::Borrowed(mime);
+            }
+        }
+
+        if let Some(ref detected) = self.detected {
+            if let Ok(mime) = detected.most_probable_file_format().media_type().parse() {
+                return Cow::Owned(mime);
+            }
+        }
+
+        Cow::Borrowed(self.format.fallback_mime_type_for_warc())
     }
 
     pub fn get_best_media_type_for_warc(&self) -> MediaType {

@@ -367,8 +367,8 @@ impl SupportsSlimCrawlResults for LocalContext {
         &self,
         url: &UrlWithDepth,
     ) -> Result<Option<SlimCrawlResult>, DatabaseError> {
-        match self.crawled_data.get(url) {
-            Err(DatabaseError::RecoverableFailure { .. }) => self.crawled_data.get(url),
+        match self.crawled_data.get(&url.url) {
+            Err(DatabaseError::RecoverableFailure { .. }) => self.crawled_data.get(&url.url),
             pipe => pipe,
         }
     }
