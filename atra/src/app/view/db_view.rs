@@ -90,7 +90,7 @@ impl<'a> ControlledIterator<'a> {
             }
             Direction::Reverse => {
                 if matches!(self.direction, Direction::Forward){
-                    if let Some(last) = self.selection.last() {
+                    if let Some(last) = self.selection.first() {
                         if self.end_reached {
                             Some(IteratorMode::End)
                         } else {

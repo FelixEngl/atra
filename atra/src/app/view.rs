@@ -62,11 +62,11 @@ impl Display for SelectableEntry {
 
 #[derive(Debug, Display)]
 enum SelectDialougeEntry {
-    #[strum(to_string = "{0}")]
-    Select(SelectableEntry),
     Next,
     Previous,
-    Quit
+    #[strum(to_string = "{0}")]
+    Select(SelectableEntry),
+    Quit,
 }
 
 pub fn view(
@@ -166,6 +166,7 @@ pub fn view(
                                 provide_dialouge(&iter, &mut col);
 
                                 loop {
+                                    term.clear_screen().unwrap();
                                     let selected = Select::with_theme(&theme::ColorfulTheme::default())
                                         .with_prompt("Select a target:")
                                         .default(0)
@@ -316,7 +317,11 @@ fn entry_dialouge(term: &Term, uri: &AtraUri, v: &SlimCrawlResult, context: &Loc
                 let retrieved = unsafe{v.get_content().expect("Failed to retrieve the data!")};
                 let file_name = v.meta.url.url.file_name();
                 let file_name = if let Some(file_name) = file_name {
-                    file_name
+                    if file_name.is_empty() {
+                        Cow::Owned(format!("./exported_file_{}", OffsetDateTime::now_utc().unix_timestamp().to_string()))
+                    } else {
+                        file_name
+                    }
                 } else {
                     Cow::Owned(format!("./exported_file_{}", OffsetDateTime::now_utc().unix_timestamp().to_string()))
                 };
