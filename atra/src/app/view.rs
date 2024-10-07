@@ -35,6 +35,7 @@ use time::OffsetDateTime;
 use crate::app::view::db_view::{ControlledIterator, SlimEntry};
 use crate::data::RawVecData;
 use crate::format::supported::InterpretedProcessibleFileFormat;
+use std::fmt::Write as FmtWrite;
 
 #[derive(Debug, Display, VariantArray)]
 enum Targets {
@@ -246,59 +247,58 @@ enum EntryDialougeMode {
 }
 
 fn entry_dialouge(term: &Term, uri: &AtraUri, v: &SlimCrawlResult, context: &LocalContext) {
-    term.clear_screen().unwrap();
-    term.write_line(format!("View of: {}", uri).as_str()).unwrap();
+    let mut view_data = String::new();
 
-    term.write_line(format!("    Status Code: {}", v.meta.status_code).as_str()).unwrap();
-    let lang_info = if let Some(lang) = v.meta.language {
-        Cow::Owned(
-            format!(
-                "    Status Code: {} (confidence: {})",
-                lang.lang().to_name(),
-                lang.confidence()
-            )
-        )
+    writeln!(&mut view_data, "View of: {}", uri).unwrap();
+    writeln!(&mut view_data, "    Status Code: {}", v.meta.status_code).unwrap();
+    if let Some(lang) = v.meta.language {
+        writeln!(
+            &mut view_data,
+            "    Status Code: {} (confidence: {})",
+            lang.lang().to_name(),
+            lang.confidence()
+        ).unwrap();
     } else {
-        Cow::Borrowed("    Language: -!-")
-    };
-    term.write_line(lang_info.as_ref()).unwrap();
+        writeln!(&mut view_data, "    Language: -!-").unwrap();
+    }
     let file_info = &v.meta.file_information;
-    term.write_line(format!("    Atra Filetype: {}", file_info.format).as_str()).unwrap();
+    writeln!(&mut view_data, "    Atra Filetype: {}", file_info.format).unwrap();
     if let Some(ref mime) = file_info.mime {
         for mime in mime.iter() {
-            term.write_line(format!("        Mime: {}", mime).as_str()).unwrap();
+            writeln!(&mut view_data, "        Mime: {}", mime).unwrap();
         }
     }
     if let Some(ref detected) = file_info.detected {
-        term.write_line(format!("        Detected File Format: {}", detected.most_probable_file_format()).as_str()).unwrap();
+        writeln!(&mut view_data, "        Detected File Format: {}", detected.most_probable_file_format()).unwrap();
     }
-    term.write_line(format!("    Created At: {}", v.meta.created_at).as_str()).unwrap();
-    let enc = if let Some(encoding) = v.meta.recognized_encoding {
-        Cow::Owned(format!("    Encoding: {}", encoding.name()))
+    writeln!(&mut view_data, "    Created At: {}", v.meta.created_at).unwrap();
+    if let Some(encoding) = v.meta.recognized_encoding {
+        writeln!(&mut view_data, "    Encoding: {}", encoding.name()).unwrap();
     } else {
-        Cow::Borrowed("    Encoding: -!-")
-    };
-    term.write_line(enc.as_ref()).unwrap();
+        writeln!(&mut view_data, "    Encoding: -!-").unwrap();
+    }
     let linkstate = context
         .get_link_state_manager()
         .get_link_state_sync(&v.meta.url);
     if let Ok(Some(state)) = linkstate {
-        term.write_line(format!("    Linkstate:").as_str()).unwrap();
-        term.write_line(format!("        State: {}", state.kind()).as_str()).unwrap();
-        term.write_line(format!("        IsSeed: {}", state.is_seed()).as_str()).unwrap();
-        term.write_line(format!("        Timestamp: {}", state.timestamp()).as_str()).unwrap();
-        term.write_line(format!("        Recrawl: {}", state.recrawl()).as_str()).unwrap();
-        term.write_line(format!("        Depth: {}", state.depth()).as_str()).unwrap();
+        writeln!(&mut view_data, "    Linkstate:").unwrap();
+        writeln!(&mut view_data, "        State: {}", state.kind()).unwrap();
+        writeln!(&mut view_data, "        IsSeed: {}", state.is_seed()).unwrap();
+        writeln!(&mut view_data, "        Timestamp: {}", state.timestamp()).unwrap();
+        writeln!(&mut view_data, "        Recrawl: {}", state.recrawl()).unwrap();
+        writeln!(&mut view_data, "        Depth: {}", state.depth()).unwrap();
     } else {
-        println!("    Linkstate: -!-");
+        writeln!(&mut view_data, "    Linkstate: -!-").unwrap();
     }
 
     if let Some(ref redirect) = v.meta.final_redirect_destination {
-        term.write_line(format!("        Redirect: {redirect}").as_str()).unwrap();
+        write!(&mut view_data, "        Redirect: {redirect}").unwrap();
     }
-    term.flush().unwrap();
+    let view_data = view_data;
     let mut d = DeletingTerm::new(term);
     loop {
+        d.write_line(&view_data).unwrap();
+        d.flush().unwrap();
         let selection = Select::with_theme(&theme::ColorfulTheme::default())
             .with_prompt("What to do?")
             .default(0)
@@ -307,7 +307,6 @@ fn entry_dialouge(term: &Term, uri: &AtraUri, v: &SlimCrawlResult, context: &Loc
             .clear(true)
             .interact_on(&term)
             .unwrap();
-        d.clear().unwrap();
 
         match EntryDialougeMode::VARIANTS[selection] {
             EntryDialougeMode::Return => {
@@ -550,6 +549,7 @@ fn entry_dialouge(term: &Term, uri: &AtraUri, v: &SlimCrawlResult, context: &Loc
         d.write_line("Press enter to continue...").unwrap();
         d.flush().unwrap();
         d.read_line().unwrap();
+        d.clear().unwrap()
     }
 }
 
