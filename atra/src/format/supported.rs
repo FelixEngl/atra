@@ -22,12 +22,12 @@ use serde::{Deserialize, Serialize};
 use std::cmp::max;
 use std::io::{Read};
 use std::str::FromStr;
-use strum::Display;
+use strum::{Display, EnumIs};
 // https://gonze.com/playlists/playlist-format-survey.html#M3U
 
 /// The inferred processable, type for a complete page for this crawler.
 /// Does not give detailed information about the real type.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize, Display)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize, Display, EnumIs)]
 pub enum InterpretedProcessibleFileFormat {
     HTML,
     PDF,

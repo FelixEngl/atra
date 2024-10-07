@@ -38,7 +38,7 @@ pub fn exec_args(args: AtraArgs) {
         }
         Ok(Instruction::Nothing) => {}
         Err(err) => {
-            log::error!("Failed with: {err}");
+            println!("Failed with: {err}");
         }
     }
 }

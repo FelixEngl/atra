@@ -17,6 +17,7 @@ mod db_view;
 use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
+use std::io;
 use std::io::{BufWriter, Write};
 use camino::Utf8PathBuf;
 use console::{style, Term};
@@ -33,6 +34,7 @@ use strum::{Display, VariantArray};
 use time::OffsetDateTime;
 use crate::app::view::db_view::{ControlledIterator, SlimEntry};
 use crate::data::RawVecData;
+use crate::format::supported::InterpretedProcessibleFileFormat;
 
 #[derive(Debug, Display, VariantArray)]
 enum Targets {
@@ -53,7 +55,7 @@ struct SelectableEntry(
 
 impl Display for SelectableEntry {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.0, f)
+        f.write_str(format!("{}: {}", self.0, self.1.0.as_ref().0.as_str()).as_str())
     }
 }
 
@@ -81,7 +83,7 @@ pub fn view(
 
     let term = Term::buffered_stdout();
     term.set_title("Atra Viewer");
-    if term.is_term() {
+    if !term.is_term() {
         println!("Not a real terminal. Falling back to legacy.");
         view_legacy(local, internals, extracted_links, headers);
         return;
@@ -95,8 +97,10 @@ pub fn view(
         term.write_line(&format!("Links in Queue:        {}", local.url_queue().len_blocking())).unwrap();
         term.write_line(&format!("Links in CrawlDB:      {}", local.crawl_db().len())).unwrap();
         term.write_line(&format!("Links in StateManager: {}", local.get_link_state_manager().len())).unwrap();
-        term.read_key().unwrap();
-        term.clear_last_lines(4).unwrap()
+        term.write_line("Press Enter to continue...").unwrap();
+        term.flush().unwrap();
+        term.read_line().unwrap();
+        term.clear_last_lines(6).unwrap()
     }
 
     #[inline(always)]
@@ -139,7 +143,6 @@ pub fn view(
                 break
             }
             Some(value) => {
-                term.clear_screen().unwrap();
                 match Targets::VARIANTS[value] {
                     Targets::Stats => print_stats(&term, &local),
                     Targets::Entries => {
@@ -173,7 +176,9 @@ pub fn view(
                                     match selected {
                                         None => {
                                             term.write_line("You have to select something! (press any key to continue)").unwrap();
-                                            term.read_key().unwrap();
+                                            term.write_line("Press Enter to continue...").unwrap();
+                                            term.flush().unwrap();
+                                            term.read_line().unwrap();
                                             term.clear_line().unwrap()
                                         }
                                         Some(idx) => {
@@ -183,7 +188,9 @@ pub fn view(
                                                     match to_view {
                                                         None => {
                                                             term.write_line("Nothing to see... (press any key to continue)").unwrap();
-                                                            term.read_key().unwrap();
+                                                            term.write_line("Press Enter to continue...").unwrap();
+                                                            term.flush().unwrap();
+                                                            term.read_line().unwrap();
                                                         }
                                                         Some((_, uri, target)) => {
                                                             entry_dialouge(&term, uri, target, &local);
@@ -289,6 +296,7 @@ fn entry_dialouge(term: &Term, uri: &AtraUri, v: &SlimCrawlResult, context: &Loc
     if let Some(ref redirect) = v.meta.final_redirect_destination {
         term.write_line(format!("        Redirect: {redirect}").as_str()).unwrap();
     }
+    term.flush().unwrap();
     let mut d = DeletingTerm::new(term);
     loop {
         let selection = Select::with_theme(&theme::ColorfulTheme::default())
@@ -313,7 +321,75 @@ fn entry_dialouge(term: &Term, uri: &AtraUri, v: &SlimCrawlResult, context: &Loc
                 } else {
                     Cow::Owned(format!("./exported_file_{}", OffsetDateTime::now_utc().unix_timestamp().to_string()))
                 };
-                let mut path = Utf8PathBuf::from(file_name.as_ref());
+
+                let file_name = match &v.meta.file_information.format {
+                    InterpretedProcessibleFileFormat::HTML => {
+                        if !file_name.as_ref().ends_with(".html") {
+                            Cow::Owned(format!("{}.html", file_name))
+                        } else {
+                            file_name
+                        }
+                    }
+                    InterpretedProcessibleFileFormat::PDF => {
+                        if !file_name.as_ref().ends_with(".pdf") {
+                            Cow::Owned(format!("{}.pdf", file_name))
+                        } else {
+                            file_name
+                        }
+                    }
+                    InterpretedProcessibleFileFormat::JavaScript => {
+                        if !file_name.as_ref().ends_with(".js") {
+                            Cow::Owned(format!("{}.js", file_name))
+                        } else {
+                            file_name
+                        }
+                    }
+                    InterpretedProcessibleFileFormat::PlainText | InterpretedProcessibleFileFormat::StructuredPlainText => {
+                        if !file_name.as_ref().ends_with(".txt") {
+                            Cow::Owned(format!("{}.txt", file_name))
+                        } else {
+                            file_name
+                        }
+                    }
+                    InterpretedProcessibleFileFormat::JSON => {
+                        if !file_name.as_ref().ends_with(".json") {
+                            Cow::Owned(format!("{}.json", file_name))
+                        } else {
+                            file_name
+                        }
+                    }
+                    InterpretedProcessibleFileFormat::XML => {
+                        if !file_name.as_ref().ends_with(".xml") {
+                            Cow::Owned(format!("{}.xml", file_name))
+                        } else {
+                            file_name
+                        }
+                    }
+                    InterpretedProcessibleFileFormat::SVG => {
+                        if !file_name.as_ref().ends_with(".svg") {
+                            Cow::Owned(format!("{}.svg", file_name))
+                        } else {
+                            file_name
+                        }
+                    }
+                    InterpretedProcessibleFileFormat::RTF => {
+                        if !file_name.as_ref().ends_with(".rtf") {
+                            Cow::Owned(format!("{}.rtf", file_name))
+                        } else {
+                            file_name
+                        }
+                    }
+                    InterpretedProcessibleFileFormat::ZIP => {
+                        if !file_name.as_ref().ends_with(".zip") {
+                            Cow::Owned(format!("{}.zip", file_name))
+                        } else {
+                            file_name
+                        }
+                    }
+                    _ => file_name
+                };
+                let mut path = Utf8PathBuf::from(".");
+                path.set_file_name(file_name.as_ref());
                 let mut ct = 1;
                 while path.exists() {
                     match path.file_name() {
@@ -355,7 +431,6 @@ fn entry_dialouge(term: &Term, uri: &AtraUri, v: &SlimCrawlResult, context: &Loc
                                             }
                                             Err(err) => {d.write_line(format!("Error: {}", err).as_str()).unwrap();}
                                         }
-                                        d.write_line(format!("Exported to {}", &path).as_str()).unwrap()
                                     }
                                     Err(value) => {
                                         d.write_line(format!("Error: {}", value).as_str()).unwrap();
@@ -472,6 +547,9 @@ fn entry_dialouge(term: &Term, uri: &AtraUri, v: &SlimCrawlResult, context: &Loc
                 }
             }
         }
+        d.write_line("Press enter to continue...").unwrap();
+        d.flush().unwrap();
+        d.read_line().unwrap();
     }
 }
 
@@ -491,11 +569,22 @@ impl<'a> DeletingTerm<'a> {
         self.term.write_line(line)
     }
 
-    pub fn clear(&self) -> std::io::Result<()> {
+    pub fn read_line(&self) -> io::Result<String> {
+        // self.ct += 1;
+        self.term.read_line()
+    }
+
+    pub fn flush(&self) -> io::Result<()> {
+        self.term.flush()
+    }
+
+    pub fn clear(&mut self) -> io::Result<()> {
         if self.ct == 0 {
             return Ok(())
         }
-        self.term.clear_last_lines(self.ct)
+        self.term.clear_last_lines(self.ct)?;
+        self.ct = 0;
+        Ok(())
     }
 }
 
