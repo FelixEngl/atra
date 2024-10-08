@@ -73,7 +73,7 @@ Atra is designed with a clear set of guiding principles to ensure simplicity, ef
 - **Unified Configuration:** All settings are managed within a single configuration file, simplifying setup and operation.
 
 ### You like Atra?
-If you appreciate Atra, please consider supporting the [Zeehondencentrum Pietersburen](https://www.zeehondencentrum.nl/en/). Even a small donation of €10 can provide food for a seal for an entire day.
+If you appreciate Atra, please consider supporting the [Zeehondencentrum Pietersburen](https://www.zeehondencentrum.nl/en/). Even a small donation of 10€ can provide food for a seal for an entire day.
 
 > The Zeehondencentrum Pietersburen is the largest seal hospital in Europe. Since the 1970s, they have been dedicated to the care of sick, injured, or weakened seals. After recovery, the seals are released back into the wild, with no animal remaining in permanent care. The center operates solely on donations, gifts, and entrance fees.
 
