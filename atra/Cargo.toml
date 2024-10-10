@@ -25,6 +25,9 @@ tokio-stream = "0.1"
 tokio-util = "0.7"
 #async-channel.workspace = true
 
+# Rest
+axum = "0.7.7"
+
 # Downloading data
 reqwest = { workspace = true, features = ["brotli", "gzip", "deflate", "stream", "cookies"] }
 reqwest-middleware = "0.3"
@@ -175,8 +178,7 @@ console = {workspace = true}
 dialoguer = {workspace = true}
 indicatif = {workspace = true}
 
-# Rest
-actix-web = "4"
+
 
 [target.'cfg(windows)'.dependencies]
 link_scraper = { version = "0.2", features = ["plaintext", "xml", "xlink", "svg", "ooxml", "odf", "rtf", "image"] }

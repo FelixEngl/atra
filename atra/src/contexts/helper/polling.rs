@@ -12,9 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::contexts::traits::{
-    SupportsConfigs, SupportsLinkState, SupportsPolling, SupportsUrlGuarding, SupportsUrlQueue,
-};
+use crate::contexts::traits::{SupportsBudgetManagement, SupportsConfigs, SupportsLinkState, SupportsPolling, SupportsUrlGuarding, SupportsUrlQueue};
 use crate::link_state::{LinkStateKind, LinkStateLike, LinkStateManager};
 use crate::queue::{
     AbortCause, EnqueueCalled, QueueExtractionError, UrlQueue, UrlQueueElement, UrlQueueElementRef,
@@ -29,10 +27,15 @@ use std::time::Duration;
 use tokio::select;
 use tokio::sync::watch::Receiver;
 use tokio::time::Instant;
+use crate::budget::BudgetManager;
 
 impl<C> SupportsPolling for C
 where
-    C: SupportsUrlQueue + SupportsConfigs + SupportsUrlGuarding + SupportsLinkState,
+    C: SupportsUrlQueue
+    + SupportsConfigs
+    + SupportsUrlGuarding
+    + SupportsLinkState
+    + SupportsBudgetManagement,
 {
     type Guardian = C::Guardian;
 
@@ -177,7 +180,7 @@ where
     }
 }
 
-async fn drop_from_queue<C: SupportsConfigs>(
+async fn drop_from_queue<C: SupportsConfigs + SupportsBudgetManagement>(
     context: &C,
     entry: &UrlQueueElement,
     state: &impl LinkStateLike,
@@ -186,9 +189,9 @@ async fn drop_from_queue<C: SupportsConfigs>(
         LinkStateKind::Discovered => false,
         LinkStateKind::ProcessedAndStored => {
             let budget = if let Some(origin) = entry.target.atra_origin() {
-                context.configs().crawl.budget.get_budget_for(&origin)
+                context.get_budget_manager().get_budget_for(&origin)
             } else {
-                &context.configs().crawl.budget.default
+                context.get_budget_manager().get_default_budget()
             };
             budget.get_recrawl_interval().is_none()
         }
@@ -205,11 +208,8 @@ async fn drop_from_queue<C: SupportsConfigs>(
 
 #[cfg(test)]
 mod test {
-    use crate::config::crawl::CrawlBudget;
     use crate::config::{Config, CrawlConfig, PathsConfig, SessionConfig, SystemConfig};
-    use crate::contexts::traits::{
-        SupportsConfigs, SupportsLinkState, SupportsPolling, SupportsUrlGuarding, SupportsUrlQueue,
-    };
+    use crate::contexts::traits::{SupportsBudgetManagement, SupportsConfigs, SupportsLinkState, SupportsPolling, SupportsUrlGuarding, SupportsUrlQueue};
     use crate::contexts::BaseContext;
     use crate::queue::{QueueExtractionError, UrlQueue, UrlQueueElement, UrlQueuePollResult};
     use crate::test_impls::{InMemoryLinkStateManager, TestUrlQueue};
@@ -217,21 +217,25 @@ mod test {
     use crate::url::UrlWithDepth;
     use std::sync::Arc;
     use std::time::Duration;
+    use crate::budget::{CrawlBudget, InMemoryBudgetManager};
 
     struct Fake {
         queue: TestUrlQueue,
         configs: Config,
         guard: InMemoryUrlGuardian,
         link_state_manager: InMemoryLinkStateManager,
+        in_memory_budget_manager: InMemoryBudgetManager
     }
 
     impl Fake {
         pub fn new(configs: Config) -> Self {
+            let budget = InMemoryBudgetManager::create(&configs.crawl.budget);
             Self {
                 queue: TestUrlQueue::default(),
                 configs,
                 guard: InMemoryUrlGuardian::new(),
                 link_state_manager: InMemoryLinkStateManager::new(),
+                in_memory_budget_manager: budget
             }
         }
     }
@@ -261,6 +265,14 @@ mod test {
 
         fn get_guardian(&self) -> &Self::Guardian {
             &self.guard
+        }
+    }
+
+    impl SupportsBudgetManagement for Fake {
+        type BudgetManager = InMemoryBudgetManager;
+
+        fn get_budget_manager(&self) -> &Self::BudgetManager {
+            &self.in_memory_budget_manager
         }
     }
 

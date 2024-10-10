@@ -49,6 +49,7 @@ create_abstract_traits! {
         SupportsWorkerId,
         SupportsCrawling,
         SupportsDomainHandling,
+        SupportsBudgetManagement
     }
 }
 
@@ -76,6 +77,8 @@ pub mod traits {
     use std::collections::HashSet;
     use std::error::Error;
     use text_processing::stopword_registry::StopWordRegistry;
+    use crate::budget::BudgetManager;
+    use crate::cookies::CookieManager;
 
     /// A marker interface for applying the context trait iff appropriate
     pub trait ContextDelegate {}
@@ -116,6 +119,18 @@ pub mod traits {
 
         /// Returns a reference to a [GuardedDomainManager]
         fn get_guardian(&self) -> &Self::Guardian;
+    }
+
+    pub trait SupportsBudgetManagement: BaseContext {
+        type BudgetManager: BudgetManager;
+
+        fn get_budget_manager(&self) -> &Self::BudgetManager;
+    }
+
+    pub trait SupportsCookieManagement: BaseContext {
+        type CookieManager: CookieManager;
+
+        fn get_cookie_manager(&self) -> &Self::CookieManager;
     }
 
     pub trait SupportsRobotsManager: BaseContext {

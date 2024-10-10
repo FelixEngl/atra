@@ -14,7 +14,7 @@
 
 use crate::client::traits::AtraClient;
 use crate::client::{build_classic_client, ClientWithUserAgent};
-use crate::contexts::traits::{SupportsConfigs, SupportsCrawling};
+use crate::contexts::traits::{SupportsBudgetManagement, SupportsConfigs, SupportsCrawling};
 use crate::seed::BasicSeed;
 use crate::test_impls::{FakeClient, FakeResponse, FakeResponseError};
 use crate::url::AtraUri;
@@ -29,7 +29,7 @@ pub trait ClientProvider {
     /// Provide a client for a context and a specific seed.
     fn provide<C, T>(&self, context: &C, seed: &T) -> Result<Self::Client, Self::Error>
     where
-        C: SupportsCrawling + SupportsConfigs,
+        C: SupportsCrawling + SupportsConfigs + SupportsBudgetManagement,
         T: BasicSeed;
 }
 
@@ -43,7 +43,7 @@ impl ClientProvider for DefaultAtraProvider {
 
     fn provide<C, T>(&self, context: &C, seed: &T) -> Result<Self::Client, Self::Error>
     where
-        C: SupportsCrawling + SupportsConfigs,
+        C: SupportsCrawling + SupportsConfigs + SupportsBudgetManagement,
         T: BasicSeed,
     {
         let useragent = context

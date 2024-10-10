@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::config::BudgetSetting;
 use crate::seed::UnguardedSeed;
 use crate::url::{AtraUrlOrigin, UrlWithDepth};
 use console::Term;
@@ -20,6 +19,7 @@ use std::collections::VecDeque;
 use std::sync::RwLock;
 use time::Duration;
 use tokio::sync::watch::{Receiver, Sender};
+use crate::budget::BudgetSetting;
 
 pub struct Terminal {
     terminal: Term,

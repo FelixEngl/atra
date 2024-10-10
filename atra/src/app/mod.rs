@@ -23,7 +23,6 @@ mod instruction;
 #[cfg(test)]
 mod terminal;
 mod view;
-mod rest;
 
 use crate::app::instruction::{prepare_instruction, Instruction, RunInstruction};
 use anyhow::Error;
@@ -94,9 +93,10 @@ mod test {
     use crate::app::instruction::RunInstruction;
     use crate::app::{execute, AtraArgs};
     use crate::config::crawl::UserAgent;
-    use crate::config::{BudgetSetting, Config, CrawlConfig};
+    use crate::config::{Config, CrawlConfig};
     use crate::seed::SeedDefinition;
     use time::Duration;
+    use crate::budget::BudgetSetting;
 
     #[test]
     pub fn can_generate_example_config() {

@@ -1,4 +1,4 @@
-// Copyright 2024 Felix Engl
+// Copyright 2024. Felix Engl
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,41 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::app::{exec_args, AtraArgs};
-use clap::Parser;
-
-mod app;
-mod blacklist;
-mod client;
-mod config;
-mod contexts;
-mod crawl;
-mod data;
-mod database;
-mod decoding;
-mod extraction;
-mod fetching;
-mod format;
-mod gdbr;
-mod html;
-mod io;
-mod link_state;
-mod queue;
-mod recrawl_management;
-mod robots;
-mod runtime;
-mod seed;
-mod stores;
-mod sync;
-#[cfg(test)]
-mod test_impls;
-mod toolkit;
-mod url;
-mod warc_ext;
-mod web_graph;
-mod budget;
+mod manager;
 mod cookies;
 
-fn main() {
-    exec_args(AtraArgs::parse())
+pub use manager::InMemoryCookieManager;
+pub use cookies::CookieSettings;
+
+use std::borrow::Borrow;
+use std::hash::Hash;
+use std::sync::Arc;
+use crate::url::AtraUrlOrigin;
+
+pub trait CookieManager {
+    fn get_default_cookie(&self) -> Arc<Option<String>>;
+
+    fn get_cookies_for<Q: ?Sized>(&self, domain: &Q) -> Arc<Option<String>>
+    where
+        AtraUrlOrigin: Borrow<Q>,
+        Q: Hash + Eq;
+
+    fn set_cookie(&self, key: AtraUrlOrigin, value: Option<String>);
+    fn set_default_cookie(&self, value: Option<String>);
 }

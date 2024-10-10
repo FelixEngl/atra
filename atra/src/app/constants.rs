@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::config::crawl::{CookieSettings, CrawlBudget, RedirectPolicy, UserAgent};
-use crate::config::{BudgetSetting, CrawlConfig, SessionConfig};
+use crate::config::crawl::{RedirectPolicy, UserAgent};
+use crate::config::{CrawlConfig, SessionConfig};
 use crate::extraction::extractor::Extractor;
 use crate::gdbr::identifier::{
     FilterMode, GdbrIdentifierConfig, GdbrIdentifierRegistryConfig,
@@ -30,6 +30,8 @@ use text_processing::configs::StopwordRegistryConfig;
 use text_processing::stopword_registry::StopWordRepository;
 use time::Duration;
 use ubyte::ToByteUnit;
+use crate::budget::{BudgetSetting, CrawlBudget};
+use crate::cookies::CookieSettings;
 
 pub const ATRA_LOGO: &'static str = include_str!("logo_small.txt");
 pub const ATRA_WELCOME: &'static str = include_str!("welcome.txt");

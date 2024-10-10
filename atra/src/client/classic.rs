@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::ops::Deref;
 use crate::config::crawl::RedirectPolicy;
 use crate::config::Config;
-use crate::contexts::traits::{SupportsConfigs, SupportsCrawling};
+use crate::contexts::traits::{SupportsBudgetManagement, SupportsConfigs, SupportsCookieManagement, SupportsCrawling};
 use crate::seed::BasicSeed;
 use crate::toolkit::domains::domain_name;
 use crate::url::{AtraOriginProvider, UrlWithDepth};
@@ -25,6 +26,8 @@ use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 use time::Duration;
+use crate::budget::BudgetManager;
+use crate::cookies::CookieManager;
 
 /// Builds the classic configured client used by Atra
 pub fn build_classic_client<C: SupportsCrawling, T: BasicSeed>(
@@ -33,7 +36,7 @@ pub fn build_classic_client<C: SupportsCrawling, T: BasicSeed>(
     useragent: impl AsRef<str>,
 ) -> Result<ClientWithMiddleware, Error>
 where
-    C: SupportsCrawling + SupportsConfigs,
+    C: SupportsCrawling + SupportsConfigs + SupportsBudgetManagement + SupportsCookieManagement,
     T: BasicSeed,
 {
     let configs = context.configs();
@@ -55,26 +58,21 @@ where
 
     client = client.redirect(setup_redirect_policy(configs, url));
 
-    if let Some(timeout) = configs
-        .crawl
-        .budget
+    if let Some(timeout) = context
+        .get_budget_manager()
         .get_budget_for(&seed.origin())
         .get_request_timeout()
     {
         log::trace!("Timeout Set: {}", timeout);
         client = client.timeout(timeout.unsigned_abs());
     }
-
-    client = if let Some(cookies) = &configs.crawl.cookies {
-        if let Some(cookie) = cookies.get_cookies_for(&seed.origin()) {
-            let cookie_store = reqwest::cookie::Jar::default();
-            if let Some(url) = url.clean_url().as_url() {
-                cookie_store.add_cookie_str(cookie.as_str(), url);
-            }
-            client.cookie_provider(cookie_store.into())
-        } else {
-            client.cookie_store(configs.crawl.use_cookies)
+    let cookies = context.get_cookie_manager().get_cookies_for(seed.origin());
+    client = if let Some(cookie) = cookies.as_ref() {
+        let cookie_store = reqwest::cookie::Jar::default();
+        if let Some(url) = url.clean_url().as_url() {
+            cookie_store.add_cookie_str(cookie.as_str(), url);
         }
+        client.cookie_provider(cookie_store.into())
     } else {
         client.cookie_store(configs.crawl.use_cookies)
     };

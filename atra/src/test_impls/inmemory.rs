@@ -61,6 +61,7 @@ use texting_robots::{get_robots_url, Robot};
 use time::{Duration, OffsetDateTime};
 use tokio::sync::watch::Receiver;
 use tokio::sync::Mutex;
+use crate::budget::{BudgetManager, InMemoryBudgetManager};
 use crate::io::errors::ErrorWithPath;
 use crate::io::serial::SerialProvider;
 
@@ -83,6 +84,7 @@ pub struct TestContext<Provider = DefaultAtraProvider> {
     pub fs: Arc<TestFS>,
     pub provider: Provider,
     pub domain_manager: InMemoryDomainManager,
+    pub budget_manager: InMemoryBudgetManager,
 }
 
 impl<Provider> TestContext<Provider>
@@ -90,7 +92,9 @@ where
     Provider: Send + Sync + 'static,
 {
     pub fn new(configs: Config, provider: Provider) -> Self {
+        let budget_manager = InMemoryBudgetManager::create(&configs.crawl.budget);
         Self {
+            budget_manager,
             ct_crawled_websites: AtomicUsize::new(0),
             ct_found_websites: AtomicUsize::new(0),
             robots_manager: InMemoryRobotsManager::new(),
@@ -210,6 +214,14 @@ impl<Provider> Context for TestContext<Provider> where
 {
 }
 
+impl<Provider> SupportsBudgetManagement for TestContext<Provider> where TestContext<Provider>: BaseContext {
+    type BudgetManager = InMemoryBudgetManager;
+
+    fn get_budget_manager(&self) -> &Self::BudgetManager {
+        &self.budget_manager
+    }
+}
+
 impl<Provider> SupportsLinkSeeding for TestContext<Provider>
 where
     Provider: Send + Sync + 'static,
@@ -248,7 +260,7 @@ where
                     if self.link_state_manager.get_link_state(url).await?.is_none() {
                         let recrawl: Option<RecrawlYesNo> = if let Some(origin) = url.atra_origin()
                         {
-                            let budget = self.configs.crawl.budget.get_budget_for(&origin);
+                            let budget = self.budget_manager.get_budget_for(&origin);
                             if budget.is_in_budget(url) {
                                 for_queue.push(UrlQueueElement::new(false, 0, false, url.clone()));
                             }

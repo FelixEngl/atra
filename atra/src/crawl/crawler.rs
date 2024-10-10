@@ -26,12 +26,7 @@ pub use result::test::*;
 pub use crate::blacklist::ManagedBlacklist;
 use crate::blacklist::{Blacklist, BlacklistManager};
 use crate::client::traits::AtraClient;
-use crate::config::BudgetSetting;
-use crate::contexts::traits::{
-    SupportsBlackList, SupportsConfigs, SupportsCrawlResults, SupportsCrawling,
-    SupportsDomainHandling, SupportsFileSystemAccess, SupportsGdbrRegistry, SupportsLinkSeeding,
-    SupportsLinkState, SupportsRobotsManager, SupportsSlimCrawlResults, SupportsUrlQueue,
-};
+use crate::contexts::traits::{SupportsBlackList, SupportsConfigs, SupportsCrawlResults, SupportsCrawling, SupportsDomainHandling, SupportsFileSystemAccess, SupportsGdbrRegistry, SupportsLinkSeeding, SupportsLinkState, SupportsRobotsManager, SupportsSlimCrawlResults, SupportsUrlQueue, SupportsBudgetManagement};
 use crate::crawl::crawler::intervals::InvervalManager;
 use crate::crawl::crawler::result::CrawlResult;
 use crate::crawl::crawler::sitemaps::retrieve_and_parse;
@@ -63,6 +58,7 @@ use std::io::Write;
 use std::sync::Arc;
 use strum::EnumString;
 use time::OffsetDateTime;
+use crate::budget::{BudgetManager, BudgetSetting};
 
 /// A crawler for a single website. Starts from the provided `seed` and
 #[derive(Debug)]
@@ -171,7 +167,8 @@ where
             + SupportsLinkSeeding
             + SupportsUrlQueue
             + SupportsCrawling
-            + SupportsDomainHandling,
+            + SupportsDomainHandling
+            + SupportsBudgetManagement,
         Shutdown: ShutdownReceiver,
         E: From<<Cont as SupportsSlimCrawlResults>::Error>
             + From<<Cont as SupportsLinkSeeding>::Error>
@@ -199,10 +196,9 @@ where
             .await,
         );
 
-        let budget = configuration
-            .budget
-            .get_budget_for(&self.seed.origin())
-            .clone();
+        let budget = context
+            .get_budget_manager()
+            .get_budget_for(&self.seed.origin());
 
         log::info!("Seed: {}, {}", self.seed.url(), budget);
 
@@ -261,8 +257,8 @@ where
         let origin = self.seed.origin();
         let manager = context.get_domain_manager();
 
-        if let Some(recrawl_interval) = configuration
-            .budget
+        if let Some(recrawl_interval) = context
+            .get_budget_manager()
             .get_budget_for(origin)
             .get_recrawl_interval()
         {
@@ -337,8 +333,8 @@ where
             match context.retrieve_slim_crawled_website(&target).await {
                 Ok(value) => {
                     if let Some(already_crawled) = value {
-                        if let Some(recrawl) = configuration
-                            .budget
+                        if let Some(recrawl) = context
+                            .get_budget_manager()
                             .get_budget_for(origin)
                             .get_recrawl_interval()
                         {
@@ -710,7 +706,7 @@ impl<'a, R: RobotsInformation, B: Blacklist> UrlChecker<'a, R, B> {
 
 #[cfg(test)]
 mod test {
-    use crate::config::{BudgetSetting, Config as AtraConfig, CrawlConfig};
+    use crate::config::{Config as AtraConfig, CrawlConfig};
     use crate::contexts::traits::{SupportsCrawling, SupportsUrlQueue};
     use crate::crawl::CrawlResult;
     use crate::data::RawData;
@@ -732,6 +728,7 @@ mod test {
     use serde::{Deserialize, Serialize};
     use std::fmt::Debug;
     use time::Duration;
+    use crate::budget::BudgetSetting;
 
     fn init() {
         // let stdout = ConsoleAppender::builder().build();

@@ -51,6 +51,8 @@ use std::sync::Arc;
 use text_processing::stopword_registry::StopWordRegistry;
 use text_processing::tf_idf::{Idf, Tf};
 use time::OffsetDateTime;
+use crate::budget::{BudgetManager, InMemoryBudgetManager};
+use crate::cookies::InMemoryCookieManager;
 
 /// The state of the app
 #[derive(Debug)]
@@ -70,6 +72,8 @@ pub struct LocalContext {
     stop_word_registry: Option<StopWordRegistry>,
     gdbr_filer_registry: Option<GdbrIdentifierRegistry<Tf, Idf, L2R_L2LOSS_SVR>>,
     domain_manager: DomainLastCrawledDatabaseManager,
+    budget_manager: InMemoryBudgetManager,
+    cookie_manager: InMemoryCookieManager,
     _guard: GracefulShutdownGuard,
 }
 
@@ -162,8 +166,11 @@ impl LocalContext {
 
         let domain_manager = DomainLastCrawledDatabaseManager::new(db.clone());
 
+        let budget_manager = InMemoryBudgetManager::create(&configs.crawl.budget);
+
         Ok(LocalContext {
             _db: db,
+            budget_manager,
             url_queue,
             link_state_manager,
             blacklist,
@@ -207,6 +214,14 @@ impl SupportsDomainHandling for LocalContext {
     }
 }
 
+impl SupportsBudgetManagement for LocalContext {
+    type BudgetManager = InMemoryBudgetManager;
+
+    fn get_budget_manager(&self) -> &Self::BudgetManager {
+        &self.budget_manager
+    }
+}
+
 impl SupportsLinkSeeding for LocalContext {
     type Error = LinkHandlingError;
 
@@ -239,7 +254,7 @@ impl SupportsLinkSeeding for LocalContext {
                     if self.link_state_manager.get_link_state(url).await?.is_none() {
                         let recrawl: Option<RecrawlYesNo> = if let Some(origin) = url.atra_origin()
                         {
-                            let budget = self.configs.crawl.budget.get_budget_for(&origin);
+                            let budget = self.budget_manager.get_budget_for(&origin);
                             if budget.is_in_budget(url) {
                                 for_queue.push(UrlQueueElement::new(false, 0, false, url.clone()));
                             }
@@ -378,6 +393,14 @@ impl SupportsSlimCrawlResults for LocalContext {
             Err(DatabaseError::RecoverableFailure { .. }) => self.crawled_data.add(&slim),
             pipe => pipe,
         }
+    }
+}
+
+impl SupportsCookieManagement for LocalContext {
+    type CookieManager = InMemoryCookieManager;
+
+    fn get_cookie_manager(&self) -> &Self::CookieManager {
+        todo!()
     }
 }
 

@@ -20,7 +20,7 @@ use crate::app::config::{discover, discover_or_default, try_load_from_path};
 use crate::app::constants::{create_example_config, ATRA_LOGO, ATRA_WELCOME};
 use crate::app::view::view;
 use crate::app::{ApplicationMode, AtraArgs};
-use crate::config::{BudgetSetting, Config};
+use crate::config::{Config};
 use crate::contexts::local::LocalContext;
 use camino::Utf8PathBuf;
 pub use error::*;
@@ -29,6 +29,7 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::num::NonZeroUsize;
 use time::Duration;
+use crate::budget::BudgetSetting;
 
 /// Consumes the args and returns everything necessary to execute Atra
 pub(crate) fn prepare_instruction(args: AtraArgs) -> Result<Instruction, InstructionError> {

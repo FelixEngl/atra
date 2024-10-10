@@ -1,4 +1,4 @@
-// Copyright 2024 Felix Engl
+// Copyright 2024. Felix Engl
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,16 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod configs;
-pub mod crawl;
-pub mod paths;
-pub mod session;
-pub mod system;
+use std::borrow::Borrow;
+use std::collections::HashMap;
+use std::hash::Hash;
+use serde::{Deserialize, Serialize};
+use crate::url::AtraUrlOrigin;
 
-pub use configs::Config;
-pub use crawl::CrawlConfig;
-#[allow(unused_imports)]
-pub use paths::PathsConfig;
-#[allow(unused_imports)]
-pub use session::SessionConfig;
-pub use system::SystemConfig;
+/// The cookie settings for each host.
+#[derive(Debug, Default, Clone, Deserialize, Serialize, Eq, PartialEq)]
+pub struct CookieSettings {
+    pub default: Option<String>,
+    pub per_host: Option<HashMap<AtraUrlOrigin, String>>,
+}

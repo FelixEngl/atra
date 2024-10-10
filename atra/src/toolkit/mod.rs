@@ -24,6 +24,7 @@ mod language_detection;
 pub mod selectors;
 pub mod serde_ext;
 pub mod utf8;
+pub mod in_memory_domain_manager;
 
 pub use language_detection::*;
 

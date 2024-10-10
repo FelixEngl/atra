@@ -423,7 +423,7 @@ mod test {
     use crate::app::instruction::RunInstruction;
     use crate::config::crawl::UserAgent;
     use crate::config::Config as AtraConfig;
-    use crate::config::{BudgetSetting, CrawlConfig};
+    use crate::config::{CrawlConfig};
     use crate::contexts::local::LocalContext;
     use crate::contexts::traits::{SupportsLinkState, SupportsUrlQueue};
     use crate::crawl::{SlimCrawlResult, StoredDataHint};
@@ -444,6 +444,7 @@ mod test {
     use time::Duration;
     use tokio::task::JoinSet;
     use tokio::time::sleep;
+    use crate::budget::BudgetSetting;
 
     fn recurse(path: impl AsRef<Path>) -> Vec<PathBuf> {
         let Ok(entries) = read_dir(path) else {

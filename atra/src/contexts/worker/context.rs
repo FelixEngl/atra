@@ -105,6 +105,18 @@ where
     }
 }
 
+impl<T> SupportsBudgetManagement for WorkerContext<T>
+where
+    T: SupportsBudgetManagement
+{
+    type BudgetManager = T::BudgetManager;
+    delegate::delegate! {
+        to self.inner {
+            fn get_budget_manager(&self) -> &Self::BudgetManager;
+        }
+    }
+}
+
 impl<T> SupportsLinkState for WorkerContext<T>
 where
     T: SupportsLinkState,
