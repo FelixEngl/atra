@@ -1,3 +1,9 @@
+Requiremeents für dump:
+BulkJson - für URL Metadaten
+Pfade zur WarcFile
+
+
+
 Features:
 - Test recrawl feature
 

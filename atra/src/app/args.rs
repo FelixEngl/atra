@@ -111,6 +111,14 @@ pub enum RunMode {
         /// The path to the folder with the atra data
         path: String,
     },
+    /// Dump the warc file paths and the url metadata to a folder.
+    DUMP {
+        /// Directory for the dumps
+        #[arg(short, long)]
+        output_dir: Option<String>,
+        /// Path to crawl
+        crawl_path: String,
+    }
 }
 
 #[cfg(test)]
