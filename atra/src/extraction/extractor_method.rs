@@ -66,7 +66,7 @@ pub enum ExtractorMethod {
     Xlink,
     #[serde(alias = "zip")]
     Zip,
-    #[cfg(not(windows))]
+    #[cfg(all(not(windows), feature = "with_pdf"))]
     #[serde(alias = "pdf_v1")]
     PdfV1,
 }
@@ -98,7 +98,7 @@ impl ExtractorMethod {
             ExtractorMethod::Xml => Box::pin(extract_links_xml(self, page, nesting == 0, output)).await,
             ExtractorMethod::Svg => Box::pin(extract_links_svg(self, page, nesting == 0, output)).await,
             ExtractorMethod::Xlink => Box::pin(extract_links_xlink(self, page, nesting == 0, output)).await,
-            #[cfg(not(windows))]
+            #[cfg(all(not(windows), feature = "with_pdf"))]
             ExtractorMethod::PdfV1 => Box::pin(extract_links_pdf(self, page, nesting == 0, output)).await,
         }
     }
@@ -134,7 +134,7 @@ impl ExtractorMethod {
                         | InterpretedProcessibleFileFormat::ProgrammingLanguage
                 )
             }
-            #[cfg(not(windows))]
+            #[cfg(all(not(windows), feature = "with_pdf"))]
             ExtractorMethod::PdfV1 => {
                 matches!(file_info.format, AtraSupportedFileFormat::PDF)
             }
@@ -777,7 +777,7 @@ define_method! {
     )
 }
 
-#[cfg(not(windows))]
+#[cfg(all(not(windows), feature = "with_pdf"))]
 define_method! {
     extract_links_pdf raw@(
         name:"pdf"

@@ -34,7 +34,7 @@ pub enum LinkExtractionError {
 
 #[derive(Debug, Error)]
 pub enum LinkExtractionSubError {
-    #[cfg(not(windows))]
+    #[cfg(all(not(windows), feature = "with_pdf"))]
     #[error(transparent)]
     Pdf(#[from] link_scraper::formats::pdf::PdfScrapingError),
     #[error(transparent)]

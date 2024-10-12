@@ -310,7 +310,7 @@ Example:
 | Xml       | "xml"                                         | Extracts links from an XML.                                                                                                                                                    |
 | Svg       | "svg"                                         | Extracts links from an SVG.                                                                                                                                                    |
 | Xlink     | "xlink"                                       | Extracts links from an XML with XLINK.                                                                                                                                         |
-| PDF       | "pdf_v1"                                      | Extracts links from an HTML. (Currently linux only due to a compiler bug with windows.)                                                                                        |
+| PDF       | "pdf_v1"                                      | Extracts links from an HTML. (Currently deactivated due to a compiler bug.)                                                                                                    |
 
 
 #### Apply When
