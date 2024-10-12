@@ -74,6 +74,7 @@ pub(crate) fn dump(crawl_path: String, output_dir: Option<String>) -> Result<(),
                     _ => {}
                 }
                 serde_json::to_writer(&mut writer, &Entry{url: uri, meta: data}).map_err(InstructionError::DumbSerialisationError)?;
+                write!(&mut writer, "\n")?;
             }
             Err(_) => {
                 continue

@@ -1,4 +1,7 @@
-FROM rust:1-slim-bookworm AS data
+FROM rust:1-slim-bookworm AS installer
+RUN apt update; apt upgrade; apt -y install pkg-config libssl-dev clang llvm libfontconfig1-dev; apt autoremove
+
+FROM installer AS builder
 RUN mkdir atra
 
 WORKDIR /atra
@@ -12,11 +15,6 @@ COPY ./text_processing ./text_processing
 COPY ./Cargo.toml ./Cargo.toml
 COPY ./logo.txt ./logo.txt
 
-FROM data AS installer
-RUN apt update; apt upgrade; apt -y install pkg-config libssl-dev clang llvm libfontconfig1-dev; apt autoremove
-
-FROM installer AS builder
-WORKDIR /atra
 RUN cargo generate-lockfile
 RUN cargo fetch
 #RUN cargo build -p reqwest
@@ -27,8 +25,6 @@ FROM debian:bookworm-slim
 
 RUN apt update; apt upgrade; apt -y --no-install-recommends install libc6 openssl ca-certificates; apt autoremove
 
-WORKDIR /atra
+COPY --from=builder /atra/target/release/atra .
 
-COPY --from=builder /atra/target/release .
-
-#CMD ["./atra"]
+ENTRYPOINT ["/atra"]
