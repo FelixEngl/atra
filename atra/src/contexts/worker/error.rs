@@ -15,6 +15,12 @@
 use crate::database::DatabaseError;
 use crate::warc_ext::{ReaderError, WriterError};
 use thiserror::Error;
+use crate::io::errors::ErrorWithPath;
+
+#[derive(Debug, Error)]
+#[error(transparent)]
+pub struct WorkerContextCreationError(#[from] ErrorWithPath);
+
 
 #[derive(Debug, Error)]
 pub enum CrawlWriteError<E> {

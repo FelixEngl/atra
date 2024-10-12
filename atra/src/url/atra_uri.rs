@@ -280,6 +280,13 @@ impl FromStr for AtraUri {
     }
 }
 
+impl AsRef<[u8]> for AtraUri {
+    #[inline(always)]
+    fn as_ref(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
 impl From<Url> for AtraUri {
     #[inline]
     fn from(value: Url) -> Self {

@@ -26,9 +26,10 @@ use camino::Utf8PathBuf;
 pub use error::*;
 pub use instruction::*;
 use std::fs::File;
-use std::io::{BufReader, BufWriter};
+use std::io::{BufReader, BufWriter, ErrorKind};
 use std::num::NonZeroUsize;
 use time::Duration;
+use crate::app::dump::dump;
 
 /// Consumes the args and returns everything necessary to execute Atra
 pub(crate) fn prepare_instruction(args: AtraArgs) -> Result<Instruction, InstructionError> {
@@ -108,6 +109,7 @@ pub(crate) fn prepare_instruction(args: AtraArgs) -> Result<Instruction, Instruc
                 threads,
                 override_log_level: log_level,
                 log_to_file,
+                override_root_dir_name
             } => {
                 let mut config = match configs_folder {
                     None => discover(),
@@ -121,15 +123,30 @@ pub(crate) fn prepare_instruction(args: AtraArgs) -> Result<Instruction, Instruc
                     config.session.crawl_job_id
                 );
 
-                config.paths.root = config.paths.root_path().join(format!(
-                    "multi_{}_{}",
-                    data_encoding::BASE64URL.encode(
-                        &time::OffsetDateTime::now_utc()
-                            .unix_timestamp_nanos()
-                            .to_be_bytes()
-                    ),
-                    data_encoding::BASE64URL.encode(&rand::random::<u64>().to_be_bytes()),
-                ));
+                config.paths.root = if let Some(override_root_dir_name) = override_root_dir_name {
+                    let check_if_absolute = Utf8PathBuf::from(&override_root_dir_name);
+                    if check_if_absolute.is_absolute() {
+                        check_if_absolute
+                    } else {
+                        config.paths.root_path().join(override_root_dir_name)
+                    }
+                } else {
+                    config.paths.root_path().join(format!(
+                        "multi_{}_{}",
+                        data_encoding::BASE64URL.encode(
+                            &time::OffsetDateTime::now_utc()
+                                .unix_timestamp_nanos()
+                                .to_be_bytes()
+                        ),
+                        data_encoding::BASE64URL.encode(&rand::random::<u64>().to_be_bytes()),
+                    ))
+                };
+
+                if config.paths.root.is_dir() {
+                    return Err(InstructionError::RootAlreadyExists(
+                        config.paths.root.clone()
+                    ))
+                }
 
                 config.system.log_to_file = log_to_file;
 
@@ -191,7 +208,7 @@ pub(crate) fn prepare_instruction(args: AtraArgs) -> Result<Instruction, Instruc
                     cfg
                 } else if path.is_file() {
                     let file = File::options().read(true).open(&path)?;
-                    let mut cfg: Config = serde_json::from_reader(BufReader::new(file))?;
+                    let mut cfg: Config = serde_json::from_reader(BufReader::new(file)).map_err(InstructionError::ConfigDeserializationError)?;
                     cfg.paths.root = if let Some(parent) = path.parent() {
                         parent.to_path_buf()
                     } else {
@@ -207,7 +224,7 @@ pub(crate) fn prepare_instruction(args: AtraArgs) -> Result<Instruction, Instruc
                     cfg
                 } else {
                     return Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
+                        ErrorKind::InvalidInput,
                         format!("The path {} is neither a config file nor a path to a folder containing a config!", path)
                     ).into());
                 };
@@ -250,37 +267,8 @@ pub(crate) fn prepare_instruction(args: AtraArgs) -> Result<Instruction, Instruc
                 extracted_links,
                 headers,
             } => {
-                let path = Utf8PathBuf::from(path);
-
-                let config = if path.is_dir() {
-                    let mut cfg: Config = try_load_from_path(&path)?;
-                    cfg.paths.root = path;
-                    cfg
-                } else if path.is_file() {
-                    let file = File::options().read(true).open(&path)?;
-                    let mut cfg: Config = serde_json::from_reader(BufReader::new(file))?;
-                    cfg.paths.root = if let Some(parent) = path.parent() {
-                        parent.to_path_buf()
-                    } else {
-                        return Err(std::io::Error::new(
-                            std::io::ErrorKind::InvalidInput,
-                            format!(
-                                "The path {} points to a config file but doesn't have a parent!",
-                                path
-                            ),
-                        )
-                        .into());
-                    };
-                    cfg
-                } else {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        format!("The path {} is neither a config file nor a path to a folder containing a config!", path)
-                    ).into());
-                };
-
+                let config = string_to_config_path(&path)?;
                 println!("{}\n\n{}\n\n\n", ATRA_WELCOME, ATRA_LOGO);
-
                 let runtime = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
@@ -290,6 +278,10 @@ pub(crate) fn prepare_instruction(args: AtraArgs) -> Result<Instruction, Instruc
                         .expect("Was not able to load context for reading!");
                     view(local, internals, extracted_links, headers, false);
                 });
+                Ok(Instruction::Nothing)
+            }
+            RunMode::DUMP { crawl_path, output_dir } => {
+                dump(crawl_path, output_dir)?;
                 Ok(Instruction::Nothing)
             }
         }
@@ -317,5 +309,36 @@ pub(crate) fn prepare_instruction(args: AtraArgs) -> Result<Instruction, Instruc
         } else {
             Ok(Instruction::Nothing)
         }
+    }
+}
+
+
+pub(crate) fn string_to_config_path(path: &str) -> Result<Config, InstructionError> {
+    let path = Utf8PathBuf::from(path);
+
+    if path.is_dir() {
+        let mut cfg: Config = try_load_from_path(&path)?;
+        cfg.paths.root = path;
+        Ok(cfg)
+    } else if path.is_file() {
+        let file = File::options().read(true).open(&path)?;
+        let mut cfg: Config = serde_json::from_reader(BufReader::new(file)).map_err(InstructionError::ConfigDeserializationError)?;
+        cfg.paths.root = if let Some(parent) = path.parent() {
+            parent.to_path_buf()
+        } else {
+            return Err(std::io::Error::new(
+                ErrorKind::InvalidInput,
+                format!(
+                    "The path {} points to a config file but doesn't have a parent!",
+                    path
+                ),
+            ).into())
+        };
+        Ok(cfg)
+    } else {
+        Err(std::io::Error::new(
+            ErrorKind::InvalidInput,
+            format!("The path {} is neither a config file nor a path to a folder containing a config!", path)
+        ).into())
     }
 }

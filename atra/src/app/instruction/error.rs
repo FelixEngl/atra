@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use camino::Utf8PathBuf;
 use thiserror::Error;
 
 /// Error while parsing an instruction.
@@ -22,5 +23,9 @@ pub enum InstructionError {
     #[error(transparent)]
     ConfigError(#[from] config::ConfigError),
     #[error(transparent)]
-    DeserializationError(#[from] serde_json::Error),
+    ConfigDeserializationError(serde_json::Error),
+    #[error("The path {0} already exists.")]
+    RootAlreadyExists(Utf8PathBuf),
+    #[error(transparent)]
+    DumbSerialisationError(serde_json::Error),
 }

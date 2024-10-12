@@ -1,6 +1,6 @@
 [package]
 name = "atra"
-version = "0.1.2-pre2"
+version = "0.1.3-pre0"
 edition = "2021"
 
 # https://en.wikipedia.org/wiki/Erigone_atra
@@ -112,8 +112,9 @@ anyhow.workspace = true
 # https://crates.io/crates/paxakos
 
 # HTML Parsing
-html5ever = "0"
-ego-tree = "0"
+# Keep in sync with scraper!
+html5ever = "0.27.0"
+ego-tree = "0.6.2"
 
 # Scraping
 scraper = "0.20"
@@ -175,11 +176,14 @@ console = {workspace = true}
 dialoguer = {workspace = true}
 indicatif = {workspace = true}
 
+#[patch.crates-io]
+#mupdf = { path= "external/mupdf" }
+
 [target.'cfg(windows)'.dependencies]
 link_scraper = { version = "0.2", features = ["plaintext", "xml", "xlink", "svg", "ooxml", "odf", "rtf", "image"] }
 
 [target.'cfg(not(windows))'.dependencies]
-link_scraper = { version = "0.2", features = ["pdf", "plaintext", "xml", "xlink", "svg", "ooxml", "odf", "rtf", "image"] }
+link_scraper = { version = "0.2", features = ["plaintext", "xml", "xlink", "svg", "ooxml", "odf", "rtf", "image"] }
 
 # TOR
 # libtor-sys = "47.13.0"
@@ -193,3 +197,6 @@ lipsum.workspace = true
 
 [build-dependencies]
 rustc_version = "0"
+
+[features]
+#with_pdf = []

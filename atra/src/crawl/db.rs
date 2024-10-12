@@ -47,7 +47,7 @@ impl CrawlDB {
 
     /// Adds a single [value]
     pub fn add(&self, value: &SlimCrawlResult) -> Result<(), DatabaseError> {
-        let key = &value.meta.url;
+        let key = &value.meta.url.url;
         let serialized = match bincode::serialize(&value) {
             Ok(value) => value,
             Err(err) => return Err(err.enrich_ser(Self::CRAWL_DB_CF, key, value.clone())),
@@ -62,7 +62,7 @@ impl CrawlDB {
     /// Gets the complete entry for the [url]
     pub fn get(&self, url: &UrlWithDepth) -> Result<Option<SlimCrawlResult>, DatabaseError> {
         let handle = self.cf_handle();
-        let key = url.as_bytes();
+        let key = url.url.as_bytes();
         if self.db.key_may_exist_cf(&handle, key) {
             if let Some(pinned) = self.db.get_pinned_cf(&handle, key).enrich_without_entry(
                 Self::CRAWL_DB_CF,

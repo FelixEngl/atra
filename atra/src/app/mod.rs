@@ -23,31 +23,46 @@ mod instruction;
 #[cfg(test)]
 mod terminal;
 mod view;
+mod exitcode_conversions;
+mod dump;
 
+use std::process::ExitCode;
 use crate::app::instruction::{prepare_instruction, Instruction, RunInstruction};
-use anyhow::Error;
 pub use args::AtraArgs;
 pub use atra::ApplicationMode;
 use atra::Atra;
+use crate::app::atra::AtraRunError;
 
 /// Execute the [`args`]
-pub fn exec_args(args: AtraArgs) {
+pub fn exec_args(args: AtraArgs) -> ExitCode {
     match prepare_instruction(args) {
         Ok(Instruction::RunInstruction(instruction)) => {
-            execute(instruction);
+            match execute(instruction) {
+                Ok(_) => {
+                    ExitCode::SUCCESS
+                }
+                Err(err) => {
+                    println!("Failed with: {err}");
+                    err.into()
+                }
+            }
         }
-        Ok(Instruction::Nothing) => {}
+        Ok(Instruction::Nothing) => {
+            ExitCode::SUCCESS
+        }
         Err(err) => {
             println!("Failed with: {err}");
+            err.into()
         }
     }
 }
 
+
 /// Execute the [`instruction`]
-fn execute(instruction: RunInstruction) {
+fn execute(instruction: RunInstruction) -> Result<(), AtraRunError> {
     let (mut atra, runtime) = Atra::build_with_runtime(instruction.mode);
 
-    runtime.block_on(async move {
+    let result = runtime.block_on(async move {
         let shutdown = atra.shutdown().get().clone();
 
         let shutdown_result = {
@@ -55,7 +70,7 @@ fn execute(instruction: RunInstruction) {
             let future = atra.run(instruction);
             tokio::pin!(future);
 
-            let mut shutdown_result: Option<Result<(), Error>> = None;
+            let mut shutdown_result: Option<Result<(), AtraRunError>> = None;
 
             tokio::select! {
                 res = &mut future => {
@@ -76,14 +91,16 @@ fn execute(instruction: RunInstruction) {
             }
         };
 
-        if let Err(err) = shutdown_result {
+        if let Err(err) = &shutdown_result {
             log::error!("Exit with error: {err}");
         }
         drop(atra);
         log::info!("Waiting for complete shutdown...");
         shutdown.wait().await;
+        shutdown_result
     });
-    log::info!("Complete shutdown.")
+    log::info!("Complete shutdown.");
+    result
 }
 
 #[cfg(test)]
@@ -153,6 +170,6 @@ mod test {
                 "https://ticktoo.com/".to_string(),
             ])),
             recover_mode: false,
-        })
+        }).expect("This should not fail.")
     }
 }

@@ -77,6 +77,10 @@ pub enum RunMode {
         /// overrides the log level from the config.
         #[arg(long)]
         override_log_level: Option<log::LevelFilter>,
+        /// Overrides the sub-root dir name from atra_xxx_xxx.
+        /// If it is an absolute path the complete root is replaced.
+        #[arg(long)]
+        override_root_dir_name: Option<String>,
         /// Log to file
         #[arg(long)]
         log_to_file: bool,
@@ -111,6 +115,14 @@ pub enum RunMode {
         /// The path to the folder with the atra data
         path: String,
     },
+    /// Dump the warc file paths and the url metadata to a folder.
+    DUMP {
+        /// Directory for the dumps
+        #[arg(short, long)]
+        output_dir: Option<String>,
+        /// The path to the crawl
+        crawl_path: String,
+    }
 }
 
 #[cfg(test)]
@@ -144,7 +156,7 @@ mod test {
 
         match args {
             Ok(Instruction::RunInstruction(instruction)) => {
-                execute(instruction);
+                execute(instruction).expect("This should work!");
             }
             Ok(Instruction::Nothing) => {}
             _ => {}
