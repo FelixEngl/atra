@@ -48,6 +48,13 @@ impl Depth {
         }
     }
 
+    /// Returns true if the value is zero
+    pub fn is_zero(&self) -> bool {
+        self.depth_on_website == 0
+            && self.total_distance_to_seed == 0
+            && self.distance_to_seed == 0
+    }
+
     /// Merges the values to the lowest possible entry url
     pub fn merge_to_lowes(&self, rhs: &Self) -> Self {
         Self::new(

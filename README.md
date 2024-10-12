@@ -82,6 +82,41 @@ Atra takes its name from Erigone atra, a species of dwarf spider measuring 1.8mm
 
 For more information, visit [Wikipedia](https://en.wikipedia.org/wiki/Erigone_atra).
 
+## Exits Codes
+The exit codes returned by Atra when some kind or error happens:
+
+| Code | Meaning                                                                             |
+|------|-------------------------------------------------------------------------------------|
+| 0    | Success                                                                             |
+| 1    | Unknown Error                                                                       |
+| 2    | Some kind of file was not found or was not able to interact with the file system.   |
+| 3    | The config was faulty in some way.                                                  |
+| 4    | Was not able to deserialize the config.json                                         |
+| 5    | The directory already exists.                                                       |
+| 10   | Atra was not able to initialize the context by some unknown error.                  |
+| 11   | Atra was not able to initialize the context due to some IO problem.                 |
+| 12   | Atra was not able to open the database.                                             |
+| 13   | Atra had an RocksDB error, most probably a problem with the layout of the database. |
+| 14   | Atra was not able to work with the queue file.                                      |
+| 15   | Atra failed to read the blacklist.                                                  |
+| 16   | Atra had an error with initializing the SVM                                         |
+| 17   | Atra had an error while initializing the webgraph                                   |
+| 18   | Atra failed to serialize/deserialize some kind of data.                             |
+| 40   | Atra failed to initialize a worker context                                          |
+| 50   | Atra failed to fill the queue                                                       |
+| 70   | Atra failed serialize some data while dumping                                       |
+| 100  | The crawl failed in some unexpected way.                                            |
+| 101  | Failed to store some crawl informations in the database.                            |
+| 102  | Failed to handle some link informations.                                            |
+| 103  | Failed to deserialize the link state for a url                                      |
+| 104  | Failed to update/read the link state from the database                              |
+| 105  | Failed to write a crawl result to the database and/or filesystem.                   |
+| 106  | Failed to read/write from/to the queue.                                             |
+| 107  | The client failed for some reason.                                                  |
+| 108  | Failed to execute a request.                                                        |
+| 109  | Failed to interact with the file system.                                            |
+
+
 ## Config
 Atra is configured by using json-configs and environment variables. 
 The following table shows the configs written as qualified paths for a json.
@@ -207,18 +242,19 @@ Exemplary entry in a JSON:
 
 ### Budget Setting
 Budget settings exists in 3 different kinds:
+- SinglePage: Only crawls the provided seed. Is used when both depths are null.
 - SeedOnly: Only crawls the seed domains
 - Normal: Crawls the seed and follows external links
 - Absolute: Crawls the seed and follows external links, but only follows until a specific amout of jumps is reached.
 
 The kind is decided by the presence of the fields. As described in the following table.
 
-| Sub-Path         | used in                    | Value                                                | Explanation                                                                   |
-|------------------|----------------------------|------------------------------------------------------|-------------------------------------------------------------------------------|
-| depth_on_website | SeedOnly, Normal           | uInt                                                 | The max depth to crawl on a website.                                          |
-| depth            | Normal, Absolute           | uInt                                                 | The maximum depth of websites, outgoing from the seed.                        |
-| recrawl_interval | SeedOnly, Normal, Absolute | String/null; "`[whole_seconds].[whole_nanoseconds]`" | Crawl interval (if set to null crawl only once)   (default: null)             |
-| request_timeout  | SeedOnly, Normal, Absolute | String/null; "`[whole_seconds].[whole_nanoseconds]`" | Request max timeout per page. Set to null to disable. (default: 15.000000000) |
+| Sub-Path         | used in                                | Value                                                | Explanation                                                                   |
+|------------------|----------------------------------------|------------------------------------------------------|-------------------------------------------------------------------------------|
+| depth_on_website | SeedOnly, Normal                       | uInt/null                                            | The max depth to crawl on a website. (default: null)                          |
+| depth            | Normal, Absolute                       | uInt/null                                            | The maximum depth of websites, outgoing from the seed. (default: null)        |
+| recrawl_interval | SeedOnly, Normal, Absolute, SinglePage | String/null; "`[whole_seconds].[whole_nanoseconds]`" | Crawl interval (if set to null crawl only once)   (default: null)             |
+| request_timeout  | SeedOnly, Normal, Absolute, SinglePage | String/null; "`[whole_seconds].[whole_nanoseconds]`" | Request max timeout per page. Set to null to disable. (default: 15.000000000) |
 
 
 ### Redirection Policy

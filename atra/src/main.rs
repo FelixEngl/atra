@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::process::ExitCode;
 use crate::app::{exec_args, AtraArgs};
 use clap::Parser;
 
@@ -45,6 +46,6 @@ mod url;
 mod warc_ext;
 mod web_graph;
 
-fn main() {
+fn main() -> ExitCode {
     exec_args(AtraArgs::parse())
 }

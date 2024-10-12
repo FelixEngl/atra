@@ -10,6 +10,7 @@ COPY ../external ./external
 COPY ../iso_stopwords ./iso_stopwords
 COPY ../svm ./svm
 COPY ../warc ./warc
+COPY ../text_processing ./text_processing
 COPY ../Cargo.toml ./Cargo.toml
 COPY ../logo.txt ./logo.txt
 

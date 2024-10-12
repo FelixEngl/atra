@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::app::consumer::GlobalErrorConsumer;
+use crate::app::consumer::{GlobalError, GlobalErrorConsumer};
 use crate::app::instruction::RunInstruction;
 use crate::app::logging::configure_logging;
-use crate::contexts::local::LocalContext;
+use crate::contexts::local::{LocalContext, LocalContextInitError};
 use crate::contexts::traits::*;
-use crate::contexts::worker::WorkerContext;
+use crate::contexts::worker::{WorkerContext, WorkerContextCreationError};
 use crate::contexts::Context;
 use crate::crawl::{crawl, ErrorConsumer, ExitState};
 use crate::link_state::{LinkStateLike, LinkStateManager, RawLinkState};
@@ -33,9 +33,18 @@ use std::error::Error;
 use std::io;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
+use thiserror::Error;
 use time::OffsetDateTime;
 use tokio::select;
 use tokio::task::JoinSet;
+
+#[derive(Debug, Error)]
+pub enum AtraRunError {
+    #[error(transparent)] ContextInitialisation(#[from] LocalContextInitError),
+    #[error(transparent)] WorkerContextInitialisation(#[from] WorkerContextCreationError),
+    #[error(transparent)] Crawl(#[from] GlobalError),
+    #[error(transparent)] Queue(#[from] QueueError),
+}
 
 /// The application
 pub struct Atra {
@@ -145,7 +154,7 @@ impl Atra {
     // }
 
     /// Start the application
-    pub async fn run(&mut self, instruction: RunInstruction) -> Result<(), anyhow::Error> {
+    pub async fn run(&mut self, instruction: RunInstruction) -> Result<(), AtraRunError> {
         configure_logging(&instruction.config);
         let result = self.run_without_logger(instruction).await;
         result
@@ -159,7 +168,7 @@ impl Atra {
             recover_mode,
             ..
         }: RunInstruction,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), AtraRunError> {
         let shutdown_and_handle = RuntimeContext::new(self.shutdown.clone(), self.handle.clone());
         let context = Arc::new(LocalContext::new(config, &shutdown_and_handle)?);
         drop(shutdown_and_handle);

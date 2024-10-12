@@ -28,6 +28,7 @@ use crate::warc_ext::write_warc;
 use std::collections::HashSet;
 use std::sync::Arc;
 use text_processing::stopword_registry::StopWordRegistry;
+use crate::contexts::worker::WorkerContextCreationError;
 
 /// A context for a specific worker
 #[derive(Debug)]
@@ -55,7 +56,7 @@ where
         worker_id: usize,
         recrawl_number: usize,
         inner: Arc<T>,
-    ) -> Result<Self, ErrorWithPath> {
+    ) -> Result<Self, WorkerContextCreationError> {
         let worker_warc_system = inner
             .fs()
             .create_worker_file_provider(worker_id, recrawl_number)?;

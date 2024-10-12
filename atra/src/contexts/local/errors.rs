@@ -40,21 +40,21 @@ pub enum LinkHandlingError {
 #[derive(Debug, Error)]
 pub enum LocalContextInitError {
     #[error(transparent)]
-    IoError(#[from] std::io::Error),
+    Io(#[from] std::io::Error),
     #[error(transparent)]
-    IoWithPathError(#[from] ErrorWithPath),
+    IoWithPath(#[from] ErrorWithPath),
     #[error(transparent)]
-    SerdeError(#[from] serde_json::Error),
+    Serde(#[from] serde_json::Error),
     #[error(transparent)]
-    OpenDBError(#[from] OpenDBError),
+    OpenDB(#[from] OpenDBError),
     #[error(transparent)]
-    RocksDBError(#[from] rocksdb::Error),
+    RocksDB(#[from] rocksdb::Error),
     #[error(transparent)]
-    QueueFileError(#[from] queue_file::Error),
+    QueueFile(#[from] queue_file::Error),
     #[error(transparent)]
-    BlackListError(#[from] InMemoryBlacklistManagerInitialisationError<PolyBlackList>),
+    BlackList(#[from] InMemoryBlacklistManagerInitialisationError<PolyBlackList>),
     #[error(transparent)]
-    SvmError(#[from] SvmCreationError<Idf>),
+    Svm(#[from] SvmCreationError<Idf>),
     #[error(transparent)]
-    LinkNetError(#[from] WebGraphError),
+    WebGraph(#[from] WebGraphError),
 }

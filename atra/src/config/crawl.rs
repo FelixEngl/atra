@@ -29,7 +29,6 @@ use strum::Display;
 use strum::EnumString;
 use text_processing::configs::StopwordRegistryConfig;
 use text_processing::tf_idf::{Idf, Tf};
-use thiserror::Error;
 use time::Duration;
 
 /// The general crawling settings for a single
@@ -300,59 +299,80 @@ impl From<BudgetSetting> for BudgetSettingsDef {
                 recrawl_interval,
                 request_timeout,
             },
+            BudgetSetting::SinglePage {
+                request_timeout,
+                recrawl_interval,
+            } => {
+                Self {
+                    depth_on_website: None,
+                    depth: None,
+                    request_timeout,
+                    recrawl_interval
+                }
+            }
         }
     }
 }
 
-#[derive(Debug, Error)]
-#[error("The budget is missing any depth field. It needs at least one!")]
-struct BudgetSettingsDeserializationError;
 
-impl TryFrom<BudgetSettingsDef> for BudgetSetting {
-    type Error = BudgetSettingsDeserializationError;
+impl From<BudgetSettingsDef> for BudgetSetting {
 
-    fn try_from(value: BudgetSettingsDef) -> Result<Self, Self::Error> {
+    fn from(value: BudgetSettingsDef) -> Self {
         match value {
             BudgetSettingsDef {
                 depth: Some(depth),
                 depth_on_website: Some(depth_on_website),
                 request_timeout,
                 recrawl_interval,
-            } => Ok(BudgetSetting::Normal {
+            } => BudgetSetting::Normal {
                 depth,
                 depth_on_website,
                 request_timeout,
                 recrawl_interval,
-            }),
+            },
             BudgetSettingsDef {
                 depth_on_website: Some(depth_on_website),
                 request_timeout,
                 recrawl_interval,
                 ..
-            } => Ok(BudgetSetting::SeedOnly {
+            } => BudgetSetting::SeedOnly {
                 depth_on_website,
                 request_timeout,
                 recrawl_interval,
-            }),
+            },
             BudgetSettingsDef {
                 depth: Some(depth),
                 request_timeout,
                 recrawl_interval,
                 ..
-            } => Ok(BudgetSetting::Absolute {
+            } => BudgetSetting::Absolute {
                 depth,
                 request_timeout,
                 recrawl_interval,
-            }),
-            _ => Err(BudgetSettingsDeserializationError),
+            },
+            BudgetSettingsDef {
+                request_timeout,
+                recrawl_interval,
+                ..
+            } => BudgetSetting::SinglePage {
+                request_timeout,
+                recrawl_interval
+            }
         }
     }
 }
 
 /// The budget for the crawled website
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Display)]
-#[serde(try_from = "BudgetSettingsDef", into = "BudgetSettingsDef")]
+#[serde(from = "BudgetSettingsDef", into = "BudgetSettingsDef")]
 pub enum BudgetSetting {
+    /// Only crawls a single domain
+    SinglePage {
+        /// Crawl interval (if none crawl only once)
+        recrawl_interval: Option<Duration>,
+        /// Request max timeout per page. By default the request times out in 15s. Set to None to disable.
+        request_timeout: Option<Duration>,
+    },
     /// Only crawls the seed domains
     SeedOnly {
         /// The max depth to crawl on a website. (0 indicates to crawl everything)
@@ -385,15 +405,7 @@ pub enum BudgetSetting {
 }
 
 impl BudgetSetting {
-    // pub fn is_finite(&self) -> bool {
-    //     match self {
-    //         BudgetSettings::SeedOnly { .. } => {true}
-    //         BudgetSettings::Normal { .. } => {true}
-    //         BudgetSettings::Absolute { depth, .. } => {0u64.eq(depth)}
-    //     }
-    // }
-
-    pub fn get_request_timeout(&self) -> Option<Duration> {
+    pub fn get_request_timeout(&self) -> Option<&Duration> {
         match self {
             BudgetSetting::SeedOnly {
                 request_timeout, ..
@@ -404,8 +416,11 @@ impl BudgetSetting {
             BudgetSetting::Absolute {
                 request_timeout, ..
             } => request_timeout,
+            BudgetSetting::SinglePage {
+                request_timeout, ..
+            } => request_timeout,
         }
-        .clone()
+        .as_ref()
     }
 
     pub fn get_recrawl_interval(&self) -> Option<&Duration> {
@@ -417,6 +432,9 @@ impl BudgetSetting {
                 recrawl_interval, ..
             } => recrawl_interval,
             BudgetSetting::Absolute {
+                recrawl_interval, ..
+            } => recrawl_interval,
+            BudgetSetting::SinglePage {
                 recrawl_interval, ..
             } => recrawl_interval,
         }
@@ -445,17 +463,78 @@ impl BudgetSetting {
             BudgetSetting::Absolute { depth, .. } => {
                 0.eq(depth) || url_depth.total_distance_to_seed.lt(depth)
             }
+            BudgetSetting::SinglePage { .. } => {
+                url.depth.is_zero()
+            }
         }
     }
 }
 
 impl Default for BudgetSetting {
     fn default() -> Self {
-        Self::Normal {
-            depth_on_website: 20,
-            depth: 3,
+        Self::SinglePage {
             recrawl_interval: None,
             request_timeout: Some(Duration::seconds(15)),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use url::Url;
+    use crate::config::BudgetSetting;
+    use crate::config::crawl::BudgetSettingsDef;
+    use crate::url::{AtraUri, Depth, UrlWithDepth};
+
+    #[test]
+    fn can_crawl_only_single(){
+        let budget: BudgetSetting = BudgetSettingsDef {
+            depth: None,
+            depth_on_website: None,
+            recrawl_interval: None,
+            request_timeout: None
+        }.try_into().unwrap();
+
+        assert!(
+            budget.is_in_budget(
+                &UrlWithDepth::new(
+                    AtraUri::Url(
+                        Url::parse("httpd://www.google.de/").unwrap()
+                    ),
+                    Depth::ZERO
+                )
+            )
+        );
+
+        assert!(
+            !budget.is_in_budget(
+                &UrlWithDepth::new(
+                    AtraUri::Url(
+                        Url::parse("httpd://www.google.de/").unwrap()
+                    ),
+                    Depth::new(1, 0, 0)
+                )
+            )
+        );
+        assert!(
+            !budget.is_in_budget(
+                &UrlWithDepth::new(
+                    AtraUri::Url(
+                        Url::parse("httpd://www.google.de/").unwrap()
+                    ),
+                    Depth::new(0, 1, 0)
+                )
+            )
+        );
+        assert!(
+            !budget.is_in_budget(
+                &UrlWithDepth::new(
+                    AtraUri::Url(
+                        Url::parse("httpd://www.google.de/").unwrap()
+                    ),
+                    Depth::new(0, 0, 1)
+                )
+            )
+        );
     }
 }

@@ -60,6 +60,7 @@ where
         .budget
         .get_budget_for(&seed.origin())
         .get_request_timeout()
+        .copied()
     {
         log::trace!("Timeout Set: {}", timeout);
         client = client.timeout(timeout.unsigned_abs());
