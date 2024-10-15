@@ -53,8 +53,7 @@ git submodule update --remote --recursive
 After installing Rust you need [LLVM](https://llvm.org/) and [MSVC](https://visualstudio.microsoft.com/de/downloads/), with the proper environment paths set.
 
 ### Linux
-*Currently broken.*
-
+*working as long as the pdf feature is not activated*
 
 After installing rust you need `pkg-config`, `libssl-dev`, `clang`, and `llvm` in order to compile Atra. 
 You can also use the docker container to build a binary.
