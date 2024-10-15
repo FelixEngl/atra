@@ -21,7 +21,7 @@ _________________
 Atra is a novel web crawling solution, implemented in Rust, designed with the primary goal of scraping websites as comprehensively as possible, while ensuring ease of use and accessibility.
 
 ## Your first crawl
-Download the precompiled executable (coming soon) and run the following command:
+Download the precompiled executable and run the following command:
 - Windows: `./atra.exe single -s test_crawl -d 2 --absolute https://choosealicense.com`
 - Linux: `./atra single -s test_crawl -d 2 --absolute https://choosealicense.com`
 You will then find a folder `atra_data` on the level of the binary.
